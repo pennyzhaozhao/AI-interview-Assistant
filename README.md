@@ -1,6 +1,8 @@
 <div align="center">
   <img src="./appicon.png" width="128" alt="InterviewAssistant app icon" />
 
+  [简体中文](./README.md) | [English](./README_EN.md)
+
   # InterviewAssistant
 
   **本地优先、开源的 Apple 平台 AI 面试准备与辅助工具**
@@ -125,7 +127,7 @@ AI 请求由应用直接发送到用户自己选择的模型服务商。
 
 ## 快速开始
 
-目前仓库以源码形式提供。若 Releases 页面尚未提供安装包，请使用 Xcode 构建。
+普通用户可以从 [GitHub Releases](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases) 下载已签名并通过 Apple 公证的 macOS 安装包。开发者也可以按照以下步骤从源码构建。
 
 ### 1. 克隆仓库
 
@@ -488,20 +490,31 @@ volc.seedasr.sauc.concurrent
 ├── scripts/build-dmg.sh           # macOS DMG 构建脚本
 ├── DESIGN_SYSTEM.md               # UI 设计规范
 ├── LICENSE                        # MIT License
-└── README.md
+├── README.md                       # 简体中文说明
+└── README_EN.md                    # English documentation
 ```
 
 ## 构建 macOS DMG
+
+本地预览构建：
 
 ```bash
 ./scripts/build-dmg.sh
 ```
 
-构建产物位于 `dist/`。公开分发前还需要：
+使用 Developer ID 正式签名并自动提交 Apple 公证：
 
-1. 使用自己的 Developer ID Application 证书签名；
-2. 使用 Apple Developer 账号完成 notarization；
-3. staple 公证票据；
+```bash
+SIGNED_RELEASE=1 \
+NOTARY_PROFILE=InterviewAssistant-notary \
+./scripts/build-dmg.sh
+```
+
+其中 `NOTARY_PROFILE` 是通过 `xcrun notarytool store-credentials` 保存到钥匙串的凭证名称。构建产物位于 `dist/`。公开分发前请确认：
+
+1. 使用自己的 Developer ID Application 证书；
+2. Apple Notary Service 返回 `Accepted`；
+3. 公证票据已成功 staple 和 validate；
 4. 在没有开发环境的 Mac 上测试安装和首次授权；
 5. 确认产物中没有 API Key、个人证书或本地数据库。
 
