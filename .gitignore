@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+
+# Xcode user and build data
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Local app data and databases
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# Local credentials and service configuration
+.env
+.env.*
+!.env.example
+GoogleService-Info.plist
+*.p8
+*.p12
+*.mobileprovision
+
+# JavaScript dependencies and local tool state
+node_modules/
+.wrangler/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Distribution output
+dist/
+*.dmg
+*.xcarchive
+
+# Temporary files
+*.tmp
+*.log
+*~

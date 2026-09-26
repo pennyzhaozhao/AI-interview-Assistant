@@ -1,0 +1,527 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000001 /* InterviewAssistantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000101 /* InterviewAssistantApp.swift */; };
+		AA0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000102 /* ContentView.swift */; };
+		AA0000000000000000000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000103 /* Theme.swift */; };
+		AA0000000000000000000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000104 /* Models.swift */; };
+		AA0000000000000000000005 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000105 /* KeychainStore.swift */; };
+		AA0000000000000000000006 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000106 /* AIService.swift */; };
+		AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000107 /* KnowledgeContextBuilder.swift */; };
+		AA0000000000000000000008 /* PDFImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000108 /* PDFImporter.swift */; };
+		AA0000000000000000000009 /* URLFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000109 /* URLFetcher.swift */; };
+		AA000000000000000000000A /* TCPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010A /* TCPConnection.swift */; };
+		AA000000000000000000000B /* SpeechEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010B /* SpeechEngine.swift */; };
+		AA000000000000000000000C /* SystemAudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010C /* SystemAudioCapture.swift */; };
+		AA000000000000000000000D /* ReceiverCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010D /* ReceiverCoordinator.swift */; };
+		AA000000000000000000000E /* PrompterOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010E /* PrompterOverlayView.swift */; };
+		AA000000000000000000000F /* ReceiverContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010F /* ReceiverContainerView.swift */; };
+		AA0000000000000000000010 /* FloatingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000110 /* FloatingWindowController.swift */; };
+		AA0000000000000000000011 /* SenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000111 /* SenderView.swift */; };
+		AA0000000000000000000012 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SetupView.swift */; };
+		AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */; };
+		AA0000000000000000000014 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* HistoryView.swift */; };
+		AA0000000000000000000015 /* APIConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* APIConfigView.swift */; };
+		AA0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000118 /* Assets.xcassets */; };
+		AA0000000000000000000017 /* NetworkUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000119 /* NetworkUtils.swift */; };
+		AA0000000000000000000020 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000011E /* SettingsView.swift */; };
+		AA0000000000000000000021 /* HotkeyRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000011F /* HotkeyRecorderView.swift */; };
+		AA0000000000000000000022 /* ScreenshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000120 /* ScreenshotCapture.swift */; };
+		AA0000000000000000000023 /* LanguagePickerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000121 /* LanguagePickerOverlay.swift */; };
+		AA0000000000000000000024 /* CodeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000122 /* CodeBlockView.swift */; };
+		AA0000000000000000000025 /* MockInterviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000123 /* MockInterviewView.swift */; };
+		AA0000000000000000000027 /* DocumentTextImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000125 /* DocumentTextImporter.swift */; };
+		AA0000000000000000000028 /* WebsiteResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000126 /* WebsiteResearchService.swift */; };
+		AA0000000000000000000029 /* VolcanoASREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000127 /* VolcanoASREngine.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000101 /* InterviewAssistantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewAssistantApp.swift; sourceTree = "<group>"; };
+		AA0000000000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000103 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		AA0000000000000000000104 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AA0000000000000000000105 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		AA0000000000000000000106 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		AA0000000000000000000107 /* KnowledgeContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeContextBuilder.swift; sourceTree = "<group>"; };
+		AA0000000000000000000108 /* PDFImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFImporter.swift; sourceTree = "<group>"; };
+		AA0000000000000000000109 /* URLFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLFetcher.swift; sourceTree = "<group>"; };
+		AA000000000000000000010A /* TCPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCPConnection.swift; sourceTree = "<group>"; };
+		AA000000000000000000010B /* SpeechEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngine.swift; sourceTree = "<group>"; };
+		AA000000000000000000010C /* SystemAudioCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioCapture.swift; sourceTree = "<group>"; };
+		AA000000000000000000010D /* ReceiverCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiverCoordinator.swift; sourceTree = "<group>"; };
+		AA000000000000000000010E /* PrompterOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrompterOverlayView.swift; sourceTree = "<group>"; };
+		AA000000000000000000010F /* ReceiverContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiverContainerView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000110 /* FloatingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingWindowController.swift; sourceTree = "<group>"; };
+		AA0000000000000000000111 /* SenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SenderView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000112 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseManagerView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000114 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000115 /* APIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfigView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000116 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA0000000000000000000117 /* InterviewAssistant.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = InterviewAssistant.entitlements; sourceTree = "<group>"; };
+		AA0000000000000000000118 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA0000000000000000000119 /* NetworkUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkUtils.swift; sourceTree = "<group>"; };
+		AA000000000000000000011E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA000000000000000000011F /* HotkeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyRecorderView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000120 /* ScreenshotCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCapture.swift; sourceTree = "<group>"; };
+		AA0000000000000000000121 /* LanguagePickerOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePickerOverlay.swift; sourceTree = "<group>"; };
+		AA0000000000000000000122 /* CodeBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeBlockView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000123 /* MockInterviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockInterviewView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000125 /* DocumentTextImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextImporter.swift; sourceTree = "<group>"; };
+		AA0000000000000000000126 /* WebsiteResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteResearchService.swift; sourceTree = "<group>"; };
+		AA0000000000000000000127 /* VolcanoASREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolcanoASREngine.swift; sourceTree = "<group>"; };
+		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000300 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000000000000000000400 = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000401 /* InterviewAssistant */,
+				AA0000000000000000000409 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000401 /* InterviewAssistant */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000101 /* InterviewAssistantApp.swift */,
+				AA0000000000000000000102 /* ContentView.swift */,
+				AA0000000000000000000402 /* Shared */,
+				AA0000000000000000000403 /* Receiver */,
+				AA0000000000000000000404 /* Sender */,
+				AA0000000000000000000405 /* Setup */,
+				AA0000000000000000000406 /* KnowledgeBase */,
+				AA0000000000000000000407 /* History */,
+				AA0000000000000000000411 /* MockInterview */,
+				AA0000000000000000000408 /* Settings */,
+				AA0000000000000000000410 /* Resources */,
+			);
+			path = InterviewAssistant;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000402 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000103 /* Theme.swift */,
+				AA0000000000000000000104 /* Models.swift */,
+				AA0000000000000000000105 /* KeychainStore.swift */,
+				AA0000000000000000000106 /* AIService.swift */,
+				AA0000000000000000000107 /* KnowledgeContextBuilder.swift */,
+				AA0000000000000000000108 /* PDFImporter.swift */,
+				AA0000000000000000000109 /* URLFetcher.swift */,
+				AA0000000000000000000125 /* DocumentTextImporter.swift */,
+				AA0000000000000000000126 /* WebsiteResearchService.swift */,
+				AA000000000000000000010A /* TCPConnection.swift */,
+				AA0000000000000000000119 /* NetworkUtils.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000403 /* Receiver */ = {
+			isa = PBXGroup;
+			children = (
+				AA000000000000000000010B /* SpeechEngine.swift */,
+				AA0000000000000000000127 /* VolcanoASREngine.swift */,
+				AA000000000000000000010C /* SystemAudioCapture.swift */,
+				AA000000000000000000010D /* ReceiverCoordinator.swift */,
+				AA000000000000000000010E /* PrompterOverlayView.swift */,
+				AA000000000000000000010F /* ReceiverContainerView.swift */,
+				AA0000000000000000000110 /* FloatingWindowController.swift */,
+				AA0000000000000000000120 /* ScreenshotCapture.swift */,
+				AA0000000000000000000121 /* LanguagePickerOverlay.swift */,
+				AA0000000000000000000122 /* CodeBlockView.swift */,
+			);
+			path = Receiver;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000404 /* Sender */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000111 /* SenderView.swift */,
+			);
+			path = Sender;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000405 /* Setup */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000112 /* SetupView.swift */,
+			);
+			path = Setup;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000406 /* KnowledgeBase */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */,
+			);
+			path = KnowledgeBase;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000407 /* History */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000114 /* HistoryView.swift */,
+			);
+			path = History;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000408 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000115 /* APIConfigView.swift */,
+				AA000000000000000000011E /* SettingsView.swift */,
+				AA000000000000000000011F /* HotkeyRecorderView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000409 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000200 /* InterviewAssistant.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000410 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000118 /* Assets.xcassets */,
+				AA0000000000000000000116 /* Info.plist */,
+				AA0000000000000000000117 /* InterviewAssistant.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000411 /* MockInterview */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000123 /* MockInterviewView.swift */,
+			);
+			path = MockInterview;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000000000000000000500 /* InterviewAssistant */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000801 /* Build configuration list for PBXNativeTarget "InterviewAssistant" */;
+			buildPhases = (
+				AA0000000000000000000600 /* Sources */,
+				AA0000000000000000000300 /* Frameworks */,
+				AA0000000000000000000601 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InterviewAssistant;
+			packageProductDependencies = (
+			);
+			productName = InterviewAssistant;
+			productReference = AA0000000000000000000200 /* InterviewAssistant.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000700 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					AA0000000000000000000500 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = AA0000000000000000000800 /* Build configuration list for PBXProject "InterviewAssistant" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AA0000000000000000000400;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AA0000000000000000000409 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000000000000000000500 /* InterviewAssistant */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA0000000000000000000601 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000016 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000001 /* InterviewAssistantApp.swift in Sources */,
+				AA0000000000000000000002 /* ContentView.swift in Sources */,
+				AA0000000000000000000003 /* Theme.swift in Sources */,
+				AA0000000000000000000004 /* Models.swift in Sources */,
+				AA0000000000000000000005 /* KeychainStore.swift in Sources */,
+				AA0000000000000000000006 /* AIService.swift in Sources */,
+				AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */,
+				AA0000000000000000000008 /* PDFImporter.swift in Sources */,
+				AA0000000000000000000009 /* URLFetcher.swift in Sources */,
+				AA0000000000000000000027 /* DocumentTextImporter.swift in Sources */,
+				AA0000000000000000000028 /* WebsiteResearchService.swift in Sources */,
+				AA000000000000000000000A /* TCPConnection.swift in Sources */,
+				AA0000000000000000000017 /* NetworkUtils.swift in Sources */,
+				AA000000000000000000000B /* SpeechEngine.swift in Sources */,
+				AA0000000000000000000029 /* VolcanoASREngine.swift in Sources */,
+				AA000000000000000000000C /* SystemAudioCapture.swift in Sources */,
+				AA000000000000000000000D /* ReceiverCoordinator.swift in Sources */,
+				AA000000000000000000000E /* PrompterOverlayView.swift in Sources */,
+				AA000000000000000000000F /* ReceiverContainerView.swift in Sources */,
+				AA0000000000000000000010 /* FloatingWindowController.swift in Sources */,
+				AA0000000000000000000022 /* ScreenshotCapture.swift in Sources */,
+				AA0000000000000000000023 /* LanguagePickerOverlay.swift in Sources */,
+				AA0000000000000000000024 /* CodeBlockView.swift in Sources */,
+				AA0000000000000000000011 /* SenderView.swift in Sources */,
+				AA0000000000000000000012 /* SetupView.swift in Sources */,
+				AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */,
+				AA0000000000000000000014 /* HistoryView.swift in Sources */,
+				AA0000000000000000000025 /* MockInterviewView.swift in Sources */,
+				AA0000000000000000000015 /* APIConfigView.swift in Sources */,
+				AA0000000000000000000020 /* SettingsView.swift in Sources */,
+				AA0000000000000000000021 /* HotkeyRecorderView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000900 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000901 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AA0000000000000000000902 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_DISPLAY_NAME = InterviewAssistant;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.interviewassistant;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000903 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_DISPLAY_NAME = InterviewAssistant;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.interviewassistant;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000000000000000000800 /* Build configuration list for PBXProject "InterviewAssistant" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000900 /* Debug */,
+				AA0000000000000000000901 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000801 /* Build configuration list for PBXNativeTarget "InterviewAssistant" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000902 /* Debug */,
+				AA0000000000000000000903 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = AA0000000000000000000700 /* Project object */;
+}
