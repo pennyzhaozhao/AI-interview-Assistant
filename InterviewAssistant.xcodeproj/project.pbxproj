@@ -11,6 +11,7 @@
 		AA0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000102 /* ContentView.swift */; };
 		AA0000000000000000000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000103 /* Theme.swift */; };
 		AA0000000000000000000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000104 /* Models.swift */; };
+		AA000000000000000000002A /* DataStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012A /* DataStorageManager.swift */; };
 		AA0000000000000000000005 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000105 /* KeychainStore.swift */; };
 		AA0000000000000000000006 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000106 /* AIService.swift */; };
 		AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000107 /* KnowledgeContextBuilder.swift */; };
@@ -46,6 +47,7 @@
 		AA0000000000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000103 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		AA0000000000000000000104 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AA000000000000000000012A /* DataStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStorageManager.swift; sourceTree = "<group>"; };
 		AA0000000000000000000105 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		AA0000000000000000000106 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		AA0000000000000000000107 /* KnowledgeContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeContextBuilder.swift; sourceTree = "<group>"; };
@@ -121,6 +123,7 @@
 			children = (
 				AA0000000000000000000103 /* Theme.swift */,
 				AA0000000000000000000104 /* Models.swift */,
+				AA000000000000000000012A /* DataStorageManager.swift */,
 				AA0000000000000000000105 /* KeychainStore.swift */,
 				AA0000000000000000000106 /* AIService.swift */,
 				AA0000000000000000000107 /* KnowledgeContextBuilder.swift */,
@@ -297,6 +300,7 @@
 				AA0000000000000000000002 /* ContentView.swift in Sources */,
 				AA0000000000000000000003 /* Theme.swift in Sources */,
 				AA0000000000000000000004 /* Models.swift in Sources */,
+				AA000000000000000000002A /* DataStorageManager.swift in Sources */,
 				AA0000000000000000000005 /* KeychainStore.swift in Sources */,
 				AA0000000000000000000006 /* AIService.swift in Sources */,
 				AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */,
@@ -443,7 +447,6 @@
 				APP_DISPLAY_NAME = InterviewAssistant;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -456,8 +459,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.interviewassistant;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
@@ -474,7 +477,6 @@
 				APP_DISPLAY_NAME = InterviewAssistant;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
@@ -487,8 +489,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.interviewassistant;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
@@ -521,7 +523,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = AA0000000000000000000700 /* Project object */;
 }

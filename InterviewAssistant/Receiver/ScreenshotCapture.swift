@@ -308,7 +308,7 @@ final class ScreenshotCapture: ObservableObject {
             let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
             return NSImage(cgImage: cgImage, size: rect.size)
         } catch {
-            captureError = "截图失败：\(error.localizedDescription)。如果 macOS 拒绝了当前版本，请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中启用 InterviewAssistant，然后完全退出并重新打开应用。"
+            captureError = String(format: L.t("Screenshot failed: %@. If macOS denied this version, enable InterviewAssistant in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app."), error.localizedDescription)
             return nil
         }
     }
@@ -327,7 +327,7 @@ final class ScreenshotCapture: ObservableObject {
             return true
         }
         hasScreenCapturePermission = false
-        captureError = "需要屏幕录制权限。请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许当前 InterviewAssistant Dev，然后完全退出并重新打开应用。"
+        captureError = L.t("Screen-recording permission is required. Allow InterviewAssistant in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app.")
         return false
     }
 
@@ -361,7 +361,7 @@ final class ScreenshotCapture: ObservableObject {
         }
 
         if let errorDescription = result.errorDescription {
-            captureError = "OCR 识别失败：\(errorDescription)"
+            captureError = String(format: L.t("OCR failed: %@"), errorDescription)
         }
         return result.text
     }
@@ -486,7 +486,7 @@ private final class RegionSelectionView: NSView {
             path.stroke()
         }
 
-        let text = "拖动选择截图区域  |  ESC 取消" as NSString
+        let text = L.t("Drag to select a screenshot region  |  ESC to cancel") as NSString
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.white,
             .font: NSFont.systemFont(ofSize: 16, weight: .medium)

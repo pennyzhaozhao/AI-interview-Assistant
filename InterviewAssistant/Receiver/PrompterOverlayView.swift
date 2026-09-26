@@ -162,7 +162,7 @@ struct PrompterOverlayView: View {
         } message: {
             Text(L.t("Please set a screenshot region in Settings before using preset region capture."))
         }
-        .alert("截图未完成", isPresented: captureErrorAlertBinding) {
+        .alert(L.t("Screenshot Incomplete"), isPresented: captureErrorAlertBinding) {
             if screenshotCapture.captureError?.contains("权限") == true {
                 Button(L.t("Open System Settings")) {
                     screenshotCapture.openScreenRecordingSettings()
@@ -417,7 +417,7 @@ struct PrompterOverlayView: View {
                 .frame(width: 34, height: 28)
         case .idle:
             if screenshotCapture.captureMode == .segmentDone, captureCount > 0 {
-                Text("获取\(captureCount)张截图")
+                Text(String(format: L.t("%d screenshots captured"), captureCount))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -430,7 +430,7 @@ struct PrompterOverlayView: View {
                 islandButton(systemImage: "checkmark", tint: Color(hex: "#65C889")) {
                     Task { await finishScreenshotAnalysis() }
                 }
-                islandIconButton(accessibilityLabel: "删除上一张截图") {
+                islandIconButton(accessibilityLabel: L.t("Delete Previous Screenshot")) {
                     DeleteCaptureIcon()
                         .frame(width: 8, height: 10)
                 } action: {
@@ -1682,7 +1682,7 @@ struct PrompterOverlayView: View {
         let previewImage = screenshotCapture.capturedImages.last
         let recognizedText = screenshotCapture.finishAndMerge().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !recognizedText.isEmpty else {
-            coordinator.aiText = "没有识别到清晰题目，可以重新截取更大的区域。"
+            coordinator.aiText = L.t("No clear question was recognized. Try capturing a larger region.")
             coordinator.confidence = 0.18
             screenshotCapture.resetMultiCapture()
             screenshotSubmissionState = .idle

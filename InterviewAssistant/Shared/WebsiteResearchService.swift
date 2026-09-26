@@ -16,7 +16,7 @@ enum WebsiteResearchService {
             throw NSError(
                 domain: "InterviewAssistant",
                 code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "没有从公司网站提取到可供分析的内容。"]
+                userInfo: [NSLocalizedDescriptionKey: L.t("No content suitable for analysis was extracted from the company website.")]
             )
         }
         return try await summarizeCompany(context: context, sourceURL: urlString, config: config)
@@ -101,7 +101,7 @@ enum WebsiteResearchService {
             throw NSError(
                 domain: "InterviewAssistant",
                 code: 4,
-                userInfo: [NSLocalizedDescriptionKey: "当前 AI 服务未返回公司资料。"]
+                userInfo: [NSLocalizedDescriptionKey: L.t("The current AI provider did not return company information.")]
             )
         }
         return result

@@ -179,19 +179,19 @@ final class ReceiverCoordinator {
                 volcanoSpeech.languageCode = effectiveSpeechLanguageCode
                 volcanoSpeech.audioSource = audioSource
                 volcanoSpeech.updateConfig(config)
-                volcanoSpeech.statusText = "正在启动豆包语音识别..."
+                volcanoSpeech.statusText = L.t("Starting Doubao speech recognition...")
                 didStart = await volcanoSpeech.start()
                 if !didStart {
                     let volcanoError = volcanoSpeech.lastErrorText.isEmpty ? volcanoSpeech.statusText : volcanoSpeech.lastErrorText
                     activeASRProvider = .apple
                     speech.languageCode = effectiveSpeechLanguageCode
                     speech.audioSource = audioSource
-                    speech.statusText = "豆包语音暂不可用，正在切换 Apple 本地识别..."
+                    speech.statusText = L.t("Doubao speech recognition is unavailable. Switching to Apple on-device recognition...")
                     didStart = await speech.start()
                     if didStart {
-                        speech.statusText = "🎙 Apple 本地识别中（豆包语音启动失败：\(volcanoError)）"
+                        speech.statusText = String(format: L.t("🎙 Using Apple on-device recognition (Doubao failed to start: %@)"), volcanoError)
                     } else {
-                        volcanoSpeech.statusText = volcanoError.isEmpty ? "豆包语音和 Apple 本地识别都未能启动" : volcanoError
+                        volcanoSpeech.statusText = volcanoError.isEmpty ? L.t("Neither Doubao nor Apple on-device speech recognition could start") : volcanoError
                     }
                 }
             }
@@ -217,7 +217,7 @@ final class ReceiverCoordinator {
     private func startAppleSpeech() async -> Bool {
         speech.languageCode = effectiveSpeechLanguageCode
         speech.audioSource = audioSource
-        speech.statusText = "正在启动..."
+        speech.statusText = L.t("Starting...")
         return await speech.start()
     }
 
@@ -434,7 +434,7 @@ final class ReceiverCoordinator {
         await askAI(
             question: prompt,
             displayQuestion: String(trimmed.prefix(240)),
-            historyQuestion: "[截图] \(String(trimmed.prefix(300)))",
+            historyQuestion: "[\(L.t("Screenshot"))] \(String(trimmed.prefix(300)))",
             requiresListeningAI: false,
             systemPromptOverride: systemPrompt,
             isApproachForPendingCode: false,
@@ -453,7 +453,7 @@ final class ReceiverCoordinator {
         isAwaitingCodeLanguage = false
         isGeneratingCode = true
         let existingAnswer = aiText.trimmingCharacters(in: .whitespacesAndNewlines)
-        aiText = "\(existingAnswer)\n\n代码生成中..."
+        aiText = "\(existingAnswer)\n\n\(L.t("Generating code..."))"
         let systemPrompt = KnowledgeContextBuilder.buildStructuredTechnicalSystemPrompt(
             context: session.context,
             knowledgeBases: knowledgeBases,
@@ -482,7 +482,7 @@ final class ReceiverCoordinator {
                     self.aiText = self.combinedAnswer(existing: existingAnswer, code: fullText, language: selectedLanguage)
                     self.confidence = self.estimatedConfidence(for: self.aiText)
                     self.lastUpdatedAt = .now
-                    let turn = ConversationTurn(question: "[代码] \(String(self.pendingCodeRawQuestion.prefix(200)))", answer: self.aiText, session: session)
+                    let turn = ConversationTurn(question: "[\(L.t("Code"))] \(String(self.pendingCodeRawQuestion.prefix(200)))", answer: self.aiText, session: session)
                     session.turns.append(turn)
                     modelContext.insert(turn)
                     try? modelContext.save()
@@ -491,7 +491,7 @@ final class ReceiverCoordinator {
                 }
             )
         } catch {
-            aiText = "\(existingAnswer)\n\n代码生成失败，请换一种语言或重试。"
+            aiText = "\(existingAnswer)\n\n\(L.t("Code generation failed. Try another language or try again."))"
             confidence = 0.18
             isGeneratingCode = false
         }
@@ -578,7 +578,7 @@ final class ReceiverCoordinator {
         } catch {
             if Task.isCancelled { return }
             aiText = configuredAnswerLanguageCode == "zh-CN"
-                ? "暂时无法生成建议。请稍后重试，或重新截取更清晰的题目区域。"
+                ? L.t("A suggestion could not be generated. Try again later or capture a clearer question region.")
                 : "I could not generate a suggestion yet. Please try again or capture a clearer question area."
             confidence = 0.18
             lastUpdatedAt = .now
@@ -702,7 +702,7 @@ final class ReceiverCoordinator {
             .replacingOccurrences(of: "```\(language)", with: "")
             .replacingOccurrences(of: "```", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(existing)\n\n代码:\n```\(language)\n\(trimmedCode)\n```"
+        return "\(existing)\n\n\(L.t("Code")):\n```\(language)\n\(trimmedCode)\n```"
     }
 
     private func estimatedConfidence(for answer: String) -> Double {

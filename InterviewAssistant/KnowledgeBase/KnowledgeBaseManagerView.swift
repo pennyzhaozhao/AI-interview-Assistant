@@ -368,7 +368,7 @@ struct KnowledgeBaseManagerView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .help(activeIDs.contains(kb.id) ? "关闭该知识库" : "开启该知识库")
+                    .help(activeIDs.contains(kb.id) ? L.t("Disable this knowledge base") : L.t("Enable this knowledge base"))
                     if !isSelectingBases {
                         Button {
                             confirmDelete(kb)
@@ -427,7 +427,17 @@ struct KnowledgeBaseManagerView: View {
             .clipShape(Capsule())
     }
 
+    @ViewBuilder
     private var detailView: some View {
+        if selected != nil {
+            detailContent
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var detailContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
@@ -482,7 +492,7 @@ struct KnowledgeBaseManagerView: View {
                             if !isCompact {
                                 Button(L.t("Import")) { importURL() }
                                     .buttonStyle(AppButtonStyle())
-                                Button("上传文件") { importingDocument = true }
+                                Button(L.t("Upload File")) { importingDocument = true }
                                     .buttonStyle(AppButtonStyle())
                             }
                         }
@@ -491,7 +501,7 @@ struct KnowledgeBaseManagerView: View {
                         HStack {
                             Button(L.t("Import Link")) { importURL() }
                                 .buttonStyle(AppButtonStyle())
-                            Button("上传文件") { importingDocument = true }
+                            Button(L.t("Upload File")) { importingDocument = true }
                                 .buttonStyle(AppButtonStyle())
                         }
                     }
@@ -925,7 +935,7 @@ struct KnowledgeBaseManagerView: View {
                         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !trimmed.isEmpty else {
                             try? FileManager.default.removeItem(at: tempURL)
-                            status = "文件已导入，但没有找到可读取的文本"
+                            status = L.t("File imported, but no readable text was found")
                             return
                         }
                         let entryID = UUID()
@@ -934,7 +944,7 @@ struct KnowledgeBaseManagerView: View {
                         selected.entries.append(KnowledgeEntry(id: entryID, title: safeName, content: trimmed, source: source, isEnabled: true, knowledgeBase: selected))
                         selected.updatedAt = .now
                         try? modelContext.save()
-                        status = "文件已导入"
+                        status = L.t("File imported")
                         try? FileManager.default.removeItem(at: tempURL)
                     }
                 } catch {

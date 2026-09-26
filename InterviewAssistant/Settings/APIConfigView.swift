@@ -46,7 +46,7 @@ struct APIConfigView: View {
             Text(L.t("API Configure"))
                 .font(.appTitleCompact)
                 .foregroundStyle(Color.appText)
-            Text("语音识别与 LLM 分开配置。所有凭证只保存在本机钥匙串，请求直接发送给对应服务商。")
+            Text(L.t("Configure speech recognition and the LLM separately. Credentials stay in the local Keychain, and requests go directly to the selected provider."))
                 .font(.appCaption)
                 .foregroundStyle(Color.appMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -55,11 +55,11 @@ struct APIConfigView: View {
 
     private var speechRecognitionSection: some View {
         configCard(
-            title: "语音识别",
-            subtitle: "用于实时识别面试官语音。豆包语音识别使用 App ID 与 Access Token；Apple 本地识别无需凭证。"
+            title: L.t("Speech Recognition"),
+            subtitle: L.t("Used to transcribe the interviewer in real time. Doubao requires an App ID and Access Token; Apple on-device recognition requires no credentials.")
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                configRow(title: "识别引擎") {
+                configRow(title: L.t("Recognition Engine")) {
                     PremiumMenuPicker(
                         selection: $asrProviderRaw,
                         options: ASRProvider.allCases.map { ($0.rawValue, $0.settingsTitle) },
@@ -74,7 +74,7 @@ struct APIConfigView: View {
                         Text("App ID")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.appMuted)
-                        TextField("从豆包语音控制台的应用信息中获取", text: $asrAppID)
+                        TextField(L.t("Get this from the app details in the Doubao Voice console"), text: $asrAppID)
                             .textFieldStyle(.plain)
                             .darkField()
                     }
@@ -83,35 +83,35 @@ struct APIConfigView: View {
                         Text("Access Token")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.appMuted)
-                        SecureField("从豆包语音控制台的应用信息中获取", text: $asrAccessToken)
+                        SecureField(L.t("Get this from the app details in the Doubao Voice console"), text: $asrAccessToken)
                             .textFieldStyle(.plain)
                             .darkField()
                     }
 
-                    configRow(title: "识别模型") {
+                    configRow(title: L.t("Recognition Model")) {
                         PremiumMenuPicker(
                             selection: $asrResourceID,
                             options: [
-                                ("volc.seedasr.sauc.duration", "豆包流式语音 2.0 · 小时版"),
-                                ("volc.seedasr.sauc.concurrent", "豆包流式语音 2.0 · 并发版"),
-                                ("volc.bigasr.sauc.duration", "流式语音 1.0 · 小时版")
+                                ("volc.seedasr.sauc.duration", L.t("Doubao Streaming Speech 2.0 · Hourly")),
+                                ("volc.seedasr.sauc.concurrent", L.t("Doubao Streaming Speech 2.0 · Concurrent")),
+                                ("volc.bigasr.sauc.duration", L.t("Streaming Speech 1.0 · Hourly"))
                             ],
                             minWidth: isCompact ? 220 : 320
                         )
                     }
 
-                    Text("推荐选择 2.0 小时版。请先在豆包语音控制台创建应用并开通对应模型，然后复制该应用的 App ID 和 Access Token。")
+                    Text(L.t("The 2.0 hourly plan is recommended. Create an app in the Doubao Voice console, enable the matching model, then copy its App ID and Access Token."))
                         .font(.appSmall)
                         .foregroundStyle(Color.appMuted)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Link("查看豆包双向流式语音识别文档", destination: URL(string: "https://docs.volcengine.com/docs/DoubaoVoice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh")!)
+                    Link(L.t("View Doubao streaming speech documentation"), destination: URL(string: "https://docs.volcengine.com/docs/DoubaoVoice/bidirectional-streaming-automatic-speech-recognition-websocket?lang=zh")!)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.appPrimary)
                 }
 
                 HStack(spacing: 12) {
-                    Button(isTestingASR ? "正在测试..." : "测试连接") {
+                    Button(isTestingASR ? L.t("Testing...") : L.t("Test Connection")) {
                         Task { await testASRConnection() }
                     }
                     .buttonStyle(AppButtonStyle())
@@ -181,15 +181,15 @@ struct APIConfigView: View {
     }
 
     private var connectionSection: some View {
-        configCard(title: L.t("Connection"), subtitle: "API Key 只保存在本机钥匙串，不会上传到 InterviewAssistant 服务。Ollama 通常无需 Key。") {
+        configCard(title: L.t("Connection"), subtitle: L.t("The API key stays in the local Keychain and is never uploaded to an InterviewAssistant service. Ollama usually needs no key.")) {
             VStack(alignment: .leading, spacing: 14) {
                 TextField(apiURLPlaceholder, text: $apiURL)
                     .textFieldStyle(.plain)
                     .darkField()
-                SecureField("API Key（Ollama 可留空）", text: $apiKey)
+                SecureField(L.t("API Key (optional for Ollama)"), text: $apiKey)
                     .textFieldStyle(.plain)
                     .darkField()
-                Text("直接连接：\(provider.label)")
+                Text("\(L.t("Direct connection")): \(provider.label)")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.appMuted)
                     .padding(12)
@@ -198,7 +198,7 @@ struct APIConfigView: View {
                     .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
 
                 HStack(spacing: 12) {
-                    Button("测试连接") {
+                    Button(L.t("Test Connection")) {
                         Task { await testConnection() }
                     }
                     .buttonStyle(AppButtonStyle())
@@ -402,7 +402,7 @@ struct APIConfigView: View {
         do {
             let config = AIService.config(from: modelContext)
             _ = try await AIService.callAIModel(config: config, systemPrompt: "Reply with the single word OK.", question: "Connection test", maxTokens: 64)
-            connectionTestResult = "✅ 连接成功：已直接连接到 \(provider.label)"
+            connectionTestResult = String(format: L.t("✅ Connection successful: connected directly to %@"), provider.label)
         } catch {
             connectionTestResult = "\(L.t("Connection failed")): \(error.localizedDescription)"
         }
@@ -438,8 +438,8 @@ struct APIConfigView: View {
         if asrProviderRaw == ASRProvider.apple.rawValue {
             let granted = await SpeechEngine().requestPermissions()
             asrConnectionTestResult = granted
-                ? "✅ Apple 本地语音识别可以使用。"
-                : "需要先在系统设置中允许麦克风和语音识别权限。"
+                ? L.t("✅ Apple on-device speech recognition is available.")
+                : L.t("Allow microphone and speech-recognition access in System Settings first.")
             return
         }
 

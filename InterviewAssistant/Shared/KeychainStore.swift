@@ -44,7 +44,7 @@ enum KeychainStore {
         return NSError(
             domain: NSOSStatusErrorDomain,
             code: Int(status),
-            userInfo: [NSLocalizedDescriptionKey: "无法保存凭证：\(message) (\(status))"]
+            userInfo: [NSLocalizedDescriptionKey: String(format: L.t("Unable to save credentials: %@ (%d)"), message, status)]
         )
     }
 }

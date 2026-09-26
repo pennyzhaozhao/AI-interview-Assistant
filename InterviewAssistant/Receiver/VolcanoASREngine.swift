@@ -12,18 +12,18 @@ enum ASRProvider: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .apple:
-            return "Apple 本地识别"
+            return L.t("Apple On-Device Recognition")
         case .volcano:
-            return "豆包语音识别 2.0"
+            return L.t("Doubao Speech Recognition 2.0")
         }
     }
 
     var settingsTitle: String {
         switch self {
         case .apple:
-            return "Apple 本地识别"
+            return L.t("Apple On-Device Recognition")
         case .volcano:
-            return "豆包语音识别 2.0"
+            return L.t("Doubao Speech Recognition 2.0")
         }
     }
 }
@@ -139,7 +139,7 @@ final class VolcanoASREngine {
     func connect() async -> Bool {
         guard !isConnected else { return true }
         guard let config else {
-            statusText = "请先在 API 配置中填写豆包语音 App ID 和 Access Token"
+            statusText = L.t("Enter the Doubao Voice App ID and Access Token in API settings first")
             lastErrorText = statusText
             return false
         }
@@ -151,7 +151,7 @@ final class VolcanoASREngine {
         do {
             request = try await Self.makeAuthenticatedRequest(config: config, sessionID: sessionID)
         } catch {
-            statusText = "豆包语音连接失败: \(error.localizedDescription)"
+            statusText = String(format: L.t("Doubao Voice connection failed: %@"), error.localizedDescription)
             lastErrorText = statusText
             return false
         }
@@ -170,7 +170,7 @@ final class VolcanoASREngine {
 
         Task {
             try? await Task.sleep(for: .seconds(10))
-            await openGate.resolve(.failed("连接超时"))
+            await openGate.resolve(.failed(L.t("Connection timed out")))
         }
         let openResult = await openGate.wait()
         guard case .opened = openResult else {
@@ -178,7 +178,7 @@ final class VolcanoASREngine {
             if case .failed(let message) = openResult {
                 detail = message
             } else {
-                detail = "未知握手错误"
+                detail = L.t("Unknown handshake error")
             }
             lastErrorText = Self.handshakeFailureMessage(detail: detail, resourceID: config.resourceID)
             disconnect(clearStatus: false)
@@ -188,7 +188,7 @@ final class VolcanoASREngine {
 
         let sendResult = await sendFullClientRequest(config: config)
         guard sendResult.success else {
-            lastErrorText = "火山 ASR 连接失败: \(sendResult.message)"
+            lastErrorText = String(format: L.t("Volcano ASR connection failed: %@"), sendResult.message)
             disconnect(clearStatus: false)
             statusText = lastErrorText
             return false
@@ -196,7 +196,7 @@ final class VolcanoASREngine {
 
         lastErrorText = ""
         isConnected = true
-        statusText = "🔗 豆包语音已连接"
+        statusText = L.t("🔗 Doubao Voice connected")
         receiveLoop()
         return true
     }
@@ -232,7 +232,7 @@ final class VolcanoASREngine {
 
     private func startMicrophoneCapture() async -> Bool {
         guard await Self.requestMicrophonePermission() else {
-            statusText = "需要麦克风权限"
+            statusText = L.t("Microphone permission required")
             return false
         }
 
@@ -254,7 +254,7 @@ final class VolcanoASREngine {
                     cont.resume(returning: .failure(NSError(
                         domain: "InterviewAssistant.Audio",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "当前麦克风设备没有可用的音频输入，请检查 Zoom/Teams 与系统声音设置中的输入设备。"]
+                        userInfo: [NSLocalizedDescriptionKey: L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")]
                     )))
                     return
                 }
@@ -281,7 +281,7 @@ final class VolcanoASREngine {
         case .success:
             isListening = true
             installAudioConfigurationObserver()
-            statusText = "🎙 豆包语音监听中..."
+            statusText = L.t("🎙 Listening with Doubao Voice...")
             return true
         case .failure(let error):
             statusText = "❌ \(error.localizedDescription)"
@@ -303,10 +303,10 @@ final class VolcanoASREngine {
                       self.isListening,
                       self.audioSource == .system else { return }
                 self.systemAudioCapture = nil
-                self.statusText = "⚠️ 系统音频通道已变化，正在重新连接…"
+                self.statusText = L.t("⚠️ The system-audio route changed. Reconnecting…")
                 try? await Task.sleep(for: .milliseconds(350))
                 if !(await self.startSystemAudioCapture()) {
-                    self.lastErrorText = "系统音频捕获中断：\(error.localizedDescription)"
+                    self.lastErrorText = String(format: L.t("System-audio capture was interrupted: %@"), error.localizedDescription)
                 }
             }
         }
@@ -314,15 +314,15 @@ final class VolcanoASREngine {
         do {
             try await capture.start()
             isListening = true
-            statusText = "🔊 豆包语音系统声音监听中..."
+            statusText = L.t("🔊 Listening to system audio with Doubao Voice...")
             return true
         } catch {
             systemAudioCapture = nil
-            statusText = "❌ 无法捕获系统音频: \(error.localizedDescription)"
+            statusText = String(format: L.t("❌ Unable to capture system audio: %@"), error.localizedDescription)
             return false
         }
         #else
-        statusText = "系统声音仅支持 macOS"
+        statusText = L.t("System audio is available only on macOS")
         return false
         #endif
     }
@@ -344,7 +344,7 @@ final class VolcanoASREngine {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isListening, self.audioSource == .microphone else { return }
-                self.statusText = "⚠️ 麦克风设备已变化，正在重新连接…"
+                self.statusText = L.t("⚠️ The microphone changed. Reconnecting…")
                 self.stopMicrophoneEngineOnly()
                 try? await Task.sleep(for: .milliseconds(300))
                 _ = await self.startMicrophoneCapture()
@@ -378,7 +378,7 @@ final class VolcanoASREngine {
         }
         isSpeaking = false
         silenceChunks = 0
-        statusText = "🔍 识别中..."
+        statusText = L.t("🔍 Transcribing...")
     }
 
     private func sendFullClientRequest(config: Config) async -> (success: Bool, message: String) {
@@ -418,7 +418,7 @@ final class VolcanoASREngine {
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else {
-            return (false, "无法编码初始化请求")
+            return (false, L.t("Unable to encode the initialization request"))
         }
         let compressedPayload = Self.compressed(data)
         sequenceNumber += 1
@@ -507,7 +507,7 @@ final class VolcanoASREngine {
                     self.lastErrorText = error.localizedDescription
                     self.isConnected = false
                     self.isListening = false
-                    self.statusText = "⚠️ 豆包语音连接断开: \(error.localizedDescription)"
+                    self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
                     self.stopAudioEngine()
                 }
             }
@@ -556,15 +556,15 @@ final class VolcanoASREngine {
         let decodedPayload = responseCompression == gzipCompression ? Self.decompressed(payload) : payload
 
         guard let rootJSON = try? JSONSerialization.jsonObject(with: decodedPayload) as? [String: Any] else {
-            statusText = "火山 ASR 返回无法解析"
+            statusText = L.t("The Volcano ASR response could not be parsed")
             return
         }
 
         if let code = Self.integerValue(rootJSON["code"]), code != 0 {
             let message = (rootJSON["message"] as? String)
                 ?? (rootJSON["msg"] as? String)
-                ?? "服务端返回未知错误"
-            lastErrorText = "豆包语音 \(code): \(message)"
+                ?? L.t("The server returned an unknown error")
+            lastErrorText = String(format: L.t("Doubao Voice %d: %@"), code, message)
             statusText = lastErrorText
             return
         }
@@ -596,7 +596,7 @@ final class VolcanoASREngine {
                     hasSentAudio = false
                     silenceChunks = 0
                     onRecognizedText?(utteranceText)
-                    statusText = isListening ? "🎙 豆包语音监听中..." : ""
+                    statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
                 }
             }
         }
@@ -621,7 +621,7 @@ final class VolcanoASREngine {
             if !remainingText.isEmpty {
                 onRecognizedText?(remainingText)
             }
-            statusText = isListening ? "🎙 豆包语音监听中..." : ""
+            statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
         } else if !text.isEmpty {
             partialText = text
             statusText = "💬 \(String(text.prefix(30)))..."
@@ -633,13 +633,13 @@ final class VolcanoASREngine {
         let code = UInt32(bitPattern: Self.int32BigEndian(in: data, offset: 4))
         let size = Int(Self.int32BigEndian(in: data, offset: 8))
         guard size > 0, data.count >= 12 + size else {
-            lastErrorText = "火山 ASR 错误: \(code)"
+            lastErrorText = String(format: L.t("Volcano ASR error: %d"), code)
             statusText = lastErrorText
             return
         }
         let messageData = data.subdata(in: 12..<(12 + size))
         let message = String(data: messageData, encoding: .utf8) ?? "\(messageData.count) bytes"
-        lastErrorText = "火山 ASR 错误 \(code): \(message)"
+        lastErrorText = String(format: L.t("Volcano ASR error %d: %@"), code, message)
         statusText = lastErrorText
     }
 
@@ -695,7 +695,7 @@ final class VolcanoASREngine {
         if isVoiceDetected {
             if !isSpeaking {
                 isSpeaking = true
-                statusText = audioSource == .system ? "🔴 豆包语音正在识别系统声音..." : "🔴 豆包语音录音中..."
+                statusText = audioSource == .system ? L.t("🔴 Doubao Voice is transcribing system audio...") : L.t("🔴 Recording with Doubao Voice...")
             }
             silenceChunks = 0
         } else if isSpeaking {
@@ -708,11 +708,11 @@ final class VolcanoASREngine {
                 // VAD (end_window_size) finalizes the sentence on this same stream.
                 isSpeaking = false
                 silenceChunks = 0
-                statusText = "🔍 识别中..."
+                statusText = L.t("🔍 Transcribing...")
             }
         } else if isListening {
             learnNoiseFloor(from: rms)
-            statusText = audioSource == .system ? "🔊 豆包语音系统声音监听中..." : "🎙 豆包语音监听中..."
+            statusText = audioSource == .system ? L.t("🔊 Listening to system audio with Doubao Voice...") : L.t("🎙 Listening with Doubao Voice...")
         }
     }
 
@@ -766,14 +766,14 @@ final class VolcanoASREngine {
             throw NSError(
                 domain: "InterviewAssistant",
                 code: 401,
-                userInfo: [NSLocalizedDescriptionKey: "请填写豆包语音 App ID 和 Access Token。"]
+                userInfo: [NSLocalizedDescriptionKey: L.t("Enter the Doubao Voice App ID and Access Token.")]
             )
         }
         guard let url = URL(string: "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async") else {
             throw NSError(
                 domain: "InterviewAssistant",
                 code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "豆包语音接口地址无效。"]
+                userInfo: [NSLocalizedDescriptionKey: L.t("The Doubao Voice endpoint is invalid.")]
             )
         }
         var request = URLRequest(url: url)
@@ -789,7 +789,7 @@ final class VolcanoASREngine {
 
     static func testConnection(config: Config) async -> String {
         guard config.isComplete else {
-            return "请先填写豆包语音 App ID 和 Access Token。"
+            return L.t("Enter the Doubao Voice App ID and Access Token first.")
         }
         let engine = VolcanoASREngine(config: config)
         let didConnect = await engine.connect()
@@ -800,14 +800,14 @@ final class VolcanoASREngine {
         let isConnected = engine.isConnected
         engine.disconnect()
         if didConnect, isConnected, error.isEmpty {
-            return "✅ 豆包语音连接成功。"
+            return L.t("✅ Doubao Voice connection successful.")
         }
-        return error.isEmpty ? "豆包语音连接失败，请检查 App ID、Access Token 和模型权限。" : error
+        return error.isEmpty ? L.t("Doubao Voice connection failed. Check the App ID, Access Token, and model access.") : error
     }
 
     private static func handshakeFailureMessage(detail: String, resourceID: String) -> String {
-        let plan = resourceID.hasSuffix(".concurrent") ? "并发版" : "小时版"
-        return "豆包语音握手失败（\(detail)）。当前选择的是\(plan)，请确认控制台为这个 App ID 开通了相同版本，并检查 Access Token 是否属于同一个应用。"
+        let plan = resourceID.hasSuffix(".concurrent") ? L.t("concurrent plan") : L.t("hourly plan")
+        return String(format: L.t("Doubao Voice handshake failed (%@). The selected plan is %@. Confirm that the same plan is enabled for this App ID and that the Access Token belongs to the same app."), detail, plan)
     }
 
     private nonisolated static func convertToPCM16Mono(_ buffer: AVAudioPCMBuffer, sampleRate: Double) -> Data? {
@@ -993,8 +993,8 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
     ) {
         let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) }
         let message = reasonText?.isEmpty == false
-            ? "服务端关闭连接：\(reasonText!)"
-            : "服务端关闭连接（\(closeCode.rawValue)）"
+            ? String(format: L.t("The server closed the connection: %@"), reasonText!)
+            : String(format: L.t("The server closed the connection (%d)"), closeCode.rawValue)
         Task { await gate.resolve(.failed(message)) }
     }
 

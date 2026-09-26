@@ -1,13 +1,24 @@
 import SwiftUI
+import SwiftData
+import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - Settings Hub
 
 struct SettingsView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(AppPreferenceKey.themeMode) private var themeMode = AppThemeMode.dark.rawValue
     @AppStorage(AppPreferenceKey.language) private var language = AppLanguage.english.rawValue
     @AppStorage(AppPreferenceKey.mockInterviewLanguage) private var mockInterviewLanguageRaw = MockInterviewLanguage.followApp.rawValue
     @AppStorage(AppPreferenceKey.interviewerLanguage) private var interviewerLanguageRaw = MockInterviewLanguage.followApp.rawValue
+    @State private var showingStoragePicker = false
+    @State private var showingClearDataConfirmation = false
+    @State private var showingStorageMessage = false
+    @State private var storageMessage = ""
+    @State private var storageRefreshID = UUID()
     #if os(macOS)
     @AppStorage(AppPreferenceKey.screenshotHotkey) private var screenshotHotkey = HotkeyManager.screenshotDefaultHotkey
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
@@ -21,7 +32,6 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    localModeHeader
                     settingsGroups
                 }
                 .padding(.horizontal, 20)
@@ -37,33 +47,36 @@ struct SettingsView: View {
             #endif
             .animation(.easeInOut(duration: 0.48), value: themeMode)
             .id(language)
-        }
-    }
-
-    private var localModeHeader: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 28))
-                .foregroundStyle(Color.appPrimary)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("本地优先模式")
-                    .font(.system(size: 22, weight: .semibold))
-                Text("无需账户。历史记录、知识库、设置和 API Key 均保存在本机。")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.appMuted)
+            .fileImporter(
+                isPresented: $showingStoragePicker,
+                allowedContentTypes: [.folder],
+                allowsMultipleSelection: false,
+                onCompletion: handleStorageFolderSelection
+            )
+            .alert(L.t("Clear Local Data"), isPresented: $showingClearDataConfirmation) {
+                Button(L.t("Cancel"), role: .cancel) {}
+                Button(L.t("Clear All Data"), role: .destructive) {
+                    clearAllUserData()
+                }
+            } message: {
+                Text(L.t("This permanently deletes all interview history, knowledge bases, and saved screenshots. API keys and app preferences are not affected."))
             }
-            Spacer()
+            .alert(L.t("Data Storage"), isPresented: $showingStorageMessage) {
+                Button(L.t("OK"), role: .cancel) {}
+            } message: {
+                Text(storageMessage)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 24)
-        .padding(.horizontal, 22)
-        .background(cardBackground(radius: 24))
     }
 
     private var settingsGroups: some View {
         VStack(alignment: .leading, spacing: 22) {
             settingsSection(L.t("Appearance")) {
                 preferenceCard
+            }
+
+            settingsSection(L.t("Data Storage")) {
+                dataStorageCard
             }
 
             settingsSection(L.t("AI")) {
@@ -87,7 +100,7 @@ struct SettingsView: View {
                     NavigationLink {
                         APIConfigView()
                     } label: {
-                        Label("API 配置", systemImage: "key.horizontal")
+                        Label(L.t("API Configure"), systemImage: "key.horizontal")
                     }
                     .buttonStyle(AppButtonStyle())
 
@@ -102,11 +115,11 @@ struct SettingsView: View {
                         )
                     }
                     screenshotModeCard
-                    preferenceCardRow(title: "屏幕共享时隐藏提示板", icon: "eye.slash.fill", tint: Color.appYellow) {
+                    preferenceCardRow(title: L.t("Hide Prompter During Screen Sharing"), icon: "eye.slash.fill", tint: Color.appYellow) {
                         Toggle("", isOn: $hiddenFromScreenCapture)
                             .labelsHidden()
                             .toggleStyle(.switch)
-                            .help("开启后，提示板不会出现在截图或屏幕共享画面中。")
+                            .help(L.t("When enabled, the prompter is hidden from screenshots and screen sharing."))
                     }
                     preferenceCardRow(title: L.t("Hide Dock During Interview"), icon: "dock.rectangle", tint: Color.appMuted) {
                         Toggle("", isOn: $hideDockIcon)
@@ -128,6 +141,80 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var dataStorageCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                iconTile("externaldrive.fill", tint: Color.appPrimary)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L.t("Storage Location"))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.appText)
+                    Text(L.t("Interview history, knowledge bases, and screenshots are stored together in this folder."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.appMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(DataStorageManager.currentLocationDescription)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.appText)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                        .id(storageRefreshID)
+                }
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: 10) {
+                Button(L.t("Choose Folder")) {
+                    showingStoragePicker = true
+                }
+                .buttonStyle(AppButtonStyle(prominent: true))
+
+                #if os(macOS)
+                Button(L.t("Open Folder")) {
+                    NSWorkspace.shared.open(DataStorageManager.currentStoreURL.deletingLastPathComponent())
+                }
+                .buttonStyle(AppButtonStyle())
+                #endif
+
+                Spacer()
+
+                Button(L.t("Clear All Data"), role: .destructive) {
+                    showingClearDataConfirmation = true
+                }
+                .buttonStyle(AppButtonStyle())
+            }
+
+            Text(L.t("Changing the location copies your existing data safely. Restart the app once to begin using the new folder; the previous database is removed after the new copy is available."))
+                .font(.system(size: 11))
+                .foregroundStyle(Color.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .background(cardBackground(radius: 20))
+    }
+
+    private func handleStorageFolderSelection(_ result: Result<[URL], Error>) {
+        do {
+            guard let folder = try result.get().first else { return }
+            try DataStorageManager.migrateData(from: modelContext, to: folder)
+            storageRefreshID = UUID()
+            storageMessage = L.t("Your data was copied successfully. Quit and reopen InterviewAssistant to use the new storage location.")
+        } catch {
+            storageMessage = String(format: L.t("Could not change the storage location: %@"), error.localizedDescription)
+        }
+        showingStorageMessage = true
+    }
+
+    private func clearAllUserData() {
+        do {
+            try DataStorageManager.deleteUserContent(in: modelContext)
+            storageMessage = L.t("Interview history, knowledge bases, and screenshots were deleted.")
+        } catch {
+            storageMessage = String(format: L.t("Could not clear local data: %@"), error.localizedDescription)
+        }
+        showingStorageMessage = true
     }
 
     private var preferenceCard: some View {
@@ -209,14 +296,14 @@ struct SettingsView: View {
 
             HStack(spacing: 10) {
                 Label(
-                    screenshotCapture.hasScreenCapturePermission ? "屏幕录制权限已开启" : "尚未获得屏幕录制权限",
+                    screenshotCapture.hasScreenCapturePermission ? L.t("Screen Recording Permission Granted") : L.t("Screen Recording Permission Not Granted"),
                     systemImage: screenshotCapture.hasScreenCapturePermission ? "checkmark.shield.fill" : "exclamationmark.shield.fill"
                 )
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(screenshotCapture.hasScreenCapturePermission ? Color.appGreen : Color.appYellow)
                 Spacer()
                 if !screenshotCapture.hasScreenCapturePermission {
-                    Button("请求权限") {
+                    Button(L.t("Request Permission")) {
                         Task {
                             if !(await screenshotCapture.requestScreenCapturePermissionIfNeeded()) {
                                 screenshotCapture.openScreenRecordingSettings()
@@ -447,7 +534,7 @@ struct AboutView: View {
                     infoRow(L.t("Version"), value: appVersion)
                     infoRow(L.t("Build"), value: buildNumber)
                     infoRow(L.t("Platform"), value: "iOS · macOS")
-                    infoRow("Storage", value: "Local only")
+                    infoRow(L.t("Storage"), value: L.t("Local only"))
                 }
                 .padding(18)
                 .background(cardBackground(radius: 20))

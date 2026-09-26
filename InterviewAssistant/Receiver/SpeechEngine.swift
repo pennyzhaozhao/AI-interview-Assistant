@@ -85,7 +85,7 @@ final class SpeechEngine {
     private let maxSegmentSeconds = 30.0
 
     private var idleStatus: String {
-        audioSource == .system ? "🔊 系统声音监听中..." : "🎙 监听中..."
+        audioSource == .system ? L.t("🔊 Listening to system audio...") : L.t("🎙 Listening...")
     }
 
     init() {
@@ -124,7 +124,7 @@ final class SpeechEngine {
     func start() async -> Bool {
         guard !isListening else { return true }
         guard await requestPermissions() else {
-            statusText = "需要麦克风和语音识别权限"
+            statusText = L.t("Microphone and speech-recognition permission required")
             return false
         }
 
@@ -149,17 +149,17 @@ final class SpeechEngine {
             do {
                 try await capture.start()
                 isListening = true
-                statusText = "🔊 系统声音监听中..."
+                statusText = L.t("🔊 Listening to system audio...")
                 return true
             } catch {
                 systemAudioCapture = nil
-                statusText = "❌ 无法捕获系统音频: \(error.localizedDescription)"
+                statusText = String(format: L.t("❌ Unable to capture system audio: %@"), error.localizedDescription)
                 return false
             }
         }
         #else
         if audioSource == .system {
-            statusText = "系统声音仅支持 macOS"
+            statusText = L.t("System audio is available only on macOS")
             return false
         }
         #endif
@@ -189,7 +189,7 @@ final class SpeechEngine {
         switch startResult {
         case .success:
             isListening = true
-            statusText = "🎙 监听中..."
+            statusText = L.t("🎙 Listening...")
             return true
         case .failure(let error):
             statusText = "❌ \(error.localizedDescription)"
@@ -264,7 +264,7 @@ final class SpeechEngine {
                 isSpeaking = true
                 silenceSeconds = 0
                 peakSpeechRMS = rms
-                statusText = "🔴 录音中..."
+                statusText = L.t("🔴 Recording...")
             } else if consecutiveVoiceSeconds >= resumeSpeechSeconds {
                 // Only reset silence window after sustained voice.
                 // This prevents a single echo / cough / keyboard click from resetting
@@ -319,7 +319,7 @@ final class SpeechEngine {
         let buffers = speechBuffer
         let lang = languageCode
         resetVAD()
-        statusText = "🔍 识别中..."
+        statusText = L.t("🔍 Transcribing...")
         Task { @MainActor in
             let text = await Self.recognize(buffers: buffers, languageCode: lang)
             if let text, text.trimmingCharacters(in: .whitespacesAndNewlines).count > 1 {

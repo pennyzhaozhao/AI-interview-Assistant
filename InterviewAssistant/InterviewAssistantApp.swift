@@ -13,15 +13,11 @@ struct InterviewAssistantApp: App {
     #endif
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            KnowledgeBase.self,
-            KnowledgeEntry.self,
-            InterviewSession.self,
-            ConversationTurn.self,
-            AppSetting.self
-        ])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-        return try! ModelContainer(for: schema, configurations: [configuration])
+        do {
+            return try DataStorageManager.makeModelContainer()
+        } catch {
+            fatalError("Unable to open the local data store: \(error.localizedDescription)")
+        }
     }()
 
     init() {

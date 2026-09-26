@@ -25,7 +25,7 @@ struct ReceiverContainerView: View {
             .sheet(isPresented: $showHistory) {
                 ZStack(alignment: .topTrailing) {
                     HistoryView()
-                    Button("Done") {
+                    Button(L.t("Done")) {
                         showHistory = false
                     }
                     .font(.appCaptionMedium)

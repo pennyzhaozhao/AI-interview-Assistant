@@ -65,9 +65,9 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
         case screenRecordingPermissionDenied(underlying: Error)
         var errorDescription: String? {
             switch self {
-            case .noDisplay: return "未找到显示器，无法捕获系统音频"
+            case .noDisplay: return L.t("No display was found, so system audio cannot be captured.")
             case .screenRecordingPermissionDenied(let underlying):
-                return "InterviewAssistant 没有屏幕与系统音频录制权限，或 macOS 拒绝了当前捕获请求：\(underlying.localizedDescription)。请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中启用当前版本，然后完全退出并重新打开应用。"
+                return String(format: L.t("InterviewAssistant does not have Screen & System Audio Recording access, or macOS denied the request: %@. Enable the current version in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app."), underlying.localizedDescription)
             }
         }
     }

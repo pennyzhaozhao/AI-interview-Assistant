@@ -5,7 +5,7 @@ struct SenderView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(AppPreferenceKey.language) private var language = AppLanguage.english.rawValue
     @State private var server = TCPLineServer()
-    @State private var localIP = "检测中..."
+    @State private var localIP = L.t("Detecting...")
     @State private var allAddresses: [LocalNetworkInfo.Address] = []
     @State private var text = ""
     @State private var sentHistory: [SentHistoryItem] = []
