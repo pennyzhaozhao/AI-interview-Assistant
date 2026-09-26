@@ -11,7 +11,6 @@
 		AA0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000102 /* ContentView.swift */; };
 		AA0000000000000000000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000103 /* Theme.swift */; };
 		AA0000000000000000000004 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000104 /* Models.swift */; };
-		AA000000000000000000002A /* DataStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012A /* DataStorageManager.swift */; };
 		AA0000000000000000000005 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000105 /* KeychainStore.swift */; };
 		AA0000000000000000000006 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000106 /* AIService.swift */; };
 		AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000107 /* KnowledgeContextBuilder.swift */; };
@@ -40,6 +39,7 @@
 		AA0000000000000000000027 /* DocumentTextImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000125 /* DocumentTextImporter.swift */; };
 		AA0000000000000000000028 /* WebsiteResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000126 /* WebsiteResearchService.swift */; };
 		AA0000000000000000000029 /* VolcanoASREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000127 /* VolcanoASREngine.swift */; };
+		AA000000000000000000002A /* DataStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012A /* DataStorageManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,7 +47,6 @@
 		AA0000000000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000103 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		AA0000000000000000000104 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		AA000000000000000000012A /* DataStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStorageManager.swift; sourceTree = "<group>"; };
 		AA0000000000000000000105 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		AA0000000000000000000106 /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		AA0000000000000000000107 /* KnowledgeContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeContextBuilder.swift; sourceTree = "<group>"; };
@@ -78,6 +77,7 @@
 		AA0000000000000000000125 /* DocumentTextImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentTextImporter.swift; sourceTree = "<group>"; };
 		AA0000000000000000000126 /* WebsiteResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteResearchService.swift; sourceTree = "<group>"; };
 		AA0000000000000000000127 /* VolcanoASREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolcanoASREngine.swift; sourceTree = "<group>"; };
+		AA000000000000000000012A /* DataStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStorageManager.swift; sourceTree = "<group>"; };
 		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -451,7 +451,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = YJHNV22T7N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
@@ -481,7 +481,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = YJHNV22T7N;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
