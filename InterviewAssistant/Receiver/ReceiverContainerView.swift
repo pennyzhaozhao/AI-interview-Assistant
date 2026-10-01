@@ -5,13 +5,27 @@ struct ReceiverContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query private var knowledgeBases: [KnowledgeBase]
-    @State private var coordinator = ReceiverCoordinator()
+    @State private var coordinator: ReceiverCoordinator
     @State private var showKB = false
     @State private var showHistory = false
     let session: InterviewSession
     let host: String
     var initialMode: DirectorMode = .ai
     var closeWindow: (() -> Void)?
+
+    init(
+        session: InterviewSession,
+        host: String,
+        initialMode: DirectorMode = .ai,
+        directorServer: TCPLineServer? = nil,
+        closeWindow: (() -> Void)? = nil
+    ) {
+        self.session = session
+        self.host = host
+        self.initialMode = initialMode
+        self.closeWindow = closeWindow
+        _coordinator = State(initialValue: ReceiverCoordinator(directorServer: directorServer))
+    }
 
     var body: some View {
         PrompterOverlayView(coordinator: coordinator, onClose: close, onKB: { showKB = true }, onHistory: { showHistory = true })

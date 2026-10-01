@@ -78,7 +78,8 @@ final class ReceiverCoordinator {
     let speech = SpeechEngine()
     let volcanoSpeech = VolcanoASREngine()
     let tcp = TCPLineConnection()
-    let directorServer = TCPLineServer()
+    let directorServer: TCPLineServer
+    private let ownsDirectorServer: Bool
     var session: InterviewSession?
     var knowledgeBases: [KnowledgeBase] = []
     var modelContext: ModelContext?
@@ -92,7 +93,9 @@ final class ReceiverCoordinator {
         return ASRProvider(rawValue: stored) ?? .volcano
     }
 
-    init() {
+    init(directorServer: TCPLineServer? = nil) {
+        self.directorServer = directorServer ?? TCPLineServer()
+        self.ownsDirectorServer = directorServer == nil
         speech.answerTextProvider = { [weak self] in self?.aiText ?? "" }
         volcanoSpeech.answerTextProvider = { [weak self] in self?.aiText ?? "" }
         speech.onRecognizedUtterance = { [weak self] utterance in
@@ -110,10 +113,10 @@ final class ReceiverCoordinator {
                 self?.showSenderPrompt(line)
             }
         }
-        directorServer.onPacket = { [weak self] packet in
+        self.directorServer.onPacket = { [weak self] packet in
             self?.handleDirectorPacket(packet)
         }
-        directorServer.stateProvider = { [weak self] in
+        self.directorServer.stateProvider = { [weak self] in
             self?.directorSnapshot() ?? DirectorPacket(kind: .snapshot, mode: .director)
         }
     }
@@ -139,7 +142,9 @@ final class ReceiverCoordinator {
         self.modelContext = modelContext
         mode = initialMode
         directorQuestions = []
-        directorServer.start()
+        if !directorServer.isRunning {
+            directorServer.start()
+        }
         let appLanguage = AppLanguage.current
         let interviewerLanguage = MockInterviewLanguage(
             rawValue: UserDefaults.standard.string(forKey: AppPreferenceKey.interviewerLanguage) ?? ""
@@ -200,7 +205,9 @@ final class ReceiverCoordinator {
         volcanoSpeech.stop()
         activeASRProvider = nil
         tcp.disconnect()
-        directorServer.stop()
+        if ownsDirectorServer {
+            directorServer.stop()
+        }
         session?.endedAt = .now
         try? modelContext?.save()
     }

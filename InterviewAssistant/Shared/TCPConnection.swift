@@ -10,6 +10,14 @@ enum DirectorMode: String, Codable, Sendable {
     case director
 }
 
+enum DirectorConnectionState: Sendable, Equatable {
+    case disconnected
+    case connecting
+    case connected
+    case retrying
+    case failed
+}
+
 struct DirectorPacket: Codable, Sendable {
     enum Kind: String, Codable, Sendable {
         case hello, question, answer, mode, snapshot
@@ -37,22 +45,34 @@ final class TCPLineConnection {
 
     var statusText = "disconnected"
     var isConnected = false
+    var state: DirectorConnectionState = .disconnected
+    var lastErrorText = ""
     var onLine: ((String) -> Void)?
     var onPacket: ((DirectorPacket) -> Void)?
 
+    var isConnecting: Bool {
+        state == .connecting || state == .retrying
+    }
+
     private var connection: NWConnection?
     private var buffer = Data()
-    private let port: UInt16 = 9999
+    private let port: UInt16
     private var reconnectTask: Task<Void, Never>?
     private var reconnectHost = ""
     private var reconnectMode: Mode = .receiver
     private var allowsReconnect = false
 
+    init(port: UInt16 = 9999) {
+        self.port = port
+    }
+
     func connect(host: String, mode: Mode) {
         disconnect()
         let cleanHost = host.sanitizedIPAddressInput
         guard !cleanHost.isEmpty else {
-            statusText = "本地模式"
+            state = .failed
+            statusText = "invalid host"
+            lastErrorText = "Enter a valid host IP address"
             return
         }
         let endpoint = NWEndpoint.Host(cleanHost)
@@ -61,24 +81,36 @@ final class TCPLineConnection {
         allowsReconnect = true
         let connection = NWConnection(host: endpoint, port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
         self.connection = connection
+        state = .connecting
+        lastErrorText = ""
         statusText = "连接 \(cleanHost)..."
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.connection === connection else { return }
                 switch state {
                 case .ready:
                     self.isConnected = true
+                    self.state = .connected
+                    self.lastErrorText = ""
                     self.statusText = mode == .sender ? "connected" : "IP 接收中"
-                    self.receive()
+                    self.receive(on: connection)
                     if mode == .sender {
                         self.send(DirectorPacket(kind: .hello))
                     }
-                case .failed, .waiting:
+                case .waiting(let error):
                     self.isConnected = false
-                    self.statusText = "disconnected"
+                    self.state = .connecting
+                    self.lastErrorText = error.localizedDescription
+                    self.statusText = "waiting"
+                case .failed(let error):
+                    self.isConnected = false
+                    self.state = .retrying
+                    self.lastErrorText = error.localizedDescription
+                    self.statusText = "retrying"
                     self.scheduleReconnect(host: cleanHost, mode: mode)
                 case .cancelled:
                     self.isConnected = false
+                    self.state = .disconnected
                 default:
                     break
                 }
@@ -104,13 +136,17 @@ final class TCPLineConnection {
         reconnectTask = nil
         connection?.cancel()
         connection = nil
+        buffer.removeAll(keepingCapacity: true)
         isConnected = false
+        state = .disconnected
+        statusText = "disconnected"
+        lastErrorText = ""
     }
 
-    private func receive() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, _ in
+    private func receive(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.connection === connection else { return }
                 if let data {
                     self.buffer.append(data)
                     while let range = self.buffer.firstRange(of: Data("\n".utf8)) {
@@ -126,11 +162,13 @@ final class TCPLineConnection {
                         }
                     }
                 }
-                if !isComplete {
-                    self.receive()
+                if !isComplete, error == nil {
+                    self.receive(on: connection)
                 } else if self.allowsReconnect, !self.reconnectHost.isEmpty {
                     self.isConnected = false
-                    self.statusText = "disconnected"
+                    self.state = .retrying
+                    self.lastErrorText = error?.localizedDescription ?? "The host closed the connection"
+                    self.statusText = "retrying"
                     self.scheduleReconnect(host: self.reconnectHost, mode: self.reconnectMode)
                 }
             }
@@ -139,6 +177,7 @@ final class TCPLineConnection {
 
     private func scheduleReconnect(host: String, mode: Mode) {
         guard allowsReconnect else { return }
+        state = .retrying
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
@@ -161,8 +200,12 @@ final class TCPLineServer {
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
-    private let port: UInt16 = 9999
+    private let port: UInt16
     private var restartTask: Task<Void, Never>?
+
+    init(port: UInt16 = 9999) {
+        self.port = port
+    }
 
     func start() {
         stop()
@@ -178,9 +221,9 @@ final class TCPLineServer {
                     case .ready:
                         self.isRunning = true
                         self.statusText = "listening"
-                    case .failed:
+                    case .failed(let error):
                         self.isRunning = false
-                        self.statusText = "disconnected"
+                        self.statusText = error.localizedDescription
                         self.scheduleRestart()
                     case .cancelled:
                         self.isRunning = false
@@ -365,7 +408,9 @@ enum LocalNetworkInfo {
 
     static func wifiIPAddress() -> String? {
         let addresses = allAddresses()
-        if let wifi = addresses.first(where: { $0.interface == "en0" || $0.interface == "en1" }) {
+        if let wifi = addresses.first(where: {
+            ($0.interface == "en0" || $0.interface == "en1") && $0.ip.isPrivateIPv4
+        }) {
             return wifi.ip
         }
         return addresses.first(where: {
@@ -373,7 +418,7 @@ enum LocalNetworkInfo {
             !$0.interface.hasPrefix("awdl") &&
             !$0.interface.hasPrefix("llw") &&
             !$0.interface.hasPrefix("bridge") &&
-            ($0.ip.hasPrefix("192.168.") || $0.ip.hasPrefix("10.") || $0.ip.hasPrefix("172."))
+            $0.ip.isPrivateIPv4
         })?.ip
     }
 
@@ -406,9 +451,17 @@ enum LocalNetworkInfo {
     }
 }
 
-private extension String {
+extension String {
     var sanitizedIPAddressInput: String {
         trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "，,.;； "))
+    }
+
+    fileprivate var isPrivateIPv4: Bool {
+        if hasPrefix("10.") || hasPrefix("192.168.") { return true }
+        guard hasPrefix("172."), let second = split(separator: ".").dropFirst().first.flatMap({ Int($0) }) else {
+            return false
+        }
+        return (16...31).contains(second)
     }
 }

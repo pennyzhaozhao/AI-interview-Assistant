@@ -71,7 +71,19 @@ struct SenderView: View {
         }
         #if os(iOS)
         .fullScreenCover(isPresented: $showReceiver) {
-            if let hostSession { ReceiverContainerView(session: hostSession, host: "", initialMode: .director) }
+            if let hostSession {
+                ReceiverContainerView(
+                    session: hostSession,
+                    host: "",
+                    initialMode: .director,
+                    directorServer: landingServer,
+                    closeWindow: {
+                        hostBoardActive = false
+                        configureLandingServer()
+                        landingServer.send(DirectorPacket(kind: .snapshot, mode: .director, hostBoardOpen: false))
+                    }
+                )
+            }
         }
         #endif
     }
@@ -98,13 +110,14 @@ struct SenderView: View {
                 TextField("192.168.1.23", text: $hostIP).textFieldStyle(.plain)
                     .font(.system(size: 18, design: .monospaced)).padding(15)
                     .background(directorField).clipShape(RoundedRectangle(cornerRadius: 10)).onSubmit { connect() }
-                Button(connection.isConnected ? L.t("Connected") : L.t("Connect")) { connect() }
+                Button(connectionButtonTitle) { connect() }
                     .buttonStyle(primaryButtonStyle)
             }
             HStack(spacing: 7) {
-                Circle().fill(connection.isConnected ? Color.green : Color.red).frame(width: 8, height: 8)
-                Text(connection.isConnected ? L.t("Connected to host") : L.t("Waiting for host connection"))
+                Circle().fill(connectionStatusColor).frame(width: 8, height: 8)
+                Text(connectionStatusText)
                     .font(.system(size: 13, weight: .medium))
+                    .lineLimit(2)
             }
         }.directorCard(background: directorPanel).frame(maxWidth: .infinity)
     }
@@ -120,6 +133,18 @@ struct SenderView: View {
                         .foregroundStyle(directorMuted).textSelection(.enabled)
                     Text(L.t("The Host prompt board must be running on the same Wi-Fi."))
                         .font(.system(size: 12)).foregroundStyle(directorMuted)
+                    Label(
+                        landingServer.isRunning ? L.t("Web controller ready") : L.t("Starting web controller…"),
+                        systemImage: landingServer.isRunning ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
+                    )
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(landingServer.isRunning ? Color.green : Color.orange)
+                    if !landingServer.isRunning, landingServer.statusText != "disconnected" {
+                        Text(landingServer.statusText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.red)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         }.directorCard(background: directorPanel).frame(maxWidth: .infinity)
@@ -173,6 +198,35 @@ struct SenderView: View {
     }
 
     private var currentQuestion: RemoteQuestion? { questions.indices.contains(selectedQuestion) ? questions[selectedQuestion] : nil }
+    private var connectionButtonTitle: String {
+        if connection.isConnected { return L.t("Connected") }
+        if connection.isConnecting { return L.t("Connecting…") }
+        return L.t("Connect")
+    }
+    private var connectionStatusColor: Color {
+        switch connection.state {
+        case .connected: return .green
+        case .connecting, .retrying: return .orange
+        case .disconnected, .failed: return .red
+        }
+    }
+    private var connectionStatusText: String {
+        switch connection.state {
+        case .connected:
+            return L.t("Connected to host")
+        case .connecting:
+            if connection.lastErrorText.isEmpty {
+                return String(format: L.t("Connecting to %@…"), hostIP.sanitizedIPAddressInput)
+            }
+            return String(format: L.t("Waiting for host: %@"), connection.lastErrorText)
+        case .retrying:
+            return String(format: L.t("Connection failed; retrying: %@"), connection.lastErrorText)
+        case .failed:
+            return L.t(connection.lastErrorText)
+        case .disconnected:
+            return L.t("Waiting for host connection")
+        }
+    }
     private var controllerURL: String { "http://\(localIP):9999" }
     private var isCompact: Bool { horizontalSizeClass == .compact }
     private var currentTheme: AppThemeMode { AppThemeMode(rawValue: themeMode) ?? .dark }
@@ -200,6 +254,7 @@ struct SenderView: View {
     }
 
     private func connect() {
+        hostIP = hostIP.sanitizedIPAddressInput
         connection.connect(host: hostIP, mode: .sender)
     }
 
@@ -236,17 +291,16 @@ struct SenderView: View {
 
     @MainActor private func startHostBoard() {
         hostBoardActive = true
-        landingServer.stop()
         let session = InterviewSession(title: "Director Mode", role: "Director Mode")
         modelContext.insert(session); try? modelContext.save(); hostSession = session
         #if os(macOS)
         NSApp.windows.compactMap { $0 as? PrompterPanel }.forEach { $0.close() }
         var controller: NSWindowController!
-        let root = ReceiverContainerView(session: session, host: "", initialMode: .director, closeWindow: {
+        let root = ReceiverContainerView(session: session, host: "", initialMode: .director, directorServer: landingServer, closeWindow: {
             controller?.close(); if floatingReceiver === controller { floatingReceiver = nil }
             hostBoardActive = false
             configureLandingServer()
-            landingServer.start()
+            landingServer.send(DirectorPacket(kind: .snapshot, mode: .director, hostBoardOpen: false))
         }).modelContext(modelContext)
         controller = FloatingWindowController(rootView: root); floatingReceiver = controller; controller.window?.orderFrontRegardless()
         #else

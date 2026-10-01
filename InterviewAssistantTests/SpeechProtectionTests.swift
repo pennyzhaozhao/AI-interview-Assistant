@@ -38,4 +38,54 @@ final class SpeechProtectionTests: XCTestCase {
         XCTAssertEqual(ranges[0].lowerBound, 1.875, accuracy: 0.001)
         XCTAssertEqual(ranges[0].upperBound, 2.625, accuracy: 0.001)
     }
+
+    @MainActor
+    func testDirectorConnectionReportsProgressAndConnects() async {
+        let port: UInt16 = 19991
+        let server = TCPLineServer(port: port)
+        server.start()
+        defer { server.stop() }
+
+        for _ in 0..<50 where !server.isRunning {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(server.isRunning)
+
+        let client = TCPLineConnection(port: port)
+        client.connect(host: "127.0.0.1", mode: .sender)
+        XCTAssertTrue(client.isConnecting || client.isConnected)
+
+        for _ in 0..<50 where !client.isConnected {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(client.isConnected, client.lastErrorText)
+        XCTAssertEqual(client.state, .connected)
+        client.disconnect()
+    }
+
+    @MainActor
+    func testDirectorWebControllerServesPage() async throws {
+        let port: UInt16 = 19992
+        let server = TCPLineServer(port: port)
+        server.start()
+        defer { server.stop() }
+
+        for _ in 0..<50 where !server.isRunning {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(server.isRunning, server.statusText)
+
+        let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/"))
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Director Mode"))
+    }
+
+    @MainActor
+    func testDirectorConnectionRejectsEmptyHostWithFeedback() {
+        let client = TCPLineConnection()
+        client.connect(host: "  ", mode: .sender)
+        XCTAssertEqual(client.state, .failed)
+        XCTAssertFalse(client.lastErrorText.isEmpty)
+    }
 }
