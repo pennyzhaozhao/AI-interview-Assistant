@@ -26,6 +26,8 @@ final class SpeechEngine {
     var silenceDurationSeconds: Double = 1.2
     #endif
     var onRecognizedText: ((String) -> Void)?
+    var onRecognizedUtterance: ((RecognizedUtterance) -> Void)?
+    var answerTextProvider: (() -> String)?
     var canForceTrigger: Bool { !speechBuffer.isEmpty }
 
     nonisolated(unsafe) private let engine = AVAudioEngine()
@@ -39,6 +41,8 @@ final class SpeechEngine {
     private var consecutiveVoiceSeconds = 0.0
     private var noiseFloorRMS: Float = 0
     private var peakSpeechRMS: Float = 0
+    private var voiceRMSSum: Double = 0
+    private var voiceRMSFrameCount = 0
     private var processingGeneration = 0
 
     #if os(macOS)
@@ -259,6 +263,8 @@ final class SpeechEngine {
         }
 
         if isVoice {
+            voiceRMSSum += Double(rms)
+            voiceRMSFrameCount += 1
             consecutiveVoiceSeconds += duration
             if !isSpeaking {
                 isSpeaking = true
@@ -318,12 +324,67 @@ final class SpeechEngine {
         guard !speechBuffer.isEmpty else { resetVAD(); return }
         let buffers = speechBuffer
         let lang = languageCode
+        let meanVoiceRMS = voiceRMSFrameCount > 0 ? Float(voiceRMSSum / Double(voiceRMSFrameCount)) : 0
+        let peakVoiceRMS = peakSpeechRMS
+        let durationSeconds = speechSeconds
+        let endedAt = Date()
         resetVAD()
         statusText = L.t("🔍 Transcribing...")
         Task { @MainActor in
-            let text = await Self.recognize(buffers: buffers, languageCode: lang)
+            var speaker: SpeakerLabel = .unknown
+            var speakerScore: Float?
+            var interviewerSamples: [Float]?
+            if self.audioSource == .microphone {
+                let overlap = Float(SpeechProtectionPolicy.answerOverlap("", self.answerTextProvider?() ?? ""))
+                if let result = await SpeakerVerificationService.shared.analyze(
+                    buffers: buffers.map(SendablePCMBuffer.init),
+                    meanRMS: meanVoiceRMS,
+                    answerOverlap: overlap
+                ) {
+                    speaker = result.label
+                    speakerScore = result.score
+                    interviewerSamples = result.interviewerSamples
+                    if speaker == .candidate {
+                        self.statusText = L.t("🙋 You are answering")
+                        return
+                    }
+                }
+            }
+            let text: String?
+            if let interviewerSamples {
+                text = await Self.recognize(samples16kMono: interviewerSamples, languageCode: lang)
+            } else {
+                text = await Self.recognize(buffers: buffers, languageCode: lang)
+            }
             if let text, text.trimmingCharacters(in: .whitespacesAndNewlines).count > 1 {
+                if self.audioSource == .microphone,
+                   interviewerSamples == nil,
+                   speaker != .interviewer {
+                    let overlap = Float(SpeechProtectionPolicy.answerOverlap(text, self.answerTextProvider?() ?? ""))
+                    if overlap > 0,
+                       let refined = await SpeakerVerificationService.shared.classify(
+                        buffers: buffers.map(SendablePCMBuffer.init),
+                        meanRMS: meanVoiceRMS,
+                        answerOverlap: overlap
+                       ) {
+                        speaker = refined.0
+                        speakerScore = refined.1
+                        if speaker == .candidate {
+                            self.statusText = L.t("🙋 You are answering")
+                            return
+                        }
+                    }
+                }
                 self.statusText = "💬 \(String(text.prefix(30)))..."
+                self.onRecognizedUtterance?(RecognizedUtterance(
+                    text: text,
+                    meanVoiceRMS: meanVoiceRMS,
+                    peakVoiceRMS: peakVoiceRMS,
+                    durationSeconds: durationSeconds,
+                    speaker: speaker,
+                    speakerScore: speakerScore,
+                    endedAt: endedAt
+                ))
                 self.onRecognizedText?(text)
             } else {
                 self.statusText = self.isListening ? self.idleStatus : ""
@@ -339,6 +400,8 @@ final class SpeechEngine {
         totalSeconds = 0
         consecutiveVoiceSeconds = 0
         peakSpeechRMS = 0
+        voiceRMSSum = 0
+        voiceRMSFrameCount = 0
         audioLevel = 0
         isVoiceDetected = false
     }
@@ -383,6 +446,19 @@ final class SpeechEngine {
                 }
             }
         }
+    }
+
+    @MainActor
+    private static func recognize(samples16kMono: [Float], languageCode: String) async -> String? {
+        guard !samples16kMono.isEmpty,
+              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples16kMono.count)),
+              let channel = buffer.floatChannelData?[0] else { return nil }
+        buffer.frameLength = AVAudioFrameCount(samples16kMono.count)
+        samples16kMono.withUnsafeBufferPointer { source in
+            channel.update(from: source.baseAddress!, count: samples16kMono.count)
+        }
+        return await recognize(buffers: [buffer], languageCode: languageCode)
     }
 
 }

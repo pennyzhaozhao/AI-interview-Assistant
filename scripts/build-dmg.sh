@@ -68,6 +68,23 @@ else
 
   mkdir -p "${EXPORT_DIR}"
   cp -R "${ARCHIVE_PATH}/Products/Applications/InterviewAssistant.app" "${EXPORT_DIR}/InterviewAssistant.app"
+
+  # onnxruntime-libs 1.27.1 currently ships the macOS framework with copied
+  # directories where a versioned framework requires symlinks. Xcode can link
+  # that archive, but codesign rejects the resulting ambiguous bundle. Repair
+  # the exported copy before signing; the package cache remains untouched.
+  ONNX_FRAMEWORK="${EXPORT_DIR}/InterviewAssistant.app/Contents/Frameworks/onnxruntime.framework"
+  if [[ -d "${ONNX_FRAMEWORK}/Versions/A" ]]; then
+    rm -rf "${ONNX_FRAMEWORK}/Versions/Current"
+    ln -s A "${ONNX_FRAMEWORK}/Versions/Current"
+    rm -rf "${ONNX_FRAMEWORK}/onnxruntime" "${ONNX_FRAMEWORK}/Resources"
+    ln -s Versions/Current/onnxruntime "${ONNX_FRAMEWORK}/onnxruntime"
+    ln -s Versions/Current/Resources "${ONNX_FRAMEWORK}/Resources"
+  fi
+
+  for FRAMEWORK in "${EXPORT_DIR}/InterviewAssistant.app/Contents/Frameworks/"*.framework; do
+    codesign --force --sign - "${FRAMEWORK}"
+  done
   codesign \
     --force \
     --deep \

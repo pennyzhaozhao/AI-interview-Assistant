@@ -69,6 +69,8 @@ final class VolcanoASREngine {
         didSet { silenceLimitChunks = max(1, Int(silenceDurationSeconds / chunkSeconds)) }
     }
     var onRecognizedText: ((String) -> Void)?
+    var onRecognizedUtterance: ((RecognizedUtterance) -> Void)?
+    var answerTextProvider: (() -> String)?
     var canForceTrigger: Bool { isSpeaking || hasSentAudio }
     private(set) var lastErrorText = ""
 
@@ -85,6 +87,15 @@ final class VolcanoASREngine {
     private var silenceChunks = 0
     private var silenceLimitChunks = 10
     private var lastDefiniteIndex = 0
+    private struct TimedPCMChunk {
+        let start: Double
+        let end: Double
+        let data: Data
+    }
+    private var audioRing: [TimedPCMChunk] = []
+    private var audioTimelineSeconds = 0.0
+    private var currentVADSegment = Data()
+    private var currentVADRMSValues: [Float] = []
     private var noiseFloorRMS: Float = 0
     private var audioConfigurationObserver: NSObjectProtocol?
     private let minimumVoiceThreshold: Float = 55
@@ -247,7 +258,7 @@ final class VolcanoASREngine {
         #endif
 
         let startResult: Result<Void, Error> = await withCheckedContinuation { [audioEngine] cont in
-            DispatchQueue.global(qos: .userInitiated).async {
+            DispatchQueue.global(qos: .userInitiated).async { [self, audioEngine] in
                 let input = audioEngine.inputNode
                 let inputFormat = input.outputFormat(forBus: 0)
                 guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
@@ -595,7 +606,7 @@ final class VolcanoASREngine {
                     isSpeaking = false
                     hasSentAudio = false
                     silenceChunks = 0
-                    onRecognizedText?(utteranceText)
+                    emitRecognizedUtterance(utteranceText, metadata: utterance)
                     statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
                 }
             }
@@ -619,7 +630,7 @@ final class VolcanoASREngine {
             partialText = ""
             hasSentAudio = false
             if !remainingText.isEmpty {
-                onRecognizedText?(remainingText)
+                emitRecognizedUtterance(remainingText, metadata: utterances.last)
             }
             statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
         } else if !text.isEmpty {
@@ -682,6 +693,9 @@ final class VolcanoASREngine {
     private func handleVAD(pcmData: Data, rms: Float) {
         sendAudioChunk(pcmData)
         hasSentAudio = true
+        if audioSource == .microphone {
+            appendToAudioRing(pcmData)
+        }
 
         let adaptiveThreshold = max(minimumVoiceThreshold, noiseFloorRMS * 1.6)
         isVoiceDetected = rms > adaptiveThreshold
@@ -695,10 +709,15 @@ final class VolcanoASREngine {
         if isVoiceDetected {
             if !isSpeaking {
                 isSpeaking = true
+                currentVADSegment = Data()
+                currentVADRMSValues = []
                 statusText = audioSource == .system ? L.t("🔴 Doubao Voice is transcribing system audio...") : L.t("🔴 Recording with Doubao Voice...")
             }
+            currentVADSegment.append(pcmData)
+            currentVADRMSValues.append(rms)
             silenceChunks = 0
         } else if isSpeaking {
+            currentVADSegment.append(pcmData)
             learnNoiseFloor(from: rms)
             silenceChunks += 1
             if silenceChunks >= silenceLimitChunks {
@@ -731,8 +750,106 @@ final class VolcanoASREngine {
         silenceChunks = 0
         lastDefiniteIndex = 0
         noiseFloorRMS = 0
+        audioRing = []
+        audioTimelineSeconds = 0
+        currentVADSegment = Data()
+        currentVADRMSValues = []
         audioLevel = 0
         isVoiceDetected = false
+    }
+
+    private func appendToAudioRing(_ data: Data) {
+        let duration = Double(data.count / MemoryLayout<Int16>.size) / 16_000
+        let chunk = TimedPCMChunk(start: audioTimelineSeconds, end: audioTimelineSeconds + duration, data: data)
+        audioTimelineSeconds += duration
+        audioRing.append(chunk)
+        let cutoff = max(0, audioTimelineSeconds - 30)
+        audioRing.removeAll { $0.end < cutoff }
+    }
+
+    private func emitRecognizedUtterance(_ text: String, metadata: [String: Any]?) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        guard audioSource == .microphone else {
+            onRecognizedUtterance?(RecognizedUtterance(text: clean))
+            onRecognizedText?(clean)
+            return
+        }
+
+        let rangedData = pcmData(for: metadata)
+        let pcm = rangedData.isEmpty ? currentVADSegment : rangedData
+        let samples = Self.floatSamples(fromPCM16: pcm)
+        let meanRMS: Float
+        if currentVADRMSValues.isEmpty {
+            meanRMS = Self.rmsInt16(pcm)
+        } else {
+            meanRMS = currentVADRMSValues.reduce(0, +) / Float(currentVADRMSValues.count)
+        }
+        let duration = Double(samples.count) / 16_000
+        let peakRMS = currentVADRMSValues.max() ?? meanRMS
+        currentVADSegment = Data()
+        currentVADRMSValues = []
+
+        Task { @MainActor in
+            var label: SpeakerLabel = .unknown
+            var score: Float?
+            if let result = await SpeakerVerificationService.shared.classify(
+                samples16kMono: samples,
+                meanRMS: meanRMS,
+                answerOverlap: Float(SpeechProtectionPolicy.answerOverlap(clean, self.answerTextProvider?() ?? ""))
+            ) {
+                label = result.0
+                score = result.1
+            }
+            if label == .candidate {
+                self.statusText = L.t("🙋 You are answering")
+                return
+            }
+            let utterance = RecognizedUtterance(
+                text: clean,
+                meanVoiceRMS: meanRMS,
+                peakVoiceRMS: peakRMS,
+                durationSeconds: duration,
+                speaker: label,
+                speakerScore: score
+            )
+            self.onRecognizedUtterance?(utterance)
+            self.onRecognizedText?(clean)
+        }
+    }
+
+    private func pcmData(for metadata: [String: Any]?) -> Data {
+        guard let metadata,
+              let startMS = Self.doubleValue(metadata["start_time"] ?? metadata["startTime"]),
+              let endMS = Self.doubleValue(metadata["end_time"] ?? metadata["endTime"]),
+              endMS > startMS else { return Data() }
+        let start = startMS / 1_000
+        let end = endMS / 1_000
+        var result = Data()
+        for chunk in audioRing where chunk.end > start && chunk.start < end {
+            let chunkSamples = chunk.data.count / MemoryLayout<Int16>.size
+            let from = max(0, Int((start - chunk.start) * 16_000))
+            let to = min(chunkSamples, Int(ceil((end - chunk.start) * 16_000)))
+            if from < to {
+                result.append(chunk.data.subdata(in: (from * 2)..<(to * 2)))
+            }
+        }
+        return result
+    }
+
+    private nonisolated static func floatSamples(fromPCM16 data: Data) -> [Float] {
+        data.withUnsafeBytes { raw in
+            let values = raw.bindMemory(to: Int16.self)
+            return values.map { Float($0) / Float(Int16.max) }
+        }
+    }
+
+    private nonisolated static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String { return Double(value) }
+        return nil
     }
 
     private func stopAudioEngine() {

@@ -75,6 +75,20 @@ The panel can be minimized to cover less of the screen.
 - Attempt to hide the panel from screenshots or screen sharing;
 - Use Chinese or English with light and dark themes.
 
+### Director Mode
+
+- Use one device as a Director controller on the same local network and send questions or Markdown answers to the Host prompt panel;
+- Display the local IP address and a connection QR code for quick setup from another device;
+- Switch between AI and Director modes while synchronizing whether the Host prompt panel is open;
+- Use either macOS or iOS / iPadOS as the controller or Host.
+
+### On-device Speaker Recognition
+
+- Use the local 3D-Speaker CAMPPlus model to distinguish the candidate from the interviewer and reduce false question triggers from the candidate's own answers;
+- Save multiple voices, rename them, and freely switch the active voice;
+- Select **None** to disable recognition without deleting enrolled voiceprints;
+- Keep recording, embedding extraction, and comparison on device without retaining or uploading enrollment audio.
+
 ### Screenshot Q&A
 
 - Set a fixed capture region before the interview;
@@ -112,6 +126,8 @@ The panel can be minimized to cover less of the screen.
 | Mock interviews | ✅ | ✅ |
 | AI model configuration | ✅ | ✅ |
 | Apple speech recognition | ✅ | ✅ |
+| On-device speaker recognition and multiple voices | ✅ | ✅ |
+| Director Mode local-network control | ✅ | ✅ |
 | Floating prompt panel | ✅ | — |
 | System-audio capture | ✅ | — |
 | Preset screenshot region and global shortcut | ✅ | — |
@@ -458,6 +474,16 @@ Open **Settings → API Configuration**. Provider and Current Model show the glo
 - Reopen the app and check **Settings → Data Storage** again;
 - Do not manually move `.store`, `-wal`, or `-shm` files while the app is running.
 
+## On-device Speaker Recognition and Privacy
+
+Open **Settings → Speaker Recognition → Set Up Voices** to download the 28.3 MB 3D-Speaker CAMPPlus model, then read for about 15 seconds using the microphone you will use in interviews. Enrollment creates a voice embedding and RMS baseline. The biometric embedding is encrypted in Apple Keychain; enrollment audio is not retained, and speaker inference or comparison never uploads audio. A model-version change requires re-enrollment.
+
+Voice management follows a Touch ID-style flow: use **Add Voice…** to enroll multiple voices, rename each entry, and freely select the active voice. Selecting **None** disables speaker recognition without deleting enrolled voices; selecting a saved voice enables it again. A voiceprint saved by an older version is automatically migrated into the new list.
+
+Audio shorter than 1.2 seconds is conservatively classified as unknown. Similar voices, background noise, microphone distance, and room changes can reduce accuracy, so enroll each voice with the microphone and environment intended for the interview.
+
+The implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxruntime-libs 1.27.1` dependency (ONNX Runtime is MIT). The current upstream 1.13.8 macOS binary archive fails framework-symlink validation with some Xcode versions, so 1.13.6 is pinned for now. The recommended `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx` model comes from the Apache-2.0 3D-Speaker project and is verified with SHA-256 after download.
+
 ## Technology Stack
 
 | Area | Technology |
@@ -465,6 +491,7 @@ Open **Settings → API Configuration**. Provider and Current Model show the glo
 | Client | Swift 6, SwiftUI, SwiftData |
 | macOS audio | AVFoundation, ScreenCaptureKit |
 | Local speech | Apple Speech framework |
+| Local voiceprint | sherpa-onnx, 3D-Speaker CAMPPlus |
 | Optional external speech | Doubao / Volcengine streaming ASR over WebSocket |
 | Credentials | Apple Keychain |
 | Document processing | PDFKit and system document import capabilities |

@@ -75,6 +75,20 @@ AI 请求由应用直接发送到用户自己选择的模型服务商。
 - 可尝试在截图或屏幕共享时隐藏提示板；
 - 支持中文、英文以及浅色、深色主题。
 
+### Director Mode
+
+- 可在同一局域网中将一台设备作为 Director 控制端，向 Host 提示板发送问题与 Markdown 回答；
+- 显示本机 IP 和连接二维码，便于另一台设备快速接入；
+- 支持在 AI 模式与 Director 模式之间切换，并同步提示板的打开状态；
+- macOS 与 iOS / iPadOS 均可作为控制端或 Host 使用。
+
+### 本地说话人识别
+
+- 使用端侧 3D-Speaker CAMPPlus 模型区分候选人与面试官，降低自己的回答被误判为新问题的概率；
+- 可保存多个声音、自由重命名和切换当前声音；
+- 选择“无（None）”即可关闭声音识别，无需删除已经注册的声纹；
+- 录制、声纹提取和比对均在本机完成，原始注册录音不会保存或上传。
+
 ### 截图问答
 
 - 可在面试前设置固定截图区域；
@@ -112,6 +126,8 @@ AI 请求由应用直接发送到用户自己选择的模型服务商。
 | 模拟面试 | ✅ | ✅ |
 | AI 模型配置 | ✅ | ✅ |
 | Apple 语音识别 | ✅ | ✅ |
+| 本地说话人识别与多声音管理 | ✅ | ✅ |
+| Director Mode 局域网控制 | ✅ | ✅ |
 | 悬浮提示板 | ✅ | — |
 | 系统音频捕获 | ✅ | — |
 | 预设区域截图与全局快捷键 | ✅ | — |
@@ -458,6 +474,16 @@ volc.seedasr.sauc.concurrent
 - 重新启动后再检查“设置 → 数据存储”；
 - 不要在应用运行时手动移动 `.store`、`-wal` 或 `-shm` 文件。
 
+## 本地说话人识别与隐私
+
+在“设置 → 说话人识别 → 设置声音”中可选择下载 28.3 MB 的 3D-Speaker CAMPPlus 模型，并使用当前麦克风朗读约 15 秒完成注册。注册会生成声纹 embedding 和音量基线；embedding 作为生物特征数据加密保存在 Apple Keychain，原始注册录音不会保存，声纹推理与比对不会上传任何音频。模型升级后需要重新注册。
+
+声音设置采用类似 Touch ID 的管理方式：可以通过“添加声音…”注册多个声音，为每个声音重新命名，并在列表中自由切换当前声音。选择“无（None）”会关闭说话人识别，但不会删除已保存的声音；之后重新选择任一声音即可恢复识别。旧版本保存的单个声纹会自动迁移到新的多声音列表。
+
+短于 1.2 秒的声音会保守地标记为“未知”；相近音色、强背景噪声、麦克风距离或房间变化都可能降低准确率。建议使用实际面试时的麦克风和环境完成每个声音的注册。
+
+实现使用固定版本 `sherpa-onnx 1.13.6`（Apache-2.0）及其 `onnxruntime-libs 1.27.1` 依赖（ONNX Runtime 为 MIT）。当前上游 1.13.8 的 macOS 二进制归档在部分 Xcode 版本会因 framework 符号链接校验失败，因此暂时固定在 1.13.6。模型来源为 sherpa-onnx 推荐的 `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx`；其上游 3D-Speaker 项目采用 Apache-2.0，下载后以 SHA-256 校验。
+
 ## 技术栈
 
 | 模块 | 技术 |
@@ -465,6 +491,7 @@ volc.seedasr.sauc.concurrent
 | 客户端 | Swift 6、SwiftUI、SwiftData |
 | macOS 音频 | AVFoundation、ScreenCaptureKit |
 | 本地语音 | Apple Speech Framework |
+| 本地声纹 | sherpa-onnx、3D-Speaker CAMPPlus |
 | 可选外部语音 | 豆包 / 火山引擎流式 ASR WebSocket |
 | 凭证 | Apple Keychain |
 | 文档处理 | PDFKit、系统文档导入能力 |

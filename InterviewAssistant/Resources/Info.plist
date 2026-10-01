@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSAppTransportSecurity</key>
@@ -38,7 +38,7 @@
 		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>用于在局域网内连接提示发送器和面试接收端</string>
+	<string>用于在局域网内连接 Director 控制端与 Host 提示板</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used for real-time speech recognition during interviews</string>
 	<key>NSScreenCaptureUsageDescription</key>

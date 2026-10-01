@@ -57,6 +57,8 @@ struct PrompterOverlayView: View {
     @State private var expandedIslandHeight: CGFloat = 240
     @State private var resizeStartHeight: CGFloat?
     @State private var resizeStartMouseY: CGFloat?
+    @State private var browsedTurnIndex: Int?
+    @State private var modeToast: String?
     #if os(macOS)
     @AppStorage(AppPreferenceKey.hiddenFromScreenCapture) private var isHiddenFromCapture = true
     @AppStorage(AppPreferenceKey.screenshotHotkey) private var screenshotHotkey = HotkeyManager.screenshotDefaultHotkey
@@ -157,6 +159,9 @@ struct PrompterOverlayView: View {
         .onChange(of: isHiddenFromCapture) { _, _ in
             updateScreenShareVisibility()
         }
+        .onChange(of: coordinator.mode) { _, newMode in
+            showModeToast(newMode)
+        }
         .alert(L.t("Set screenshot region first"), isPresented: $showSetupRegionAlert) {
             Button(L.t("OK"), role: .cancel) {}
         } message: {
@@ -203,6 +208,7 @@ struct PrompterOverlayView: View {
 
     private var notchHeader: some View {
         HStack(spacing: 10) {
+            historyArrow(direction: -1)
             Text(currentQuestion.isEmpty ? L.t("Waiting for interview question...") : currentQuestion)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color(hex: "#AAAAAA"))
@@ -211,12 +217,14 @@ struct PrompterOverlayView: View {
             Spacer(minLength: 0)
             WaveformView(level: coordinator.audioLevel, active: coordinator.isVoiceDetected, tint: islandYellow)
                 .frame(width: 120, height: 20)
+            historyArrow(direction: 1)
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
     }
 
     private var compactAnswerArea: some View {
+        ZStack {
         ScrollView(.vertical, showsIndicators: true) {
             Group {
                 if isPreparingAnswer || coordinator.isCodeGenerationRunning {
@@ -239,7 +247,7 @@ struct PrompterOverlayView: View {
                         isPreparing: false
                     )
                 } else {
-                    Text(L.t("Waiting for AI answer..."))
+                    Text(coordinator.mode == .director ? L.t("Waiting for answer") : L.t("Waiting for AI answer..."))
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(Color(hex: "#777777"))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -249,6 +257,19 @@ struct PrompterOverlayView: View {
             .padding(.vertical, 10)
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        if let modeToast {
+            Text(modeToast)
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 16).padding(.vertical, 9)
+                .background(.ultraThinMaterial).clipShape(Capsule())
+                .transition(.opacity.combined(with: .scale))
+        }
+        VStack {
+            Spacer()
+            pendingInterruptBanner
+                .padding(.bottom, 8)
+        }
+        }
     }
 
     private var islandToolbar: some View {
@@ -257,13 +278,14 @@ struct PrompterOverlayView: View {
                 screenshotSubmissionState = .idle
                 Task { await handleScreenshot() }
             }
-            codeLanguageMenu
+            if coordinator.mode == .ai { codeLanguageMenu }
             audioControl
-            islandButton(
+            if coordinator.mode == .ai { islandButton(
                 systemImage: "folder.fill",
                 tint: islandYellow,
                 badge: "\(coordinator.session?.activeKBIds.count ?? 0)"
-            ) { onKB() }
+            ) { onKB() } }
+            modeSwitchButton
             captureStatusControls
             Spacer(minLength: 6)
             islandAssetButton(imageName: "OverlayMinimize", accessibilityLabel: L.t("Minimize")) {
@@ -376,6 +398,95 @@ struct PrompterOverlayView: View {
     }
 
     private var islandYellow: Color { Color(hex: "#F4EA2A") }
+
+    @ViewBuilder
+    private var pendingInterruptBanner: some View {
+        if let question = coordinator.pendingInterruptQuestion {
+            Button {
+                coordinator.answerPendingInterrupt()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "questionmark.bubble.fill")
+                    Text(L.t("New question detected · Tap to answer"))
+                    Text(question)
+                        .lineLimit(1)
+                        .foregroundStyle(Color.appMuted)
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.appSurface.opacity(0.96))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Color.appYellow.opacity(0.65), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(question)
+        }
+    }
+
+    private var modeSwitchButton: some View {
+        Button {
+            Task { await coordinator.switchMode() }
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(islandYellow)
+                .frame(width: 34, height: 28)
+                .background(Color.white.opacity(0.14))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(coordinator.mode == .ai ? "Switch to Director mode" : "Switch to AI mode")
+    }
+
+    private func historyArrow(direction: Int) -> some View {
+        Button {
+            moveHistory(direction)
+        } label: {
+            Image(systemName: direction < 0 ? "chevron.left" : "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(islandYellow)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(islandYellow.opacity(0.001)))
+                .overlay(Circle().stroke(islandYellow, lineWidth: 1.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canMoveHistory(direction))
+        .opacity(canMoveHistory(direction) ? 1 : 0.28)
+    }
+
+    private func moveHistory(_ direction: Int) {
+        let count = navigationItems.count
+        guard count > 0 else { return }
+        if direction < 0 {
+            if let index = browsedTurnIndex {
+                browsedTurnIndex = max(0, index - 1)
+            } else {
+                browsedTurnIndex = max(0, count - 2)
+            }
+        } else if let index = browsedTurnIndex {
+            browsedTurnIndex = index >= count - 2 ? nil : index + 1
+        }
+        coordinator.autoScrollEnabled = browsedTurnIndex == nil
+    }
+
+    private func canMoveHistory(_ direction: Int) -> Bool {
+        let count = navigationItems.count
+        if direction < 0 {
+            return count > 1 && (browsedTurnIndex ?? count - 1) > 0
+        }
+        return browsedTurnIndex != nil
+    }
+
+    private func showModeToast(_ mode: DirectorMode) {
+        let message = mode == .ai ? L.t("User switched to AI mode") : L.t("User switched to Director mode")
+        withAnimation { modeToast = message }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { modeToast = nil }
+        }
+        browsedTurnIndex = nil
+    }
 
     private var codeLanguageMenu: some View {
         Button {
@@ -543,13 +654,17 @@ struct PrompterOverlayView: View {
                 Text(L.t("Question"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.appMuted)
-                Text(hasQuestion ? currentQuestion : L.t("Waiting for interview question..."))
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(hasQuestion ? overlayTextPrimary : overlayTextSecondary)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 12) {
+                    historyArrow(direction: -1)
+                    Text(hasQuestion ? currentQuestion : L.t("Waiting for interview question..."))
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(hasQuestion ? overlayTextPrimary : overlayTextSecondary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    historyArrow(direction: 1)
+                }
             }
             .padding(16)
             .frame(minHeight: 112, alignment: .topLeading)
@@ -571,6 +686,18 @@ struct PrompterOverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.appBG.ignoresSafeArea())
         .foregroundStyle(overlayTextPrimary)
+        .overlay(alignment: .top) {
+            VStack(spacing: 8) {
+                pendingInterruptBanner
+                if let modeToast {
+                    Text(modeToast)
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 16).padding(.vertical, 9)
+                        .background(.ultraThinMaterial).clipShape(Capsule())
+                }
+            }
+            .padding(.top, 12)
+        }
         .onReceive(updateTimer) { now = $0 }
         .hotkeyReceivers(coordinator, screenshotHandler: handleScreenshot)
         .onAppear {
@@ -579,6 +706,9 @@ struct PrompterOverlayView: View {
             updateScreenShareVisibility()
             registerScreenshotHotkey()
             #endif
+        }
+        .onChange(of: coordinator.mode) { _, newMode in
+            showModeToast(newMode)
         }
         #if os(macOS)
         .onChange(of: screenshotCapture.captureMode) { _, mode in
@@ -602,11 +732,12 @@ struct PrompterOverlayView: View {
                 #if os(macOS)
                 screenshotButton(showText: true)
                 #endif
-                codeLanguageControl(showText: true)
+                if coordinator.mode == .ai { codeLanguageControl(showText: true) }
                 sendNowButton(showText: true)
                 inputSourceMenu(showText: false)
                 languageButton(showText: true)
-                knowledgeButton(showText: false)
+                if coordinator.mode == .ai { knowledgeButton(showText: false) }
+                modeSwitchButton
                 pinButton
                 closeButton
             }
@@ -671,11 +802,12 @@ struct PrompterOverlayView: View {
                 #if os(macOS)
                 screenshotButton(showText: true)
                 #endif
-                codeLanguageControl(showText: true)
+                if coordinator.mode == .ai { codeLanguageControl(showText: true) }
                 sendNowButton(showText: true)
                 inputSourceMenu(showText: true)
                 languageButton(showText: true)
-                knowledgeButton(showText: true)
+                if coordinator.mode == .ai { knowledgeButton(showText: true) }
+                modeSwitchButton
             }
             Spacer(minLength: 10)
             HStack(spacing: 5) {
@@ -695,11 +827,12 @@ struct PrompterOverlayView: View {
             #if os(macOS)
             screenshotButton(showText: false)
             #endif
-            codeLanguageControl(showText: false)
+            if coordinator.mode == .ai { codeLanguageControl(showText: false) }
             sendNowButton(showText: false)
             inputSourceMenu(showText: false)
             languageButton(showText: true)
-            knowledgeButton(showText: false)
+            if coordinator.mode == .ai { knowledgeButton(showText: false) }
+            modeSwitchButton
             Spacer(minLength: 8)
             statusChip(listeningLabel, systemImage: "waveform", tint: coordinator.isSpeechListening ? .appGreen : .appMuted, showText: false)
             fontControls
@@ -715,11 +848,12 @@ struct PrompterOverlayView: View {
             #if os(macOS)
             screenshotButton(showText: false)
             #endif
-            codeLanguageControl(showText: false)
+            if coordinator.mode == .ai { codeLanguageControl(showText: false) }
             sendNowButton(showText: false)
             inputSourceMenu(showText: false)
             languageButton(showText: false)
-            knowledgeButton(showText: false)
+            if coordinator.mode == .ai { knowledgeButton(showText: false) }
+            modeSwitchButton
             Spacer(minLength: 5)
             fontControls
             pinButton
@@ -1410,6 +1544,11 @@ struct PrompterOverlayView: View {
     }
 
     private var currentQuestion: String {
+        if let browsedTurn { return browsedTurn.question }
+        return baseCurrentQuestion
+    }
+
+    private var baseCurrentQuestion: String {
         guard hasQuestion else { return L.t("Question") }
         return (coordinator.lastQuestion.isEmpty ? coordinator.prompterText : coordinator.lastQuestion)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1422,6 +1561,11 @@ struct PrompterOverlayView: View {
     }
 
     private var cleanAnswer: String {
+        if let browsedTurn { return browsedTurn.answer }
+        return baseCleanAnswer
+    }
+
+    private var baseCleanAnswer: String {
         coordinator.aiText
             .replacingOccurrences(of: "💡", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1431,13 +1575,42 @@ struct PrompterOverlayView: View {
         guard let session = coordinator.session else { return [] }
         var turns = session.turns.sorted { $0.createdAt < $1.createdAt }
         if let last = turns.last {
-            let sameQuestion = last.question.trimmingCharacters(in: .whitespacesAndNewlines) == currentQuestion
-            let sameAnswer = last.answer.trimmingCharacters(in: .whitespacesAndNewlines) == cleanAnswer
+            let sameQuestion = last.question.trimmingCharacters(in: .whitespacesAndNewlines) == baseCurrentQuestion
+            let sameAnswer = last.answer.trimmingCharacters(in: .whitespacesAndNewlines) == baseCleanAnswer
             if sameQuestion && sameAnswer {
                 turns.removeLast()
             }
         }
         return turns
+    }
+
+    private struct NavigationItem {
+        let question: String
+        let answer: String
+    }
+
+    private var navigationItems: [NavigationItem] {
+        if coordinator.mode == .director {
+            return coordinator.directorQuestions.map { NavigationItem(question: $0.text, answer: $0.renderedAnswer) }
+        }
+        var items = (coordinator.session?.turns ?? [])
+            .sorted { $0.createdAt < $1.createdAt }
+            .map { NavigationItem(question: $0.question, answer: $0.answer) }
+        if !baseCurrentQuestion.isEmpty {
+            let isDuplicate = items.last.map {
+                $0.question.trimmingCharacters(in: .whitespacesAndNewlines) == baseCurrentQuestion &&
+                $0.answer.trimmingCharacters(in: .whitespacesAndNewlines) == baseCleanAnswer
+            } ?? false
+            if !isDuplicate {
+                items.append(NavigationItem(question: baseCurrentQuestion, answer: baseCleanAnswer))
+            }
+        }
+        return items
+    }
+
+    private var browsedTurn: NavigationItem? {
+        guard let index = browsedTurnIndex, navigationItems.indices.contains(index) else { return nil }
+        return navigationItems[index]
     }
 
     private var hasAnswer: Bool {
@@ -1446,7 +1619,7 @@ struct PrompterOverlayView: View {
     }
 
     private var isSenderPrompt: Bool {
-        coordinator.lastQuestion == "Prompt Sender"
+        coordinator.lastQuestion == "Prompt Sender" || coordinator.mode == .director
     }
 
     private var hasVisibleAnswer: Bool {

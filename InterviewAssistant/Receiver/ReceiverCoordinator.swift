@@ -8,6 +8,15 @@ import AppKit
 @MainActor
 @Observable
 final class ReceiverCoordinator {
+    struct DirectorQuestion: Identifiable, Equatable {
+        let id: String
+        var text: String
+        var answers: [String]
+        let createdAt: Date
+
+        var renderedAnswer: String { answers.joined(separator: "\n\n---\n\n") }
+    }
+
     var prompterText = "Waiting for interview question..."
     var aiText = ""
     var statusText = ""
@@ -21,6 +30,9 @@ final class ReceiverCoordinator {
     var confidence: Double = 0
     var languageCode = "en-US"
     var audioSource: AudioSource = .microphone
+    var mode: DirectorMode = .ai
+    var directorQuestions: [DirectorQuestion] = []
+    var directorClientCount: Int { directorServer.clientCount }
     #if os(macOS)
     var screenshotImage: NSImage?
     #endif
@@ -29,11 +41,18 @@ final class ReceiverCoordinator {
     private var isGeneratingCode = false
     private var pendingCodeRawQuestion = ""
     private var pendingSpeechQuestion = ""
+    private var pendingSpeechHasStrongQuestionSignal = false
+    private var pendingSpeechSpeaker: SpeakerLabel = .unknown
     private var pendingSpeechQuestionTask: Task<Void, Never>?
     private var cachedMockMemory: String?
     private var activeSpeechAnswerTask: Task<Void, Never>?
     private var activeSpeechQuestion = ""
     private var activeSpeechQuestionStartedAt: Date?
+    private var activeSpeechAnswerHasStarted = false
+    private var activeSpeechSpeaker: SpeakerLabel = .unknown
+    private var lastSpeechUtteranceEndedAt: Date?
+    var pendingInterruptQuestion: String?
+    private var pendingInterruptSpeaker: SpeakerLabel = .unknown
     // VAD已等1.2s，完整句子只需短debounce；片段需更长等待保证合并
     private let quickSpeechQuestionDebounceSeconds: TimeInterval = 0.35
     private let unfinishedSpeechQuestionDebounceSeconds: TimeInterval = 1.5
@@ -59,6 +78,7 @@ final class ReceiverCoordinator {
     let speech = SpeechEngine()
     let volcanoSpeech = VolcanoASREngine()
     let tcp = TCPLineConnection()
+    let directorServer = TCPLineServer()
     var session: InterviewSession?
     var knowledgeBases: [KnowledgeBase] = []
     var modelContext: ModelContext?
@@ -73,20 +93,28 @@ final class ReceiverCoordinator {
     }
 
     init() {
-        speech.onRecognizedText = { [weak self] text in
+        speech.answerTextProvider = { [weak self] in self?.aiText ?? "" }
+        volcanoSpeech.answerTextProvider = { [weak self] in self?.aiText ?? "" }
+        speech.onRecognizedUtterance = { [weak self] utterance in
             Task { @MainActor in
-                self?.enqueueSpeechQuestion(text)
+                self?.enqueueSpeechQuestion(utterance)
             }
         }
-        volcanoSpeech.onRecognizedText = { [weak self] text in
+        volcanoSpeech.onRecognizedUtterance = { [weak self] utterance in
             Task { @MainActor in
-                self?.enqueueSpeechQuestion(text)
+                self?.enqueueSpeechQuestion(utterance)
             }
         }
         tcp.onLine = { [weak self] line in
             Task { @MainActor in
                 self?.showSenderPrompt(line)
             }
+        }
+        directorServer.onPacket = { [weak self] packet in
+            self?.handleDirectorPacket(packet)
+        }
+        directorServer.stateProvider = { [weak self] in
+            self?.directorSnapshot() ?? DirectorPacket(kind: .snapshot, mode: .director)
         }
     }
 
@@ -105,10 +133,13 @@ final class ReceiverCoordinator {
         lastUpdatedAt = .now
     }
 
-    func start(session: InterviewSession, knowledgeBases: [KnowledgeBase], modelContext: ModelContext, host: String) {
+    func start(session: InterviewSession, knowledgeBases: [KnowledgeBase], modelContext: ModelContext, host: String, initialMode: DirectorMode = .ai) {
         self.session = session
         self.knowledgeBases = knowledgeBases
         self.modelContext = modelContext
+        mode = initialMode
+        directorQuestions = []
+        directorServer.start()
         let appLanguage = AppLanguage.current
         let interviewerLanguage = MockInterviewLanguage(
             rawValue: UserDefaults.standard.string(forKey: AppPreferenceKey.interviewerLanguage) ?? ""
@@ -127,12 +158,19 @@ final class ReceiverCoordinator {
         isGeneratingCode = false
         pendingCodeRawQuestion = ""
         pendingSpeechQuestion = ""
+        pendingSpeechHasStrongQuestionSignal = false
+        pendingSpeechSpeaker = .unknown
+        pendingInterruptQuestion = nil
+        pendingInterruptSpeaker = .unknown
         pendingSpeechQuestionTask?.cancel()
         pendingSpeechQuestionTask = nil
         activeSpeechAnswerTask?.cancel()
         activeSpeechAnswerTask = nil
         activeSpeechQuestion = ""
         activeSpeechQuestionStartedAt = nil
+        activeSpeechAnswerHasStarted = false
+        activeSpeechSpeaker = .unknown
+        lastSpeechUtteranceEndedAt = nil
         // Pre-build mock memory once at session start so AI calls don't hit SwiftData every time
         cachedMockMemory = nil
         cachedMockMemory = buildMockTrainingMemory()
@@ -147,14 +185,22 @@ final class ReceiverCoordinator {
         pendingSpeechQuestionTask?.cancel()
         pendingSpeechQuestionTask = nil
         pendingSpeechQuestion = ""
+        pendingSpeechHasStrongQuestionSignal = false
+        pendingSpeechSpeaker = .unknown
+        pendingInterruptQuestion = nil
+        pendingInterruptSpeaker = .unknown
         activeSpeechAnswerTask?.cancel()
         activeSpeechAnswerTask = nil
         activeSpeechQuestion = ""
         activeSpeechQuestionStartedAt = nil
+        activeSpeechAnswerHasStarted = false
+        activeSpeechSpeaker = .unknown
+        lastSpeechUtteranceEndedAt = nil
         speech.stop()
         volcanoSpeech.stop()
         activeASRProvider = nil
         tcp.disconnect()
+        directorServer.stop()
         session?.endedAt = .now
         try? modelContext?.save()
     }
@@ -204,10 +250,16 @@ final class ReceiverCoordinator {
             pendingSpeechQuestionTask?.cancel()
             pendingSpeechQuestionTask = nil
             pendingSpeechQuestion = ""
+            pendingSpeechHasStrongQuestionSignal = false
+            pendingSpeechSpeaker = .unknown
+            pendingInterruptQuestion = nil
+            pendingInterruptSpeaker = .unknown
             activeSpeechAnswerTask?.cancel()
             activeSpeechAnswerTask = nil
             activeSpeechQuestion = ""
             activeSpeechQuestionStartedAt = nil
+            activeSpeechAnswerHasStarted = false
+            activeSpeechSpeaker = .unknown
             speech.stop()
             volcanoSpeech.stop()
             activeASRProvider = nil
@@ -221,18 +273,49 @@ final class ReceiverCoordinator {
         return await speech.start()
     }
 
-    private func enqueueSpeechQuestion(_ text: String) {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func enqueueSpeechQuestion(_ utterance: RecognizedUtterance) {
+        let clean = utterance.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
+        guard utterance.speaker != .candidate else {
+            speech.statusText = L.t("🙋 You are answering")
+            return
+        }
+
+        let previousEnd = lastSpeechUtteranceEndedAt
+        lastSpeechUtteranceEndedAt = utterance.endedAt
+        let utteranceStart = utterance.endedAt.addingTimeInterval(-utterance.durationSeconds)
+        let gap = previousEnd.map { max(0, utteranceStart.timeIntervalSince($0)) } ?? .infinity
+        let isMicrophoneHeuristicEnabled = audioSource == .microphone && SpeechProtectionPolicy.heuristicsEnabled
+        if isMicrophoneHeuristicEnabled,
+           utterance.speaker == .unknown,
+           SpeechProtectionPolicy.isLikelyAnswerRepetition(transcript: clean, answer: aiText) {
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: AppPreferenceKey.speakerRecognitionDebugLogging) {
+                let overlap = SpeechProtectionPolicy.answerOverlap(clean, aiText)
+                print("[SpeechProtection] dropped answer repetition overlap=\(String(format: "%.3f", overlap))")
+            }
+            #endif
+            return
+        }
+        let strongSignal = utterance.speaker == .interviewer || (
+            isMicrophoneHeuristicEnabled && SpeechProtectionPolicy.isStrongQuestionSignal(
+                clean,
+                gapSincePreviousUtterance: gap
+            )
+        )
         if pendingSpeechQuestion.isEmpty {
             pendingSpeechQuestion = clean
         } else if !pendingSpeechQuestion.localizedCaseInsensitiveContains(clean) {
             pendingSpeechQuestion = "\(pendingSpeechQuestion) \(clean)"
         }
-        // Keep the overlay subtitle live while the utterance is still being debounced.
-        prompterText = pendingSpeechQuestion
-        lastQuestion = pendingSpeechQuestion
-        lastUpdatedAt = .now
+        pendingSpeechHasStrongQuestionSignal = pendingSpeechHasStrongQuestionSignal || strongSignal
+        if utterance.speaker == .interviewer { pendingSpeechSpeaker = .interviewer }
+        if audioSource == .system || !activeSpeechAnswerHasStarted {
+            // Keep the overlay subtitle live while the utterance is still being debounced.
+            prompterText = pendingSpeechQuestion
+            lastQuestion = pendingSpeechQuestion
+            lastUpdatedAt = .now
+        }
 
         pendingSpeechQuestionTask?.cancel()
         pendingSpeechQuestionTask = Task { [weak self] in
@@ -245,25 +328,48 @@ final class ReceiverCoordinator {
             await MainActor.run {
                 guard let self else { return }
                 let question = self.pendingSpeechQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+                let hasStrongSignal = self.pendingSpeechHasStrongQuestionSignal
+                let speaker = self.pendingSpeechSpeaker
                 self.pendingSpeechQuestion = ""
+                self.pendingSpeechHasStrongQuestionSignal = false
+                self.pendingSpeechSpeaker = .unknown
                 self.pendingSpeechQuestionTask = nil
                 guard !question.isEmpty else { return }
-                self.submitSpeechQuestion(question)
+                self.submitSpeechQuestion(question, strongQuestionSignal: hasStrongSignal, speaker: speaker)
             }
         }
     }
 
-    private func submitSpeechQuestion(_ question: String) {
+    private func submitSpeechQuestion(_ question: String, strongQuestionSignal: Bool = false, speaker: SpeakerLabel = .unknown) {
+        if mode == .director {
+            publishDirectorQuestion(question)
+            return
+        }
+        if audioSource == .microphone,
+           activeSpeechAnswerHasStarted,
+           !strongQuestionSignal {
+            pendingInterruptQuestion = question
+            pendingInterruptSpeaker = speaker
+            return
+        }
+
         var finalQuestion = question
-        if shouldMergeWithActiveSpeechQuestion(question) {
+        if (audioSource == .system || !activeSpeechAnswerHasStarted),
+           shouldMergeWithActiveSpeechQuestion(question) {
             finalQuestion = mergeSpeechQuestions(activeSpeechQuestion, question)
             activeSpeechAnswerTask?.cancel()
             aiText = "Preparing answer suggestion..."
             confidence = 0.34
             lastUpdatedAt = .now
         }
+        if strongQuestionSignal {
+            activeSpeechAnswerTask?.cancel()
+        }
+        pendingInterruptQuestion = nil
         activeSpeechQuestion = finalQuestion
+        activeSpeechSpeaker = speaker
         activeSpeechQuestionStartedAt = .now
+        activeSpeechAnswerHasStarted = false
         activeSpeechAnswerTask = Task { [weak self] in
             await self?.askAI(question: finalQuestion)
             await MainActor.run {
@@ -271,6 +377,17 @@ final class ReceiverCoordinator {
                 self.activeSpeechAnswerTask = nil
             }
         }
+    }
+
+    func answerPendingInterrupt() {
+        guard let question = pendingInterruptQuestion?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !question.isEmpty else { return }
+        pendingInterruptQuestion = nil
+        let speaker = pendingInterruptSpeaker
+        pendingInterruptSpeaker = .unknown
+        activeSpeechAnswerTask?.cancel()
+        activeSpeechAnswerHasStarted = false
+        submitSpeechQuestion(question, strongQuestionSignal: true, speaker: speaker)
     }
 
     private func shouldMergeWithActiveSpeechQuestion(_ newQuestion: String) -> Bool {
@@ -389,6 +506,72 @@ final class ReceiverCoordinator {
         await askAI(question: question, displayQuestion: nil, historyQuestion: nil, requiresListeningAI: true)
     }
 
+    func switchMode() async {
+        mode = mode == .ai ? .director : .ai
+        directorServer.send(DirectorPacket(kind: .mode, mode: mode, hostBoardOpen: true))
+        if mode == .director {
+            aiText = directorQuestions.last?.renderedAnswer ?? ""
+            if let last = directorQuestions.last {
+                lastQuestion = last.text
+                prompterText = last.text
+            }
+        } else {
+            aiText = ""
+            lastQuestion = ""
+            prompterText = "Waiting for interview question..."
+        }
+        if !aiEnabled { await toggleAI() }
+    }
+
+    func publishDirectorQuestion(_ question: String) {
+        let clean = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        _ = appendControllerQuestion(clean)
+        lastQuestion = clean
+        prompterText = clean
+        aiText = ""
+        lastUpdatedAt = .now
+    }
+
+    @discardableResult
+    private func appendControllerQuestion(_ clean: String) -> DirectorQuestion {
+        if let last = directorQuestions.last,
+           last.text.trimmingCharacters(in: .whitespacesAndNewlines) == clean {
+            return last
+        }
+        let item = DirectorQuestion(id: UUID().uuidString, text: clean, answers: [], createdAt: .now)
+        directorQuestions.append(item)
+        directorServer.send(DirectorPacket(kind: .question, questionID: item.id, text: clean, mode: mode, hostBoardOpen: true))
+        return item
+    }
+
+    private func handleDirectorPacket(_ packet: DirectorPacket) {
+        switch packet.kind {
+        case .answer:
+            guard let text = packet.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+            let targetID = packet.questionID ?? directorQuestions.last?.id
+            guard let targetID, let index = directorQuestions.firstIndex(where: { $0.id == targetID }) else { return }
+            directorQuestions[index].answers.append(text)
+            if index == directorQuestions.indices.last && mode == .director {
+                lastQuestion = directorQuestions[index].text
+                prompterText = lastQuestion
+                aiText = directorQuestions[index].renderedAnswer
+                lastUpdatedAt = .now
+            }
+        case .hello:
+            directorServer.send(directorSnapshot())
+        case .mode:
+            break
+        case .question, .snapshot:
+            break
+        }
+    }
+
+    private func directorSnapshot() -> DirectorPacket {
+        let last = directorQuestions.last
+        return DirectorPacket(kind: .snapshot, questionID: last?.id, text: last?.text, mode: mode, hostBoardOpen: true)
+    }
+
     #if os(macOS)
     func showScreenshotImage(_ image: NSImage, status: String) {
         screenshotImage = image
@@ -403,6 +586,10 @@ final class ReceiverCoordinator {
     func askScreenshotQuestion(rawText: String) async {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if mode == .director {
+            publishDirectorQuestion(trimmed)
+            return
+        }
         let answerLanguageCode = configuredAnswerLanguageCode
         let screenshotData = currentScreenshotPNGData()
         pendingCodeRawQuestion = trimmed
@@ -514,6 +701,7 @@ final class ReceiverCoordinator {
         let cleanQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanQuestion.isEmpty else { return }
         let visibleQuestion = displayQuestion ?? cleanQuestion
+        _ = appendControllerQuestion(visibleQuestion)
         lastQuestion = visibleQuestion
         prompterText = visibleQuestion
         aiText = "Preparing answer suggestion..."
@@ -548,6 +736,9 @@ final class ReceiverCoordinator {
                 onToken: { token in
                     if isApproachForPendingCode && self.isGeneratingCode { return }
                     streamingAnswer += token
+                    if self.activeSpeechQuestion == cleanQuestion, !token.isEmpty {
+                        self.activeSpeechAnswerHasStarted = true
+                    }
                     let now = Date()
                     if now.timeIntervalSince(lastUIUpdate) >= uiUpdateInterval {
                         let displayAnswer = self.displayableAnswer(from: streamingAnswer)
@@ -564,6 +755,9 @@ final class ReceiverCoordinator {
                     if isApproachForPendingCode && self.isGeneratingCode { return }
                     let answer = self.displayableAnswer(from: fullText)
                     let turn = ConversationTurn(question: historyQuestion ?? visibleQuestion, answer: answer, session: session)
+                    if self.activeSpeechQuestion == cleanQuestion {
+                        turn.speakerLabel = self.activeSpeechSpeaker
+                    }
                     turnConfigurator?(turn)
                     session.turns.append(turn)
                     modelContext.insert(turn)

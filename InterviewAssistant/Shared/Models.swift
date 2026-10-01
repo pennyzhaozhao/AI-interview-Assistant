@@ -145,11 +145,17 @@ final class ConversationTurn {
     var feedback: String = ""
     var suggestedAnswer: String = ""
     var score: Int = 0
+    var speakerLabelRaw: String = SpeakerLabel.unknown.rawValue
     @Attribute(.externalStorage) var screenshotData: Data?
     var createdAt: Date
     var session: InterviewSession?
 
-    init(id: UUID = UUID(), question: String, answer: String, category: String = "", feedback: String = "", suggestedAnswer: String = "", score: Int = 0, screenshotData: Data? = nil, createdAt: Date = .now, session: InterviewSession? = nil) {
+    var speakerLabel: SpeakerLabel {
+        get { SpeakerLabel(rawValue: speakerLabelRaw) ?? .unknown }
+        set { speakerLabelRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(), question: String, answer: String, category: String = "", feedback: String = "", suggestedAnswer: String = "", score: Int = 0, speakerLabel: SpeakerLabel = .unknown, screenshotData: Data? = nil, createdAt: Date = .now, session: InterviewSession? = nil) {
         self.id = id
         self.question = question
         self.answer = answer
@@ -157,6 +163,7 @@ final class ConversationTurn {
         self.feedback = feedback
         self.suggestedAnswer = suggestedAnswer
         self.score = score
+        self.speakerLabelRaw = speakerLabel.rawValue
         self.screenshotData = screenshotData
         self.createdAt = createdAt
         self.session = session

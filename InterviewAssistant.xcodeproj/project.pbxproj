@@ -40,7 +40,22 @@
 		AA0000000000000000000028 /* WebsiteResearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000126 /* WebsiteResearchService.swift */; };
 		AA0000000000000000000029 /* VolcanoASREngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000127 /* VolcanoASREngine.swift */; };
 		AA000000000000000000002A /* DataStorageManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012A /* DataStorageManager.swift */; };
+		AA000000000000000000002B /* SpeechUtterancePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012B /* SpeechUtterancePolicy.swift */; };
+		AA000000000000000000002C /* sherpa-onnx-shared in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000A01 /* sherpa-onnx-shared */; };
+		AA000000000000000000002D /* SpeakerVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012C /* SpeakerVerifier.swift */; };
+		AA000000000000000000002E /* SpeakerEnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012D /* SpeakerEnrollmentView.swift */; };
+		BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000101 /* SpeechProtectionTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BB0000000000000000000201 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000700 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000500;
+			remoteInfo = InterviewAssistant;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		AA0000000000000000000101 /* InterviewAssistantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterviewAssistantApp.swift; sourceTree = "<group>"; };
@@ -78,7 +93,12 @@
 		AA0000000000000000000126 /* WebsiteResearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteResearchService.swift; sourceTree = "<group>"; };
 		AA0000000000000000000127 /* VolcanoASREngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolcanoASREngine.swift; sourceTree = "<group>"; };
 		AA000000000000000000012A /* DataStorageManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataStorageManager.swift; sourceTree = "<group>"; };
+		AA000000000000000000012B /* SpeechUtterancePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechUtterancePolicy.swift; sourceTree = "<group>"; };
+		AA000000000000000000012C /* SpeakerVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerVerifier.swift; sourceTree = "<group>"; };
+		AA000000000000000000012D /* SpeakerEnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerEnrollmentView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB0000000000000000000100 /* InterviewAssistantTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InterviewAssistantTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB0000000000000000000101 /* SpeechProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechProtectionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +106,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA000000000000000000002C /* sherpa-onnx-shared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -97,6 +118,7 @@
 			children = (
 				AA0000000000000000000401 /* InterviewAssistant */,
 				AA0000000000000000000409 /* Products */,
+				BB0000000000000000000400 /* InterviewAssistantTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -124,6 +146,8 @@
 				AA0000000000000000000103 /* Theme.swift */,
 				AA0000000000000000000104 /* Models.swift */,
 				AA000000000000000000012A /* DataStorageManager.swift */,
+				AA000000000000000000012B /* SpeechUtterancePolicy.swift */,
+				AA000000000000000000012C /* SpeakerVerifier.swift */,
 				AA0000000000000000000105 /* KeychainStore.swift */,
 				AA0000000000000000000106 /* AIService.swift */,
 				AA0000000000000000000107 /* KnowledgeContextBuilder.swift */,
@@ -192,6 +216,7 @@
 				AA0000000000000000000115 /* APIConfigView.swift */,
 				AA000000000000000000011E /* SettingsView.swift */,
 				AA000000000000000000011F /* HotkeyRecorderView.swift */,
+				AA000000000000000000012D /* SpeakerEnrollmentView.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -200,6 +225,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000200 /* InterviewAssistant.app */,
+				BB0000000000000000000100 /* InterviewAssistantTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -222,6 +248,14 @@
 			path = MockInterview;
 			sourceTree = "<group>";
 		};
+		BB0000000000000000000400 /* InterviewAssistantTests */ = {
+			isa = PBXGroup;
+			children = (
+				BB0000000000000000000101 /* SpeechProtectionTests.swift */,
+			);
+			path = InterviewAssistantTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -232,6 +266,7 @@
 				AA0000000000000000000600 /* Sources */,
 				AA0000000000000000000300 /* Frameworks */,
 				AA0000000000000000000601 /* Resources */,
+				AA0000000000000000000602 /* Fix ONNX Runtime Loader Link */,
 			);
 			buildRules = (
 			);
@@ -239,12 +274,40 @@
 			);
 			name = InterviewAssistant;
 			packageProductDependencies = (
+				AA0000000000000000000A01 /* sherpa-onnx-shared */,
 			);
 			productName = InterviewAssistant;
 			productReference = AA0000000000000000000200 /* InterviewAssistant.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB0000000000000000000500 /* InterviewAssistantTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB0000000000000000000800 /* Build configuration list for PBXNativeTarget "InterviewAssistantTests" */;
+			buildPhases = (
+				BB0000000000000000000600 /* Sources */,
+				BB0000000000000000000601 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB0000000000000000000202 /* PBXTargetDependency */,
+			);
+			name = InterviewAssistantTests;
+			productName = InterviewAssistantTests;
+			productReference = BB0000000000000000000100 /* InterviewAssistantTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BB0000000000000000000601 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXProject section */
 		AA0000000000000000000700 /* Project object */ = {
@@ -256,6 +319,10 @@
 				TargetAttributes = {
 					AA0000000000000000000500 = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					BB0000000000000000000500 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = AA0000000000000000000500;
 					};
 				};
 			};
@@ -269,6 +336,7 @@
 			mainGroup = AA0000000000000000000400;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AA0000000000000000000A00 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000409 /* Products */;
@@ -276,6 +344,7 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000500 /* InterviewAssistant */,
+				BB0000000000000000000500 /* InterviewAssistantTests */,
 			);
 		};
 /* End PBXProject section */
@@ -291,7 +360,38 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AA0000000000000000000602 /* Fix ONNX Runtime Loader Link */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/onnxruntime.framework",
+			);
+			name = "Fix ONNX Runtime Loader Link";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libonnxruntime.dylib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nframeworks_dir=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\nif [ \"${PLATFORM_NAME}\" = \"macosx\" ]; then\n  runtime_target=\"onnxruntime.framework/Versions/A/onnxruntime\"\nelse\n  runtime_target=\"onnxruntime.framework/onnxruntime\"\nfi\n/bin/ln -sfn \"${runtime_target}\" \"${frameworks_dir}/libonnxruntime.dylib\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		BB0000000000000000000600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000600 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -327,13 +427,44 @@
 				AA0000000000000000000025 /* MockInterviewView.swift in Sources */,
 				AA0000000000000000000015 /* APIConfigView.swift in Sources */,
 				AA0000000000000000000020 /* SettingsView.swift in Sources */,
+				AA000000000000000000002B /* SpeechUtterancePolicy.swift in Sources */,
+				AA000000000000000000002D /* SpeakerVerifier.swift in Sources */,
 				AA0000000000000000000021 /* HotkeyRecorderView.swift in Sources */,
+				AA000000000000000000002E /* SpeakerEnrollmentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		BB0000000000000000000900 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InterviewAssistant.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InterviewAssistant";
+			};
+			name = Debug;
+		};
+		BB0000000000000000000901 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InterviewAssistant.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/InterviewAssistant";
+			};
+			name = Release;
+		};
 		AA0000000000000000000900 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -448,7 +579,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = YJHNV22T7N;
@@ -458,8 +589,9 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -478,7 +610,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = YJHNV22T7N;
@@ -489,8 +621,9 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -505,6 +638,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BB0000000000000000000800 /* Build configuration list for PBXNativeTarget "InterviewAssistantTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB0000000000000000000900 /* Debug */,
+				BB0000000000000000000901 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		AA0000000000000000000800 /* Build configuration list for PBXProject "InterviewAssistant" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -524,6 +666,33 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA0000000000000000000A00 /* XCRemoteSwiftPackageReference "sherpa-onnx" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/k2-fsa/sherpa-onnx";
+			requirement = {
+				kind = exactVersion;
+				version = 1.13.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA0000000000000000000A01 /* sherpa-onnx-shared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000A00 /* XCRemoteSwiftPackageReference "sherpa-onnx" */;
+			productName = "sherpa-onnx-shared";
+		};
+/* End XCSwiftPackageProductDependency section */
+
+/* Begin PBXTargetDependency section */
+		BB0000000000000000000202 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000500 /* InterviewAssistant */;
+			targetProxy = BB0000000000000000000201 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 	};
 	rootObject = AA0000000000000000000700 /* Project object */;
 }

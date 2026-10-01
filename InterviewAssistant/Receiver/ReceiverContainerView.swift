@@ -10,11 +10,12 @@ struct ReceiverContainerView: View {
     @State private var showHistory = false
     let session: InterviewSession
     let host: String
+    var initialMode: DirectorMode = .ai
     var closeWindow: (() -> Void)?
 
     var body: some View {
         PrompterOverlayView(coordinator: coordinator, onClose: close, onKB: { showKB = true }, onHistory: { showHistory = true })
-            .onAppear { coordinator.start(session: session, knowledgeBases: knowledgeBases, modelContext: modelContext, host: host) }
+            .onAppear { coordinator.start(session: session, knowledgeBases: knowledgeBases, modelContext: modelContext, host: host, initialMode: initialMode) }
             .onDisappear { coordinator.stop() }
             .sheet(isPresented: $showKB) {
                 KnowledgeBaseManagerView(

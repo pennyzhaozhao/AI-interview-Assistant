@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var showingStorageMessage = false
     @State private var storageMessage = ""
     @State private var storageRefreshID = UUID()
+    @State private var showingVoiceSettings = false
     #if os(macOS)
     @AppStorage(AppPreferenceKey.screenshotHotkey) private var screenshotHotkey = HotkeyManager.screenshotDefaultHotkey
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
@@ -30,42 +31,52 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    settingsGroups
+            if showingVoiceSettings {
+                SpeakerEnrollmentView {
+                    showingVoiceSettings = false
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 140)
-                .frame(maxWidth: 1040, alignment: .leading)
+            } else {
+                settingsRoot
             }
-            .frame(maxWidth: .infinity)
-            .background(Color.appBG.ignoresSafeArea())
-            .navigationTitle(L.t("Settings"))
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.large)
-            #endif
-            .animation(.easeInOut(duration: 0.48), value: themeMode)
-            .id(language)
-            .fileImporter(
-                isPresented: $showingStoragePicker,
-                allowedContentTypes: [.folder],
-                allowsMultipleSelection: false,
-                onCompletion: handleStorageFolderSelection
-            )
-            .alert(L.t("Clear Local Data"), isPresented: $showingClearDataConfirmation) {
-                Button(L.t("Cancel"), role: .cancel) {}
-                Button(L.t("Clear All Data"), role: .destructive) {
-                    clearAllUserData()
-                }
-            } message: {
-                Text(L.t("This permanently deletes all interview history, knowledge bases, and saved screenshots. API keys and app preferences are not affected."))
+        }
+    }
+
+    private var settingsRoot: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                settingsGroups
             }
-            .alert(L.t("Data Storage"), isPresented: $showingStorageMessage) {
-                Button(L.t("OK"), role: .cancel) {}
-            } message: {
-                Text(storageMessage)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 140)
+            .frame(maxWidth: 1040, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color.appBG.ignoresSafeArea())
+        .navigationTitle(L.t("Settings"))
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.large)
+        #endif
+        .animation(.easeInOut(duration: 0.48), value: themeMode)
+        .id(language)
+        .fileImporter(
+            isPresented: $showingStoragePicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false,
+            onCompletion: handleStorageFolderSelection
+        )
+        .alert(L.t("Clear Local Data"), isPresented: $showingClearDataConfirmation) {
+            Button(L.t("Cancel"), role: .cancel) {}
+            Button(L.t("Clear All Data"), role: .destructive) {
+                clearAllUserData()
             }
+        } message: {
+            Text(L.t("This permanently deletes all interview history, knowledge bases, and saved screenshots. API keys and app preferences are not affected."))
+        }
+        .alert(L.t("Data Storage"), isPresented: $showingStorageMessage) {
+            Button(L.t("OK"), role: .cancel) {}
+        } message: {
+            Text(storageMessage)
         }
     }
 
@@ -128,6 +139,27 @@ struct SettingsView: View {
                     }
                     #endif
                 }
+            }
+
+            settingsSection(L.t("Speaker Recognition")) {
+                Button {
+                    showingVoiceSettings = true
+                } label: {
+                    HStack(spacing: 14) {
+                        iconTile("waveform.badge.mic", tint: Color.appPrimary)
+                        Text(L.t("Set Up Voices"))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.appText)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.appMuted.opacity(0.8))
+                    }
+                    .frame(minHeight: 72)
+                    .padding(.horizontal, 16)
+                    .background(cardBackground(radius: 20))
+                }
+                .buttonStyle(.plain)
             }
 
             settingsSection(L.t("About")) {
@@ -509,6 +541,8 @@ func cardBackground(radius: CGFloat) -> some View {
 // MARK: - About View
 
 struct AboutView: View {
+    @State private var updateChecker = UpdateChecker.shared
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -538,6 +572,38 @@ struct AboutView: View {
                 }
                 .padding(18)
                 .background(cardBackground(radius: 20))
+
+                Button {
+                    Task { await updateChecker.check(manual: true) }
+                } label: {
+                    HStack(spacing: 12) {
+                        iconTile("arrow.triangle.2.circlepath", tint: Color.appPrimary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(updateChecker.isChecking ? L.t("Checking for Updates...") : L.t("Check for Updates..."))
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.appText)
+                            if !updateChecker.statusText.isEmpty {
+                                Text(updateChecker.statusText)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.appMuted)
+                                    .lineLimit(2)
+                            }
+                        }
+                        Spacer()
+                        if updateChecker.isChecking {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.appMuted)
+                        }
+                    }
+                    .frame(minHeight: 52)
+                    .padding(18)
+                    .background(cardBackground(radius: 20))
+                }
+                .buttonStyle(.plain)
+                .disabled(updateChecker.isChecking)
 
                 VStack(spacing: 12) {
                     NavigationLink {

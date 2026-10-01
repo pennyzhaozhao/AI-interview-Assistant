@@ -15,7 +15,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .interview: return L.t("Interview")
-        case .sender: return L.t("Prompt Sender")
+        case .sender: return L.t("Director Mode")
         case .knowledge: return L.t("Knowledge Base")
         case .history: return L.t("History")
         case .settings: return L.t("Settings")
@@ -28,14 +28,14 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .knowledge: return L.t("Knowledge")
         case .history: return L.t("History")
         case .settings: return L.t("Settings")
-        case .sender: return L.t("Sender")
+        case .sender: return L.t("Director")
         }
     }
 
     var icon: String {
         switch self {
         case .interview: return "sparkles"
-        case .sender: return "paperplane.fill"
+        case .sender: return "person.wave.2.fill"
         case .knowledge: return "folder.fill"
         case .history: return "clock.fill"
         case .settings: return "slider.horizontal.3"
@@ -241,7 +241,7 @@ struct ContentView: View {
     }
 
     private var visibleSections: [AppSection] {
-        [.interview, .knowledge, .history, .settings]
+        [.interview, .sender, .knowledge, .history, .settings]
     }
 
     private var isCompact: Bool {

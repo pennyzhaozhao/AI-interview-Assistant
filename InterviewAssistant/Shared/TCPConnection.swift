@@ -5,6 +5,28 @@ import Observation
 import Darwin
 #endif
 
+enum DirectorMode: String, Codable, Sendable {
+    case ai
+    case director
+}
+
+struct DirectorPacket: Codable, Sendable {
+    enum Kind: String, Codable, Sendable {
+        case hello, question, answer, mode, snapshot
+    }
+
+    var kind: Kind
+    var questionID: String? = nil
+    var text: String? = nil
+    var mode: DirectorMode? = nil
+    var hostBoardOpen: Bool? = nil
+    var createdAt: Date = .now
+
+    static func answer(_ text: String, questionID: String?) -> DirectorPacket {
+        DirectorPacket(kind: .answer, questionID: questionID, text: text)
+    }
+}
+
 @MainActor
 @Observable
 final class TCPLineConnection {
@@ -16,11 +38,15 @@ final class TCPLineConnection {
     var statusText = "disconnected"
     var isConnected = false
     var onLine: ((String) -> Void)?
+    var onPacket: ((DirectorPacket) -> Void)?
 
     private var connection: NWConnection?
     private var buffer = Data()
     private let port: UInt16 = 9999
     private var reconnectTask: Task<Void, Never>?
+    private var reconnectHost = ""
+    private var reconnectMode: Mode = .receiver
+    private var allowsReconnect = false
 
     func connect(host: String, mode: Mode) {
         disconnect()
@@ -30,6 +56,9 @@ final class TCPLineConnection {
             return
         }
         let endpoint = NWEndpoint.Host(cleanHost)
+        reconnectHost = cleanHost
+        reconnectMode = mode
+        allowsReconnect = true
         let connection = NWConnection(host: endpoint, port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
         self.connection = connection
         statusText = "连接 \(cleanHost)..."
@@ -41,6 +70,9 @@ final class TCPLineConnection {
                     self.isConnected = true
                     self.statusText = mode == .sender ? "connected" : "IP 接收中"
                     self.receive()
+                    if mode == .sender {
+                        self.send(DirectorPacket(kind: .hello))
+                    }
                 case .failed, .waiting:
                     self.isConnected = false
                     self.statusText = "disconnected"
@@ -60,7 +92,14 @@ final class TCPLineConnection {
         connection?.send(content: data, completion: .contentProcessed { _ in })
     }
 
+    func send(_ packet: DirectorPacket) {
+        guard let data = try? JSONEncoder.director.encode(packet),
+              let line = String(data: data, encoding: .utf8) else { return }
+        sendLine(line)
+    }
+
     func disconnect() {
+        allowsReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
         connection?.cancel()
@@ -78,20 +117,35 @@ final class TCPLineConnection {
                         let lineData = self.buffer[..<range.lowerBound]
                         self.buffer.removeSubrange(..<range.upperBound)
                         if let line = String(data: lineData, encoding: .utf8), !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            self.onLine?(line)
+                            if let data = line.data(using: .utf8),
+                               let packet = try? JSONDecoder.director.decode(DirectorPacket.self, from: data) {
+                                self.onPacket?(packet)
+                            } else {
+                                self.onLine?(line)
+                            }
                         }
                     }
                 }
-                if !isComplete { self.receive() }
+                if !isComplete {
+                    self.receive()
+                } else if self.allowsReconnect, !self.reconnectHost.isEmpty {
+                    self.isConnected = false
+                    self.statusText = "disconnected"
+                    self.scheduleReconnect(host: self.reconnectHost, mode: self.reconnectMode)
+                }
             }
         }
     }
 
     private func scheduleReconnect(host: String, mode: Mode) {
+        guard allowsReconnect else { return }
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
-            await MainActor.run { self?.connect(host: host, mode: mode) }
+            await MainActor.run {
+                guard let self, self.allowsReconnect else { return }
+                self.connect(host: host, mode: mode)
+            }
         }
     }
 }
@@ -102,10 +156,13 @@ final class TCPLineServer {
     var statusText = "disconnected"
     var isRunning = false
     var clientCount = 0
+    var onPacket: ((DirectorPacket) -> Void)?
+    var stateProvider: (() -> DirectorPacket)?
 
     private var listener: NWListener?
     private var connections: [NWConnection] = []
     private let port: UInt16 = 9999
+    private var restartTask: Task<Void, Never>?
 
     func start() {
         stop()
@@ -124,6 +181,7 @@ final class TCPLineServer {
                     case .failed:
                         self.isRunning = false
                         self.statusText = "disconnected"
+                        self.scheduleRestart()
                     case .cancelled:
                         self.isRunning = false
                     default:
@@ -150,13 +208,30 @@ final class TCPLineServer {
         }
     }
 
+    func send(_ packet: DirectorPacket) {
+        guard let data = try? JSONEncoder.director.encode(packet),
+              let line = String(data: data, encoding: .utf8) else { return }
+        sendLine(line)
+    }
+
     func stop() {
+        restartTask?.cancel()
+        restartTask = nil
         listener?.cancel()
         listener = nil
         connections.forEach { $0.cancel() }
         connections = []
         clientCount = 0
         isRunning = false
+    }
+
+    private func scheduleRestart() {
+        restartTask?.cancel()
+        restartTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.start() }
+        }
     }
 
     private func accept(_ connection: NWConnection) {
@@ -169,6 +244,7 @@ final class TCPLineServer {
                     }
                     self.clientCount = self.connections.count
                     self.statusText = "listening"
+                    self.receiveRequest(on: connection, buffer: Data())
                 }
                 if case .waiting(let error) = state {
                     self.statusText = error.localizedDescription
@@ -185,6 +261,95 @@ final class TCPLineServer {
         }
         connection.start(queue: .global(qos: .userInitiated))
     }
+
+    private func receiveRequest(on connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self, weak connection] data, _, isComplete, error in
+            Task { @MainActor in
+                guard let self, let connection else { return }
+                var accumulated = buffer
+                if let data { accumulated.append(data) }
+
+                if accumulated.starts(with: Data("GET ".utf8)) || accumulated.starts(with: Data("POST ".utf8)) {
+                    if self.handleHTTPRequest(accumulated, on: connection) { return }
+                } else {
+                    while let range = accumulated.firstRange(of: Data("\n".utf8)) {
+                        let lineData = accumulated[..<range.lowerBound]
+                        accumulated.removeSubrange(..<range.upperBound)
+                        if let packet = try? JSONDecoder.director.decode(DirectorPacket.self, from: Data(lineData)) {
+                            self.onPacket?(packet)
+                        }
+                    }
+                }
+
+                if !isComplete && error == nil {
+                    self.receiveRequest(on: connection, buffer: accumulated)
+                }
+            }
+        }
+    }
+
+    private func handleHTTPRequest(_ data: Data, on connection: NWConnection) -> Bool {
+        guard let text = String(data: data, encoding: .utf8),
+              let headerRange = text.range(of: "\r\n\r\n") else { return false }
+        let header = String(text[..<headerRange.lowerBound])
+        let first = header.components(separatedBy: "\r\n").first?.split(separator: " ") ?? []
+        guard first.count >= 2 else { return false }
+        let method = String(first[0])
+        let path = String(first[1])
+        let contentLength = header.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("content-length:") }
+            .flatMap { Int($0.split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces) ?? "0") } ?? 0
+        let bodyStart = headerRange.upperBound
+        let body = String(text[bodyStart...])
+        guard body.utf8.count >= contentLength else { return false }
+
+        if method == "GET" && path == "/" {
+            sendHTTP(200, contentType: "text/html; charset=utf-8", body: Self.controllerWebPage, on: connection)
+        } else if method == "GET" && path == "/state" {
+            let packet = stateProvider?() ?? DirectorPacket(kind: .snapshot, mode: .director, hostBoardOpen: false)
+            let payload = (try? JSONEncoder.director.encode(packet)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            sendHTTP(200, contentType: "application/json", body: payload, on: connection)
+        } else if method == "POST" && path == "/send",
+                  let json = body.prefix(contentLength).data(using: .utf8),
+                  let packet = try? JSONDecoder.director.decode(DirectorPacket.self, from: json) {
+            onPacket?(packet)
+            sendHTTP(200, contentType: "application/json", body: "{\"ok\":true}", on: connection)
+        } else {
+            sendHTTP(404, contentType: "text/plain", body: "Not found", on: connection)
+        }
+        return true
+    }
+
+    private func sendHTTP(_ status: Int, contentType: String, body: String, on connection: NWConnection) {
+        let bodyData = Data(body.utf8)
+        let reason = status == 200 ? "OK" : "Not Found"
+        let header = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: \(contentType)\r\nContent-Length: \(bodyData.count)\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+        var response = Data(header.utf8)
+        response.append(bodyData)
+        connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+    }
+
+    private static let controllerWebPage = """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Director Mode</title>
+    <style>*{box-sizing:border-box}body{margin:0;background:#f7f8fb;color:#111;font:16px -apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:760px;margin:auto;padding:24px}h1{font-size:34px}.status{color:#ef3434;font-weight:700}.card{background:#fff;border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 8px 30px #0000000d}.q{min-height:110px;font-size:20px;white-space:pre-wrap}.nav{display:flex;justify-content:space-between;align-items:center}textarea{width:100%;min-height:180px;border:1px solid #ddd;border-radius:12px;padding:14px;font:16px ui-monospace,monospace}button{border:0;border-radius:10px;background:#111;color:#fff;padding:12px 22px;font-weight:700}.muted{color:#777;font-size:13px}</style></head>
+    <body><main class="wrap"><h1>Director Mode</h1><div id="status" class="status">Connecting…</div><section class="card"><div class="nav"><button onclick="move(-1)">‹</button><b>Question</b><button onclick="move(1)">›</button></div><p id="question" class="q"></p><div id="count" class="muted"></div></section><section class="card"><textarea id="answer" placeholder="Send Markdown content…"></textarea><div class="nav"><span class="muted">Markdown supported</span><button onclick="sendAnswer()">Send</button></div></section></main>
+    <script>let history=[],index=-1,last='',mode='director',boardOpen=false;async function refresh(){try{let s=await(await fetch('/state',{cache:'no-store'})).json();mode=s.mode||'director';boardOpen=s.hostBoardOpen===true;document.getElementById('status').textContent=boardOpen?(mode==='ai'?'Host opened the prompt board · AI mode':'Host opened the prompt board · Director mode'):'Host closed the prompt board';if(s.questionID&&s.questionID!==last){last=s.questionID;history.push({id:s.questionID,text:s.text||''});index=history.length-1;render()}}catch(e){document.getElementById('status').textContent='Disconnected'}}function render(){let q=history[index];document.getElementById('question').textContent=q?.text||'';document.getElementById('count').textContent=history.length?`${index+1} / ${history.length}`:''}function move(n){index=Math.max(0,Math.min(history.length-1,index+n));render()}async function sendAnswer(){if(!boardOpen){alert('Host closed the prompt board');return}if(mode==='ai'){alert('Host is in AI mode');return}let q=history[index],v=document.getElementById('answer').value.trim();if(!v)return;let d=new Date().toISOString().split('.')[0]+'Z';await fetch('/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'answer',questionID:q?.id,text:v,createdAt:d})});document.getElementById('answer').value=''}setInterval(refresh,800);refresh()</script></body></html>
+    """
+}
+
+private extension JSONEncoder {
+    static var director: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var director: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
 }
 
 enum LocalNetworkInfo {
@@ -199,7 +364,17 @@ enum LocalNetworkInfo {
     }
 
     static func wifiIPAddress() -> String? {
-        allAddresses().first { $0.interface == "en0" }?.ip
+        let addresses = allAddresses()
+        if let wifi = addresses.first(where: { $0.interface == "en0" || $0.interface == "en1" }) {
+            return wifi.ip
+        }
+        return addresses.first(where: {
+            !$0.interface.hasPrefix("utun") &&
+            !$0.interface.hasPrefix("awdl") &&
+            !$0.interface.hasPrefix("llw") &&
+            !$0.interface.hasPrefix("bridge") &&
+            ($0.ip.hasPrefix("192.168.") || $0.ip.hasPrefix("10.") || $0.ip.hasPrefix("172."))
+        })?.ip
     }
 
     static func allIPAddresses() -> [String] {
