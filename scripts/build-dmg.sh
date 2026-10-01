@@ -13,6 +13,7 @@ STAGING_DIR="${BUILD_DIR}/dmg-root"
 ENTITLEMENTS_PATH="${ROOT_DIR}/InterviewAssistant/Resources/InterviewAssistant.entitlements"
 SIGNED_RELEASE="${SIGNED_RELEASE:-0}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+DEVELOPER_IDENTITY="${DEVELOPER_IDENTITY:-Developer ID Application}"
 
 VERSION="$(xcodebuild \
   -project "${ROOT_DIR}/InterviewAssistant.xcodeproj" \
@@ -41,20 +42,6 @@ if [[ "${SIGNED_RELEASE}" == "1" ]]; then
     -archivePath "${ARCHIVE_PATH}" \
     SKIP_INSTALL=NO \
     BUILD_LIBRARY_FOR_DISTRIBUTION=NO
-
-  cat > "${BUILD_DIR}/ExportOptions.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>method</key><string>developer-id</string>
-<key>destination</key><string>export</string>
-</dict></plist>
-PLIST
-
-  xcodebuild -exportArchive \
-    -archivePath "${ARCHIVE_PATH}" \
-    -exportPath "${EXPORT_DIR}" \
-    -exportOptionsPlist "${BUILD_DIR}/ExportOptions.plist"
 else
   echo "No Developer ID release requested; building an ad-hoc signed preview..."
   xcodebuild archive \
@@ -66,34 +53,52 @@ else
     SKIP_INSTALL=NO \
     CODE_SIGNING_ALLOWED=NO
 
-  mkdir -p "${EXPORT_DIR}"
-  cp -R "${ARCHIVE_PATH}/Products/Applications/InterviewAssistant.app" "${EXPORT_DIR}/InterviewAssistant.app"
+fi
 
-  # onnxruntime-libs 1.27.1 currently ships the macOS framework with copied
-  # directories where a versioned framework requires symlinks. Xcode can link
-  # that archive, but codesign rejects the resulting ambiguous bundle. Repair
-  # the exported copy before signing; the package cache remains untouched.
-  ONNX_FRAMEWORK="${EXPORT_DIR}/InterviewAssistant.app/Contents/Frameworks/onnxruntime.framework"
-  if [[ -d "${ONNX_FRAMEWORK}/Versions/A" ]]; then
-    rm -rf "${ONNX_FRAMEWORK}/Versions/Current"
-    ln -s A "${ONNX_FRAMEWORK}/Versions/Current"
-    rm -rf "${ONNX_FRAMEWORK}/onnxruntime" "${ONNX_FRAMEWORK}/Resources"
-    ln -s Versions/Current/onnxruntime "${ONNX_FRAMEWORK}/onnxruntime"
-    ln -s Versions/Current/Resources "${ONNX_FRAMEWORK}/Resources"
-  fi
+APP_PATH="${EXPORT_DIR}/InterviewAssistant.app"
+mkdir -p "${EXPORT_DIR}"
+cp -R "${ARCHIVE_PATH}/Products/Applications/InterviewAssistant.app" "${APP_PATH}"
 
-  for FRAMEWORK in "${EXPORT_DIR}/InterviewAssistant.app/Contents/Frameworks/"*.framework; do
+# onnxruntime-libs 1.27.1 currently ships the macOS framework with copied
+# directories where a versioned framework requires symlinks. Xcode can link
+# that archive, but codesign rejects the resulting ambiguous bundle. Repair
+# the exported copy before signing; the package cache remains untouched.
+ONNX_FRAMEWORK="${APP_PATH}/Contents/Frameworks/onnxruntime.framework"
+if [[ -d "${ONNX_FRAMEWORK}/Versions/A" ]]; then
+  rm -rf "${ONNX_FRAMEWORK}/Versions/Current"
+  ln -s A "${ONNX_FRAMEWORK}/Versions/Current"
+  rm -rf "${ONNX_FRAMEWORK}/onnxruntime" "${ONNX_FRAMEWORK}/Resources"
+  ln -s Versions/Current/onnxruntime "${ONNX_FRAMEWORK}/onnxruntime"
+  ln -s Versions/Current/Resources "${ONNX_FRAMEWORK}/Resources"
+fi
+
+if [[ "${SIGNED_RELEASE}" == "1" ]]; then
+  for FRAMEWORK in "${APP_PATH}/Contents/Frameworks/"*.framework; do
+    codesign \
+      --force \
+      --sign "${DEVELOPER_IDENTITY}" \
+      --options runtime \
+      --timestamp \
+      "${FRAMEWORK}"
+  done
+  codesign \
+    --force \
+    --sign "${DEVELOPER_IDENTITY}" \
+    --options runtime \
+    --timestamp \
+    --entitlements "${ENTITLEMENTS_PATH}" \
+    "${APP_PATH}"
+else
+  for FRAMEWORK in "${APP_PATH}/Contents/Frameworks/"*.framework; do
     codesign --force --sign - "${FRAMEWORK}"
   done
   codesign \
     --force \
-    --deep \
     --sign - \
     --entitlements "${ENTITLEMENTS_PATH}" \
-    "${EXPORT_DIR}/InterviewAssistant.app"
+    "${APP_PATH}"
 fi
 
-APP_PATH="${EXPORT_DIR}/InterviewAssistant.app"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
 mkdir -p "${STAGING_DIR}"
@@ -110,7 +115,7 @@ hdiutil create \
 if [[ "${SIGNED_RELEASE}" == "1" ]]; then
   codesign \
     --force \
-    --sign "Developer ID Application" \
+    --sign "${DEVELOPER_IDENTITY}" \
     --timestamp \
     "${DMG_PATH}"
   codesign --verify --verbose=2 "${DMG_PATH}"
