@@ -134,8 +134,8 @@ The panel can be minimized to cover less of the screen.
 | Director Mode local-network control | ✅ | ✅ |
 | Preset screenshot region and global shortcut | ✅ | ✅ |
 | Hide the panel from screenshots / screen sharing | ✅ | ✅ |
-| Capture several screenshots, then analyze together | ✅ | — |
-| Streaming AI responses | ✅ | — |
+| Capture several screenshots, then analyze together | ✅ | ✅ |
+| Streaming AI responses | ✅ | ✅ |
 
 ## Requirements
 
