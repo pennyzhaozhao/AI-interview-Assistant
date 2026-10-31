@@ -38,10 +38,29 @@ public static class SmoothScrollBehavior
     private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs args)
     {
         if (sender is not ScrollViewer viewer || viewer.ScrollableHeight <= 0 || viewer.GetValue(StateProperty) is not ScrollState state) return;
+        // Let nested scrollable content (multi-line text boxes, lists, code blocks) scroll first;
+        // the page only takes over once the inner area has reached its top / bottom.
+        if (InnerViewerCanScroll(args.OriginalSource as DependencyObject, viewer, args.Delta)) return;
         state.Target = Math.Clamp(state.Target - args.Delta * 0.58, 0, viewer.ScrollableHeight);
         state.Start();
         args.Handled = true;
     }
+
+    private static bool InnerViewerCanScroll(DependencyObject? source, ScrollViewer outer, int delta)
+    {
+        for (var current = source; current is not null && !ReferenceEquals(current, outer); current = Parent(current))
+        {
+            if (current is not ScrollViewer inner || inner.ScrollableHeight <= 0) continue;
+            if (delta > 0 && inner.VerticalOffset > 0) return true;
+            if (delta < 0 && inner.VerticalOffset < inner.ScrollableHeight - 0.5) return true;
+        }
+        return false;
+    }
+
+    private static DependencyObject? Parent(DependencyObject element) =>
+        element is Visual or System.Windows.Media.Media3D.Visual3D
+            ? VisualTreeHelper.GetParent(element) ?? LogicalTreeHelper.GetParent(element)
+            : LogicalTreeHelper.GetParent(element);
 
     private static void OnScrollChanged(object sender, ScrollChangedEventArgs args)
     {

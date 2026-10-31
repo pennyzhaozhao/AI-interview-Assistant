@@ -227,6 +227,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             return;
         }
         var flags = frame[1] & 0x0F;
+        _lastFrameFlags = flags;
         var offset = (frame[0] & 0x0F) * 4;
         if ((flags & 0x01) != 0) offset += 4;
         if ((flags & 0x04) != 0) offset += 4;
@@ -250,14 +251,62 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         catch { }
     }
 
+    // Index of the first utterance not yet emitted as final (macOS VolcanoASREngine.lastDefiniteIndex).
+    // result.text is cumulative for the whole session, so it must never be used as "the question".
+    private int _lastDefiniteIndex;
+    private int _lastFrameFlags;
+
     private void EmitResult(JsonElement root)
     {
-        var text = ExtractText(root);
-        if (string.IsNullOrWhiteSpace(text)) return;
-        var definite = root.ToString().Contains("\"definite\":true", StringComparison.OrdinalIgnoreCase);
-        if (definite) Recognized?.Invoke(text.Trim());
-        else PartialRecognized?.Invoke(text.Trim());
+        var flags = _lastFrameFlags;
+        var isFinal = (flags & 0x02) != 0
+            || (root.TryGetProperty("is_last_package", out var last) && last.ValueKind == JsonValueKind.True);
+        var utterances = ResponseUtterances(root);
+
+        if (utterances.Count > 0)
+        {
+            if (_lastDefiniteIndex > utterances.Count) _lastDefiniteIndex = 0;
+            for (var index = _lastDefiniteIndex; index < utterances.Count; index++)
+            {
+                var utterance = utterances[index];
+                if (!utterance.TryGetProperty("definite", out var definite) || definite.ValueKind != JsonValueKind.True) break;
+                _lastDefiniteIndex = index + 1;
+                var text = UtteranceText(utterance);
+                if (text.Length > 0) Recognized?.Invoke(text);
+            }
+            // Live partial: only the utterances that are still being spoken.
+            var pending = string.Concat(utterances.Skip(_lastDefiniteIndex).Select(UtteranceText)).Trim();
+            if (isFinal)
+            {
+                _lastDefiniteIndex = 0;
+                if (pending.Length > 0) Recognized?.Invoke(pending);
+            }
+            else if (pending.Length > 0) PartialRecognized?.Invoke(pending);
+            return;
+        }
+
+        // Providers / responses without utterances: fall back to the plain text.
+        var fallback = ExtractText(root).Trim();
+        if (fallback.Length == 0) return;
+        if (isFinal) Recognized?.Invoke(fallback);
+        else PartialRecognized?.Invoke(fallback);
     }
+
+    private static List<JsonElement> ResponseUtterances(JsonElement root)
+    {
+        var list = new List<JsonElement>();
+        if (!root.TryGetProperty("result", out var result)) return list;
+        if (result.ValueKind == JsonValueKind.Object && result.TryGetProperty("utterances", out var utterances) && utterances.ValueKind == JsonValueKind.Array)
+            list.AddRange(utterances.EnumerateArray().Select(item => item.Clone()));
+        else if (result.ValueKind == JsonValueKind.Array)
+            foreach (var item in result.EnumerateArray())
+                if (item.TryGetProperty("utterances", out var nested) && nested.ValueKind == JsonValueKind.Array)
+                    list.AddRange(nested.EnumerateArray().Select(entry => entry.Clone()));
+        return list;
+    }
+
+    private static string UtteranceText(JsonElement utterance) =>
+        utterance.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String ? (text.GetString() ?? "").Trim() : "";
 
     private static string ExtractText(JsonElement element)
     {
@@ -317,6 +366,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         _sequence = 0;
         _resamplePosition = 0;
         lock (_utteranceGate) _utteranceAudio.Clear();
+        _lastDefiniteIndex = 0;
     }
 
     public void Dispose() => Stop();

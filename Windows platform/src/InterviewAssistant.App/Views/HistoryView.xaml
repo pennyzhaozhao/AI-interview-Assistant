@@ -215,9 +215,16 @@
                         <TextBlock Text="{Binding Question}" Margin="0,6,0,14" TextWrapping="Wrap"/>
                         <TextBlock Text="ANSWER" Foreground="{DynamicResource SuccessBrush}" FontSize="11" FontWeight="Bold"/>
                         <TextBlock Text="{Binding Answer}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Score, StringFormat={}{0}/100}" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,14,0,0"/>
-                        <TextBlock Text="{Binding Feedback}" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding SuggestedAnswer}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        <!-- Scores / feedback only exist for mock interviews; formal interviews show Q&A only. -->
+                        <TextBlock Text="{Binding Score, StringFormat={}{0}/100}" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,14,0,0">
+                          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding Score}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Feedback}" Margin="0,6,0,0" TextWrapping="Wrap">
+                          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding Feedback}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding SuggestedAnswer}" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}">
+                          <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><DataTrigger Binding="{Binding SuggestedAnswer}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                        </TextBlock>
                       </StackPanel>
                     </Border>
                   </DataTemplate>

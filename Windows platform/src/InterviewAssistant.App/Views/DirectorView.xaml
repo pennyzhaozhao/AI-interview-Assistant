@@ -65,7 +65,7 @@
             <Border Background="{DynamicResource DirectorPanelBrush}" CornerRadius="14" Padding="20">
                 <StackPanel>
                     <TextBlock Text="{loc:Loc Key='SEND MARKDOWN CONTENT'}" Foreground="{DynamicResource DirectorMutedBrush}" FontSize="12" FontWeight="Bold"/>
-                    <TextBox Text="{Binding Draft, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DirectorField}" Height="170" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" FontFamily="Consolas" Margin="0,14,0,0"/>
+                    <TextBox Text="{Binding Draft, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DirectorField}" Height="170" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" VerticalContentAlignment="Top" FontFamily="Consolas" Margin="0,14,0,0"/>
                     <Grid Margin="0,14,0,0"><TextBlock Text="{loc:Loc Key='Supports headings, lists, code blocks and links'}" Foreground="{DynamicResource DirectorMutedBrush}" FontSize="12" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="{loc:Loc Key=Clear}" Command="{Binding ClearCommand}" Style="{StaticResource DirectorSecondary}"/><Button Content="{loc:Loc Key=Send}" Command="{Binding SendCommand}" Style="{StaticResource DirectorPrimary}" Margin="10,0,0,0"/></StackPanel></Grid>
                 </StackPanel>
             </Border>

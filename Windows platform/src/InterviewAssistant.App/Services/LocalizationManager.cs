@@ -20,6 +20,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["PresetRegionDescription"] = "Set the region before the interview, then capture silently without stealing focus.",
         ["ManualRegionDescription"] = "Select an area manually each time. This can briefly move focus away from the interview.",
         ["RegionSetupHint"] = "Set the region before the interview starts so capturing does not affect the interview window.",
+        ["WebsiteBlockedMessage"] = "The website refused automated access (HTTP {0}), usually because of bot protection. Try another company page (home or About page), or paste the company introduction into the notes",
         ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded."
     };
 
@@ -145,7 +146,17 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["The voice sample was too short or unclear"] = "声音样本太短或不够清晰",
         ["Download the speaker model first"] = "请先下载声纹模型",
         ["The downloaded speaker model failed verification"] = "下载的声纹模型校验失败",
-        ["Speaker Recognition"] = "说话人识别"
+        ["Speaker Recognition"] = "说话人识别",
+        // Company website research (macOS wording).
+        ["Parsing the company website and generating a research summary..."] = "正在解析公司官网并生成调研摘要…",
+        ["Website research summary (please review manually):"] = "官网调研摘要（请人工核对）：",
+        ["Company research summary generated. Please review it quickly before the interview."] = "已生成公司调研摘要，面试前请快速核对一遍。",
+        ["Parsing failed: {0}. You can fill in the company notes manually."] = "解析失败：{0}。你可以手动填写公司备注。",
+        ["No content suitable for analysis was extracted from the company website."] = "没有从公司官网提取到可用于分析的内容。",
+        ["The current AI provider did not return company information."] = "当前 AI 服务没有返回公司信息。",
+        ["Source returned HTTP {0}"] = "网站返回 HTTP {0}",
+        ["WebsiteBlockedMessage"] = "该网站拒绝了程序访问（HTTP {0}），通常是网站开启了反爬虫保护。可以换成公司的其他页面（如官网首页、About 页面），或把公司介绍直接粘贴到公司备注里",
+        ["Enter a valid company website first."] = "请先输入有效的公司官网地址。"
     };
 
     public static LocalizationManager Instance { get; } = new();

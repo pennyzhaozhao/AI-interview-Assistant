@@ -10,7 +10,6 @@ namespace InterviewAssistant.ViewModels;
 
 public sealed class HomeViewModel : PageViewModel
 {
-    private static readonly HttpClient WebClient = new() { Timeout = TimeSpan.FromSeconds(15) };
     private string _role = "";
     private string _jobDescription = "";
     private string _company = "";
@@ -33,7 +32,7 @@ public sealed class HomeViewModel : PageViewModel
         LocalizationManager.Instance.LanguageChanged += RefreshKnowledgeSummary;
         StartInterviewCommand = new RelayCommand(StartInterview);
         MockInterviewCommand = new RelayCommand(() => MockInterviewOptionsRequested?.Invoke());
-        ParseWebsiteCommand = new AsyncRelayCommand(ParseWebsiteAsync);
+        ParseWebsiteCommand = new AsyncRelayCommand(ParseWebsiteAsync, () => !IsParsingWebsite);
         ChooseKnowledgeCommand = new RelayCommand(() => KnowledgeSelectionRequested?.Invoke());
     }
 
@@ -153,30 +152,49 @@ public sealed class HomeViewModel : PageViewModel
             Math.Clamp(questionCount, 3, 10)));
     }
 
+    private bool _isParsingWebsite;
+
+    public bool IsParsingWebsite
+    {
+        get => _isParsingWebsite;
+        private set { if (SetProperty(ref _isParsingWebsite, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+
+    /// <summary>Same flow as the macOS SetupView.parseCompanyWebsite(): AI research summary appended to the notes.</summary>
     private async Task ParseWebsiteAsync()
     {
-        if (!Uri.TryCreate(CompanyWebsite.Trim(), UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        var input = CompanyWebsite.Trim();
+        if (input.Length == 0 || IsParsingWebsite)
         {
-            StatusMessage = LocalizationManager.Text("Enter a valid company website first.");
+            if (input.Length == 0) StatusMessage = LocalizationManager.Text("Enter a valid company website first.");
             return;
         }
-
-        StatusMessage = LocalizationManager.Text("Reading company website…");
+        IsParsingWebsite = true;
+        StatusMessage = LocalizationManager.Text("Parsing the company website and generating a research summary...");
         try
         {
-            var html = await WebClient.GetStringAsync(uri);
-            html = Regex.Replace(html, "<(script|style)[^>]*>[\\s\\S]*?</\\1>", " ", RegexOptions.IgnoreCase);
-            var plainText = WebUtility.HtmlDecode(Regex.Replace(html, "<[^>]+>", " "));
-            plainText = Regex.Replace(plainText, "\\s+", " ").Trim();
-            if (plainText.Length > 6000) plainText = plainText[..6000];
-            CompanyNotes = plainText;
-            StatusMessage = LocalizationManager.Text("Company website content was added to your notes.");
+            var summary = await WebsiteResearchService.ResearchCompanyAsync(input, CurrentAIConfig());
+            var block = $"{LocalizationManager.Text("Website research summary (please review manually):")}\n{summary}";
+            var existing = CompanyNotes.Trim();
+            CompanyNotes = existing.Length == 0 ? block : $"{existing}\n\n{block}";
+            StatusMessage = LocalizationManager.Text("Company research summary generated. Please review it quickly before the interview.");
         }
         catch (Exception exception)
         {
-            StatusMessage = string.Format(LocalizationManager.Text("Website could not be read: {0}"), exception.Message);
+            StatusMessage = string.Format(LocalizationManager.Text("Parsing failed: {0}. You can fill in the company notes manually."), exception.Message.TrimEnd('.', '。'));
         }
+        finally
+        {
+            IsParsingWebsite = false;
+        }
+    }
+
+    private AIConfig CurrentAIConfig()
+    {
+        if (!Enum.TryParse<AIProvider>(_store.Data.Preferences.Provider, true, out var provider)) provider = AIProvider.DeepSeek;
+        var settings = _store.GetProviderSettings(provider);
+        var key = AppServices.Current.Credentials.Read(provider.ToString().ToLowerInvariant());
+        return new AIConfig(provider, settings.ApiUrl, key, settings.Model);
     }
 
     private void StartInterview()
