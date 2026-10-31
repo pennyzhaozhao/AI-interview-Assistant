@@ -42,7 +42,7 @@ public partial class KnowledgeView : UserControl
     private void EditEntry_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: ViewModels.KnowledgeEntryViewModel entry }) return;
-        var dialog = new Windows.KnowledgeEntryEditorWindow(entry.Title, entry.Content, isNew: false)
+        var dialog = new Windows.KnowledgeEntryEditorWindow(entry.Title, entry.Content, isNew: false, pdfPath: entry.PdfPath)
         {
             Owner = Window.GetWindow(this)
         };
@@ -66,7 +66,17 @@ public partial class KnowledgeView : UserControl
         {
             var content = await DocumentTextImporter.ExtractTextAsync(dialog.FileName);
             if (string.IsNullOrWhiteSpace(content)) throw new InvalidDataException("The selected file did not contain readable text.");
-            viewModel.AddFile(Path.GetFileName(dialog.FileName), content, $"file:{dialog.FileName}");
+            var source = $"file:{dialog.FileName}";
+            if (string.Equals(Path.GetExtension(dialog.FileName), ".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                // Like macOS storeImportedPDF: keep the original so the source editor can preview it.
+                var directory = Path.Combine(AppServices.Current.DataStore.DataDirectory, "ImportedPDFs");
+                Directory.CreateDirectory(directory);
+                var stored = Path.Combine(directory, $"{Guid.NewGuid()}.pdf");
+                File.Copy(dialog.FileName, stored, overwrite: true);
+                source = $"pdf:{stored}";
+            }
+            viewModel.AddFile(Path.GetFileName(dialog.FileName), content, source);
         }
         catch (Exception exception)
         {

@@ -13,7 +13,9 @@ public sealed record UpdateCheckResult(
     string LatestVersion,
     string Status,
     string? ReleaseNotes = null,
-    string? DownloadUrl = null);
+    string? DownloadUrl = null,
+    string Title = "",
+    string Message = "");
 
 public static class UpdateChecker
 {
@@ -56,19 +58,29 @@ public static class UpdateChecker
             var notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
             var downloadUrl = FindWindowsAsset(root) ?? releaseUrl;
             var updateAvailable = CompareVersions(latest, current) > 0;
-            var status = updateAvailable
+            // Same wording as the macOS UpdateChecker alert.
+            var title = updateAvailable
                 ? string.Format(LocalizationManager.Text("Version {0} is available"), latest)
+                : LocalizationManager.Text("You're up to date");
+            var trimmedNotes = notes?.Trim() ?? "";
+            var message = updateAvailable
+                ? (trimmedNotes.Length == 0 ? LocalizationManager.Text("A newer version is ready to download.") : trimmedNotes.Length > 1600 ? trimmedNotes[..1600] : trimmedNotes)
                 : string.Format(LocalizationManager.Text("InterviewAssistant {0} is the latest version."), current);
-            return new UpdateCheckResult(true, updateAvailable, current, latest, status, notes, downloadUrl);
+            var status = updateAvailable ? title : message;
+            return new UpdateCheckResult(true, updateAvailable, current, latest, status, notes, downloadUrl, title, message);
         }
         catch (Exception exception)
         {
+            System.Diagnostics.Debug.WriteLine($"Update check failed: {exception}");
+            var title = LocalizationManager.Text("Unable to Check for Updates");
             return new UpdateCheckResult(
                 false,
                 false,
                 current,
                 string.Empty,
-                $"{LocalizationManager.Text("Unable to Check for Updates")} {exception.Message}");
+                title,
+                Title: title,
+                Message: LocalizationManager.Text("Check your internet connection and try again."));
         }
     }
 
@@ -84,6 +96,7 @@ public static class UpdateChecker
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("InterviewAssistant", CurrentVersion));
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
         return client;
     }
 

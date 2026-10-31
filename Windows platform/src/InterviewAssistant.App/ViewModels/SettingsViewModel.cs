@@ -20,8 +20,9 @@ public sealed class SettingsViewModel : PageViewModel
     private bool _hideTaskbarIconDuringInterview;
     private string _language = "English";
     private string _theme = "Dark";
-    private string _mockInterviewLanguage = "Follow app language";
-    private string _interviewerLanguage = "Follow app language";
+    private string _mockInterviewLanguageCode = "followApp";
+    private string _interviewerLanguageCode = "followApp";
+    private bool _refreshingSpeechLanguages;
     private string _screenshotMode = "Preset region";
     private string _screenshotHotkey = "Ctrl+Shift+S";
     private string _speechRecognitionEngine = "";
@@ -30,7 +31,10 @@ public sealed class SettingsViewModel : PageViewModel
     private string _speechResourceId = "volc.seedasr.sauc.duration";
     private string _speechStatus = "";
     private bool _isTesting;
+    private bool _isTestingSpeech;
     private string _status = "";
+    private StatusKind _statusKind;
+    private StatusKind _speechStatusKind;
 
     public SettingsViewModel() : base("Settings", "Configure AI, speech, privacy and appearance.")
     {
@@ -39,7 +43,7 @@ public sealed class SettingsViewModel : PageViewModel
         SpeechRecognitionEngines = [];
         SaveCommand = new AsyncRelayCommand(SaveAsync);
         TestConnectionCommand = new AsyncRelayCommand(TestConnectionAsync, () => !IsTesting);
-        TestSpeechConnectionCommand = new AsyncRelayCommand(TestSpeechConnectionAsync);
+        TestSpeechConnectionCommand = new AsyncRelayCommand(TestSpeechConnectionAsync, () => !IsTestingSpeech);
         SaveSpeechCommand = new AsyncRelayCommand(SaveSpeechAsync);
 
         if (Enum.TryParse<AIProvider>(_store.Data.Preferences.Provider, out var provider))
@@ -51,8 +55,9 @@ public sealed class SettingsViewModel : PageViewModel
         _hideTaskbarIconDuringInterview = _store.Data.Preferences.HideTaskbarIconDuringInterview;
         _language = DecodeLanguage(_store.Data.Preferences.Language);
         _theme = DecodeTheme(_store.Data.Preferences.Theme);
-        _mockInterviewLanguage = DecodeSpeechLanguage(_store.Data.Preferences.MockInterviewLanguage);
-        _interviewerLanguage = DecodeSpeechLanguage(_store.Data.Preferences.InterviewerLanguage);
+        _mockInterviewLanguageCode = NormalizeSpeechLanguage(_store.Data.Preferences.MockInterviewLanguage);
+        _interviewerLanguageCode = NormalizeSpeechLanguage(_store.Data.Preferences.InterviewerLanguage);
+        RefreshSpeechLanguages();
         _screenshotMode = DecodeScreenshotMode(_store.Data.Preferences.ScreenshotMode);
         _screenshotHotkey = _store.Data.Preferences.ScreenshotHotkey;
         RefreshSpeechRecognitionEngines(_store.Data.Preferences.SpeechRecognitionEngine);
@@ -66,6 +71,7 @@ public sealed class SettingsViewModel : PageViewModel
             OnPropertyChanged(nameof(ScreenshotPermissionStatus));
             var engine = SpeechRecognitionEngineId;
             RefreshSpeechRecognitionEngines(engine);
+            RefreshSpeechLanguages();
         };
     }
 
@@ -77,7 +83,9 @@ public sealed class SettingsViewModel : PageViewModel
     public ICommand SaveSpeechCommand { get; }
     public IReadOnlyList<string> Languages { get; } = ["English", "简体中文"];
     public IReadOnlyList<string> Themes { get; } = ["Dark", "Light"];
-    public IReadOnlyList<string> SpeechLanguages { get; } = ["Follow app language", "English", "普通话"];
+    /// <summary>Display names, localized like the macOS MockInterviewLanguage titles. Order matches SpeechLanguageCodes.</summary>
+    public ObservableCollection<string> SpeechLanguages { get; } = [];
+    private static readonly string[] SpeechLanguageCodes = ["followApp", "zh-Hans", "en"];
     public IReadOnlyList<string> ScreenshotModes { get; } = ["Preset region", "Select region each time"];
     public ObservableCollection<string> SpeechRecognitionEngines { get; }
     public IReadOnlyList<string> SpeechResourceIds { get; } =
@@ -121,15 +129,65 @@ public sealed class SettingsViewModel : PageViewModel
 
     public string MockInterviewLanguage
     {
-        get => _mockInterviewLanguage;
-        set { if (SetProperty(ref _mockInterviewLanguage, value)) SavePreference(p => p.MockInterviewLanguage = EncodeSpeechLanguage(value)); }
+        get => SpeechLanguageName(_mockInterviewLanguageCode);
+        set
+        {
+            var code = SpeechLanguageCode(value);
+            if (code is null || code == _mockInterviewLanguageCode) return;
+            _mockInterviewLanguageCode = code;
+            OnPropertyChanged();
+            SavePreference(p => p.MockInterviewLanguage = code);
+        }
     }
 
     public string InterviewerLanguage
     {
-        get => _interviewerLanguage;
-        set { if (SetProperty(ref _interviewerLanguage, value)) SavePreference(p => p.InterviewerLanguage = EncodeSpeechLanguage(value)); }
+        get => SpeechLanguageName(_interviewerLanguageCode);
+        set
+        {
+            var code = SpeechLanguageCode(value);
+            if (code is null || code == _interviewerLanguageCode) return;
+            _interviewerLanguageCode = code;
+            OnPropertyChanged();
+            SavePreference(p => p.InterviewerLanguage = code);
+        }
     }
+
+    private void RefreshSpeechLanguages()
+    {
+        _refreshingSpeechLanguages = true;
+        var chinese = LocalizationManager.Instance.IsChinese;
+        string[] names = chinese ? ["跟随 App 语言", "中文", "English"] : ["Follow App Language", "Chinese", "English"];
+        if (!SpeechLanguages.SequenceEqual(names))
+        {
+            SpeechLanguages.Clear();
+            foreach (var name in names) SpeechLanguages.Add(name);
+        }
+        _refreshingSpeechLanguages = false;
+        OnPropertyChanged(nameof(MockInterviewLanguage));
+        OnPropertyChanged(nameof(InterviewerLanguage));
+    }
+
+    private string SpeechLanguageName(string code)
+    {
+        var index = Array.IndexOf(SpeechLanguageCodes, code);
+        return index >= 0 && index < SpeechLanguages.Count ? SpeechLanguages[index] : SpeechLanguages.FirstOrDefault() ?? "";
+    }
+
+    private string? SpeechLanguageCode(string? name)
+    {
+        // While the list is being rebuilt the ComboBox briefly reports null; never persist that.
+        if (_refreshingSpeechLanguages || string.IsNullOrEmpty(name)) return null;
+        var index = SpeechLanguages.IndexOf(name);
+        return index >= 0 ? SpeechLanguageCodes[index] : null;
+    }
+
+    private static string NormalizeSpeechLanguage(string? value) => value switch
+    {
+        "en" => "en",
+        "zh-Hans" or "zh-CN" or "zh" => "zh-Hans",
+        _ => "followApp"
+    };
 
     public string ScreenshotMode
     {
@@ -216,6 +274,36 @@ public sealed class SettingsViewModel : PageViewModel
         private set => SetProperty(ref _speechStatus, value);
     }
 
+    public StatusKind SpeechStatusKind
+    {
+        get => _speechStatusKind;
+        private set => SetProperty(ref _speechStatusKind, value);
+    }
+
+    public bool IsTestingSpeech
+    {
+        get => _isTestingSpeech;
+        private set { if (SetProperty(ref _isTestingSpeech, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+
+    public StatusKind StatusKind
+    {
+        get => _statusKind;
+        private set => SetProperty(ref _statusKind, value);
+    }
+
+    private void SetSpeechStatus(string text, StatusKind kind)
+    {
+        SpeechStatus = text;
+        SpeechStatusKind = kind;
+    }
+
+    private void SetStatus(string text, StatusKind kind)
+    {
+        Status = text;
+        StatusKind = kind;
+    }
+
     public ProviderDefinition SelectedProvider
     {
         get => _selectedProvider;
@@ -260,7 +348,7 @@ public sealed class SettingsViewModel : PageViewModel
     public bool IsTesting
     {
         get => _isTesting;
-        private set => SetProperty(ref _isTesting, value);
+        private set { if (SetProperty(ref _isTesting, value)) CommandManager.InvalidateRequerySuggested(); }
     }
 
     public string Status
@@ -296,22 +384,23 @@ public sealed class SettingsViewModel : PageViewModel
     {
         PersistFields();
         await _store.SaveAsync();
-        Status = "Settings saved on this device.";
+        SetStatus(LocalizationManager.Instance.IsChinese ? "设置已保存在本机。" : "Settings saved on this device.", StatusKind.Success);
     }
 
     private async Task TestConnectionAsync()
     {
         IsTesting = true;
-        Status = "Testing connection…";
+        var chinese = LocalizationManager.Instance.IsChinese;
+        SetStatus(chinese ? "正在测试连接…" : "Testing connection…", StatusKind.Testing);
         try
         {
             PersistFields();
-            var result = await AppServices.Current.AI.TestConnectionAsync(CurrentConfig());
-            Status = $"Connected successfully: {result}";
+            await AppServices.Current.AI.TestConnectionAsync(CurrentConfig());
+            SetStatus(chinese ? $"{SelectedProvider.DisplayName} 连接成功。" : $"{SelectedProvider.DisplayName} connection successful.", StatusKind.Success);
         }
         catch (Exception exception)
         {
-            Status = exception.Message;
+            SetStatus((chinese ? "连接失败：" : "Connection failed: ") + exception.Message, StatusKind.Error);
         }
         finally
         {
@@ -335,23 +424,30 @@ public sealed class SettingsViewModel : PageViewModel
         _credentials.Write("speech-app-id", SpeechAppId.Trim());
         _credentials.Write("speech-access-token", SpeechAccessToken.Trim());
         await _store.SaveAsync();
-        Status = SpeechRecognitionEngineId == "windows"
-            ? "Windows speech recognition selected."
-            : "Speech recognition credentials saved securely.";
-        SpeechStatus = Status;
+        var chinese = LocalizationManager.Instance.IsChinese;
+        SetSpeechStatus(SpeechRecognitionEngineId == "windows"
+            ? (chinese ? "已选择 Windows 本地语音识别。" : "Windows speech recognition selected.")
+            : (chinese ? "语音识别凭证已安全保存。" : "Speech recognition credentials saved securely."), StatusKind.Success);
     }
 
     private async Task TestSpeechConnectionAsync()
     {
-        SpeechStatus = LocalizationManager.Instance.IsChinese ? "正在测试连接…" : "Testing connection…";
+        IsTestingSpeech = true;
+        try { await TestSpeechConnectionCoreAsync(); }
+        finally { IsTestingSpeech = false; }
+    }
+
+    private async Task TestSpeechConnectionCoreAsync()
+    {
+        var chinese = LocalizationManager.Instance.IsChinese;
         await SaveSpeechAsync();
+        SetSpeechStatus(chinese ? "正在测试连接…" : "Testing connection…", StatusKind.Testing);
 
         if (SpeechRecognitionEngineId == "windows")
         {
             var available = System.Speech.Recognition.SpeechRecognitionEngine.InstalledRecognizers().Count > 0;
-            SpeechStatus = available
-                ? (LocalizationManager.Instance.IsChinese ? "✅ Windows 本地语音识别可用。" : "✅ Windows on-device speech recognition is available.")
-                : (LocalizationManager.Instance.IsChinese ? "未找到 Windows 语音识别语言包，请先在系统设置中安装。" : "No Windows speech recognizer is installed. Install a speech language in Windows Settings first.");
+            if (available) SetSpeechStatus(chinese ? "Windows 本地语音识别可用。" : "Windows on-device speech recognition is available.", StatusKind.Success);
+            else SetSpeechStatus(chinese ? "未找到 Windows 语音识别语言包，请先在系统设置中安装。" : "No Windows speech recognizer is installed. Install a speech language in Windows Settings first.", StatusKind.Error);
             return;
         }
 
@@ -360,22 +456,22 @@ public sealed class SettingsViewModel : PageViewModel
         var resourceId = SpeechResourceId.Trim();
         if (string.IsNullOrWhiteSpace(appId) || string.IsNullOrWhiteSpace(accessToken) || string.IsNullOrWhiteSpace(resourceId))
         {
-            SpeechStatus = LocalizationManager.Instance.IsChinese
+            SetSpeechStatus(chinese
                 ? "请先填写豆包语音 App ID、Access Token 并选择识别模型。"
-                : "Enter the Doubao Voice App ID, Access Token, and recognition model first.";
+                : "Enter the Doubao Voice App ID, Access Token, and recognition model first.", StatusKind.Error);
             return;
         }
 
         try
         {
             await DoubaoSpeechRecognitionService.TestConnectionAsync(appId, accessToken, resourceId, CancellationToken.None);
-            SpeechStatus = LocalizationManager.Instance.IsChinese ? "✅ 豆包语音连接成功。" : "✅ Doubao Voice connection successful.";
+            SetSpeechStatus(chinese ? "豆包语音连接成功。" : "Doubao Voice connection successful.", StatusKind.Success);
         }
         catch (Exception exception)
         {
-            SpeechStatus = LocalizationManager.Instance.IsChinese
+            SetSpeechStatus(chinese
                 ? $"豆包语音连接失败：{DoubaoSpeechRecognitionService.FriendlyError(exception)}"
-                : $"Doubao Voice connection failed: {DoubaoSpeechRecognitionService.FriendlyError(exception)}";
+                : $"Doubao Voice connection failed: {DoubaoSpeechRecognitionService.FriendlyError(exception)}", StatusKind.Error);
         }
     }
 
@@ -397,8 +493,6 @@ public sealed class SettingsViewModel : PageViewModel
 
     private static string DecodeLanguage(string value) => value.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "简体中文" : "English";
     private static string DecodeTheme(string value) => value.ToLowerInvariant() switch { "light" => "Light", "system" => "System", _ => "Dark" };
-    private static string DecodeSpeechLanguage(string value) => value switch { "en" => "English", "zh-Hans" => "普通话", _ => "Follow app language" };
-    private static string EncodeSpeechLanguage(string value) => value switch { "English" => "en", "普通话" => "zh-Hans", _ => "followApp" };
     private static string DecodeScreenshotMode(string value) => value is "selectRegion" or "manualSelect" ? "Select region each time" : "Preset region";
     private static string EncodeScreenshotMode(string value) => value == "Select region each time" ? "manualSelect" : "presetRegion";
 

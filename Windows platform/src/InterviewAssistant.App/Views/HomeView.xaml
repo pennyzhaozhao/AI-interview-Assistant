@@ -44,7 +44,7 @@
                     <TextBox Text="{Binding Role, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/>
 
                     <TextBlock Text="{loc:Loc Key=Job description}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
-                    <TextBox Text="{Binding JobDescription, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" Height="170" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
+                    <TextBox Text="{Binding JobDescription, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="False" Height="170" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
 
                     <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,22,0,22"/>
 
@@ -58,12 +58,12 @@
                     <TextBox Text="{Binding Company, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/>
 
                     <TextBlock Text="{loc:Loc Key=Company Website}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox Text="{Binding CompanyWebsite, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/><Button Grid.Column="2" Content="{loc:Loc Key=Parse Website}" Command="{Binding ParseWebsiteCommand}" Style="{StaticResource SecondaryButtonStyle}"/></Grid>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox Text="{Binding CompanyWebsite, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/><Button Grid.Column="2" Command="{Binding ParseWebsiteCommand}" Style="{StaticResource SecondaryButtonStyle}"><StackPanel Orientation="Horizontal"><infra:ActivitySpinner Width="16" Height="16" SpokeThickness="1.8" SpokeBrush="{DynamicResource TextSecondaryBrush}" Margin="0,0,9,0"><infra:ActivitySpinner.Style><Style TargetType="infra:ActivitySpinner"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsParsingWebsite}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></infra:ActivitySpinner.Style></infra:ActivitySpinner><TextBlock Text="{loc:Loc Key=Parse Website}" VerticalAlignment="Center"/></StackPanel></Button></Grid>
 
                     <TextBlock Text="{loc:Loc Key=Company Notes}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
-                    <TextBox Text="{Binding CompanyNotes, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" Height="190" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
+                    <TextBox Text="{Binding CompanyNotes, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="False" Height="190" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
 
-                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionStyle}" Margin="2,14,0,0"/>
+                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionStyle}" TextWrapping="Wrap" LineHeight="21" Margin="2,14,0,0"/>
                 </StackPanel>
             </Border>
         </StackPanel>

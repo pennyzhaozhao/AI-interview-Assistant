@@ -70,6 +70,9 @@ public partial class PrompterWindow : Window
         _speechRecognition.Recognized += SpeechRecognition_Recognized;
         _speechRecognition.PartialRecognized += SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged += SpeechRecognition_StatusChanged;
+        // Like macOS: when a voice is selected in Settings › Voices, the candidate's own speech is ignored.
+        _speechRecognition.FilterCandidateVoice = true;
+        _speechRecognition.CandidateSpeechDetected += SpeechRecognition_CandidateSpeechDetected;
         RefreshTurns(showLatest: true);
     }
 
@@ -96,6 +99,7 @@ public partial class PrompterWindow : Window
         _speechRecognition.Recognized -= SpeechRecognition_Recognized;
         _speechRecognition.PartialRecognized -= SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged -= SpeechRecognition_StatusChanged;
+        _speechRecognition.CandidateSpeechDetected -= SpeechRecognition_CandidateSpeechDetected;
         _speechRecognition.Dispose();
         if (_windowHandle != nint.Zero) _ = NativeMethods.SetWindowDisplayAffinity(_windowHandle, 0);
         if (_session.EndedAt is null && _session.Turns.Count > 0)
@@ -107,11 +111,16 @@ public partial class PrompterWindow : Window
         base.OnClosing(e);
     }
 
-    public async Task SubmitQuestionAsync(string question, CancellationToken cancellationToken = default)
+    public Task SubmitQuestionAsync(string question, CancellationToken cancellationToken = default) =>
+        SubmitQuestionAsync(question, fromScreenshot: false, cancellationToken);
+
+    private async Task SubmitQuestionAsync(string question, bool fromScreenshot, CancellationToken cancellationToken = default)
     {
         question = question.Trim();
         if (question.Length == 0) return;
-        var turn = new ConversationTurnModel { Question = question, SpeakerLabel = "interviewer" };
+        // Build prompts before the new turn is added so it is not part of "recent conversation".
+        var (systemPrompt, userPrompt, maxTokens) = BuildPrompts(question, fromScreenshot);
+        var turn = new ConversationTurnModel { Question = fromScreenshot && question.Length > 240 ? question[..240] : question, SpeakerLabel = "interviewer" };
         _session.Turns.Add(turn);
         _session.UpdatedAt = DateTimeOffset.Now;
         _turnIndex = _session.Turns.Count - 1;
@@ -119,8 +128,8 @@ public partial class PrompterWindow : Window
         _store.ScheduleSave();
         try
         {
-            var answer = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), BuildSystemPrompt(), question, cancellationToken: cancellationToken);
-            turn.Answer = answer;
+            var answer = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), systemPrompt, userPrompt, maxTokens, cancellationToken);
+            turn.Answer = InterviewPromptBuilder.DisplayableAnswer(answer, _codeLanguage);
             turn.SpeakerLabel = "assistant";
             _session.UpdatedAt = DateTimeOffset.Now;
             _store.ScheduleSave();
@@ -132,7 +141,9 @@ public partial class PrompterWindow : Window
         }
         catch (Exception exception)
         {
-            turn.Answer = $"AI request failed: {exception.Message}";
+            turn.Answer = InterviewPromptBuilder.IsChinese(AnswerLanguageCode())
+                ? $"暂时无法生成回答建议，请稍后重试或截取更清晰的题目区域。\n\n{exception.Message}"
+                : $"I could not generate a suggestion yet. Please try again or capture a clearer question area.\n\n{exception.Message}";
             _store.ScheduleSave();
             Dispatcher.Invoke(() => RenderTurn(_turnIndex));
         }
@@ -264,16 +275,39 @@ public partial class PrompterWindow : Window
         return new AIConfig(provider, settings.ApiUrl, key, settings.Model);
     }
 
-    private string BuildSystemPrompt()
+    private string AnswerLanguageCode() => InterviewPromptBuilder.AnswerLanguageCode(_store.Data.Preferences);
+
+    /// <summary>Same prompt selection as the macOS ReceiverCoordinator (askAI / askScreenshotQuestion).</summary>
+    private (string System, string User, int MaxTokens) BuildPrompts(string question, bool fromScreenshot)
     {
-        var builder = new StringBuilder("You are a discreet real-time interview assistant. Give a direct, natural answer the candidate can say aloud. Prefer concise paragraphs and concrete examples.\n");
-        if (!string.IsNullOrWhiteSpace(_session.Role)) builder.AppendLine($"Target role: {_session.Role}");
-        if (!string.IsNullOrWhiteSpace(_session.Context)) builder.AppendLine($"Job context: {_session.Context}");
-        var context = string.Join("\n\n", _store.Data.KnowledgeBases.Where(item => _session.ActiveKnowledgeBaseIds.Contains(item.Id)).SelectMany(item => item.Entries.Where(entry => entry.IsEnabled)).Select(entry => $"{entry.Title}: {entry.Content}"));
-        if (context.Length > 12000) context = context[..12000];
-        if (context.Length > 0) builder.AppendLine($"Candidate knowledge base:\n{context}");
-        builder.AppendLine($"When code is useful, use {_codeLanguage}.");
-        return builder.ToString();
+        var data = _store.Data;
+        var language = AnswerLanguageCode();
+        var context = InterviewPromptBuilder.BuildCandidateContext(_session, data.Workspace);
+        var activeIds = _session.ActiveKnowledgeBaseIds.Count > 0 ? (IReadOnlyCollection<Guid>)_session.ActiveKnowledgeBaseIds : data.Workspace.ActiveKnowledgeBaseIds;
+        var mockMemory = InterviewPromptBuilder.BuildMockTrainingMemory(data.Sessions);
+        string system;
+        string user;
+        int maxTokens;
+        if (fromScreenshot)
+        {
+            system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, data.KnowledgeBases, activeIds);
+            system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: true);
+            user = InterviewPromptBuilder.BuildQuestionPrompt(question, language, _codeLanguage);
+            maxTokens = 1800;
+        }
+        else
+        {
+            system = InterviewPromptBuilder.BuildSystemPrompt(context, data.KnowledgeBases, activeIds, _session.Turns);
+            system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: false);
+            // Coding questions asked by voice still need code in the chosen language.
+            if (InterviewPromptBuilder.IsAlgorithmQuestion(question))
+                system += $"\n\nIf the question asks you to write code, include complete runnable {_codeLanguage} code in a fenced markdown block that starts with ```{_codeLanguage}.";
+            user = question;
+            maxTokens = 900;
+        }
+        system += InterviewPromptBuilder.OutputLanguageMandate(language);
+        if (!fromScreenshot) system = InterviewPromptBuilder.AppendCommonReference(system, question);
+        return (system, user, maxTokens);
     }
 
     private string Localized(string english, string chinese) => _store.Data.Preferences.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? chinese : english;
@@ -368,19 +402,19 @@ public partial class PrompterWindow : Window
             }
             if (string.IsNullOrWhiteSpace(result))
             {
+                // OCR found nothing: ask the vision model only to transcribe the question,
+                // then answer it through the same prompt pipeline as OCR text.
                 result = await AppServices.Current.AI.AnalyzeImageAsync(
                     CurrentAIConfig(),
                     path,
-                    _isDirectorMode
-                        ? "Read the screenshot and return only the exact interview question or coding task visible in it. Do not answer it and do not add commentary."
-                        : "Read the screenshot carefully. Identify the interview question or coding task visible in it, then provide a concise, accurate answer the candidate can use. Include code only when the screenshot asks for code.");
+                    "Read the screenshot and return only the exact interview question or coding task visible in it. Do not answer it and do not add commentary.");
             }
             if (_isDirectorMode)
             {
                 DirectorQuestionCaptured?.Invoke(result);
                 return;
             }
-            await SubmitQuestionAsync(result);
+            await SubmitQuestionAsync(result, fromScreenshot: true);
             if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count)
             {
                 _session.Turns[_turnIndex].ScreenshotPath = path;
@@ -561,6 +595,12 @@ public partial class PrompterWindow : Window
         }
         try { await SubmitQuestionAsync(text); }
         finally { _speechSubmissionGate.Release(); }
+    }
+
+    private void SpeechRecognition_CandidateSpeechDetected(string text)
+    {
+        if (_audioMode == PrompterAudioMode.Muted) return;
+        Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = Localized("🙋 You are answering", "🙋 你在作答")));
     }
 
     private void SpeechRecognition_PartialRecognized(string text)
