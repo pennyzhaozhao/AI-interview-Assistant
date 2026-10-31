@@ -115,7 +115,9 @@ public static class InterviewPromptBuilder
             You are a technical interview assistant. For screenshot OCR questions, output a practical structured answer.
 
             STRICT RULES:
-            - 必须用中文回答，除非用户明确要求英文
+            - Follow the output language required by the user prompt
+            - Before answering, identify whether the screenshot is a coding problem, multiple-choice question, short-answer/exam question, or spoken interview question
+            - For multiple-choice and short-answer questions, put the direct answer first, followed by a concise explanation
             - 如果是算法题，必须包含四个小标题：思路、步骤、代码、复杂度
             - 代码必须放在 fenced code block 里，例如 ```python
             - 不要输出推理过程、角色分析或“我需要回答”这类话
@@ -167,6 +169,18 @@ public static class InterviewPromptBuilder
         return keywords.Any(lower.Contains);
     }
 
+    public static bool IsMultipleChoiceQuestion(string rawText)
+    {
+        var normalized = rawText.Replace('（', '(').Replace('）', ')');
+        var optionCount = System.Text.RegularExpressions.Regex.Matches(
+            normalized,
+            @"(?im)(?:^|\s)[A-F][\.、\)]?\s+\S+").Count;
+        return optionCount >= 2
+            || normalized.Contains("下列", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("选择题", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("which of the following", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>User prompt for a screenshot / OCR question (buildQuestionPrompt).</summary>
     public static string BuildQuestionPrompt(string rawText, string answerLanguageCode, string codeLanguage)
     {
@@ -195,6 +209,20 @@ public static class InterviewPromptBuilder
                 {rawText}
                 """;
         }
+        if (IsMultipleChoiceQuestion(rawText))
+        {
+            return $"""
+                The following screenshot contains a multiple-choice question.
+                {languageInstruction}
+                Read the complete question stem and every visible option before answering.
+                Start with the selected option and its text, for example “答案：A. Linux” or “Answer: A. Linux”.
+                Then add a short “解析” or “Explanation” paragraph explaining why it is correct and, when useful, why the closest alternatives are wrong.
+                Do not describe the screenshot, do not call it a list of technologies, do not ask for clarification, and do not answer as though this were an interview skills checklist.
+
+                OCR / visual text:
+                {rawText}
+                """;
+        }
         if (baguwen.Any(lower.Contains))
         {
             return $"""
@@ -215,8 +243,10 @@ public static class InterviewPromptBuilder
             The following text was captured from a screen during a technical interview.
             {languageInstruction}
             Identify what is being asked and provide a clear, concise answer.
+            First classify the task internally as a coding problem, multiple-choice question, short-answer/exam question, or spoken interview question. Do not print the classification.
             If the captured text is a coding or algorithm problem, include a short explanation followed by
             complete runnable {codeLanguage} code in a fenced markdown block beginning with ```{codeLanguage}.
+            If it is an exam-style short-answer question, give the direct answer first and then a concise explanation.
             For a non-coding interview question, give a concise spoken answer without inventing code.
             Give only the final answer, with no planning text.
 

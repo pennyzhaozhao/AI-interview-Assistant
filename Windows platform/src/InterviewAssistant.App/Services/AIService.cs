@@ -32,6 +32,32 @@ public sealed class AIService
         };
     }
 
+    /// <summary>
+    /// Streams the accumulated answer to <paramref name="onUpdate"/>. Providers without a
+    /// compatible SSE endpoint still complete normally and publish once, so callers can use one
+    /// code path for every provider.
+    /// </summary>
+    public async Task<string> StreamAsync(
+        AIConfig config,
+        string systemPrompt,
+        string question,
+        Action<string> onUpdate,
+        int maxTokens = 900,
+        CancellationToken cancellationToken = default)
+    {
+        Validate(config);
+        if (config.Provider == AIProvider.Gemini)
+        {
+            var completed = await CompleteGeminiAsync(config, systemPrompt, question, maxTokens, cancellationToken);
+            onUpdate(completed);
+            return completed;
+        }
+
+        return config.Provider == AIProvider.Claude
+            ? await StreamClaudeAsync(config, systemPrompt, question, onUpdate, maxTokens, cancellationToken)
+            : await StreamOpenAICompatibleAsync(config, systemPrompt, question, onUpdate, maxTokens, cancellationToken);
+    }
+
     public Task<string> TestConnectionAsync(AIConfig config, CancellationToken cancellationToken = default) =>
         CompleteAsync(config, "Reply briefly and clearly.", "Reply with OK.", 32, cancellationToken);
 
@@ -152,6 +178,65 @@ public sealed class AIService
         return RequireText(text);
     }
 
+    private async Task<string> StreamOpenAICompatibleAsync(
+        AIConfig config,
+        string systemPrompt,
+        string question,
+        Action<string> onUpdate,
+        int maxTokens,
+        CancellationToken cancellationToken)
+    {
+        var baseUrl = NormalizeBaseUrl(config.ApiUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", string.IsNullOrWhiteSpace(config.ApiKey) ? "ollama" : config.ApiKey);
+        var body = new JsonObject
+        {
+            ["model"] = config.Model,
+            ["stream"] = true,
+            ["max_tokens"] = maxTokens,
+            ["messages"] = new JsonArray
+            {
+                new JsonObject { ["role"] = "system", ["content"] = systemPrompt },
+                new JsonObject { ["role"] = "user", ["content"] = question }
+            }
+        };
+        if (config.Provider == AIProvider.DeepSeek) body["thinking"] = new JsonObject { ["type"] = "disabled" };
+        request.Content = JsonContent.Create(body);
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            EnsureSuccess(response, error);
+        }
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        var result = new StringBuilder();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null) break;
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+            var data = line[5..].Trim();
+            if (data == "[DONE]") break;
+            try
+            {
+                using var json = JsonDocument.Parse(data);
+                var choice = json.RootElement.GetProperty("choices")[0];
+                if (!choice.TryGetProperty("delta", out var delta) ||
+                    !delta.TryGetProperty("content", out var content) ||
+                    content.ValueKind != JsonValueKind.String) continue;
+                var token = content.GetString();
+                if (string.IsNullOrEmpty(token)) continue;
+                result.Append(token);
+                onUpdate(result.ToString());
+            }
+            catch (JsonException) { }
+        }
+        return RequireText(result.ToString());
+    }
+
     private async Task<string> CompleteClaudeAsync(
         AIConfig config,
         string systemPrompt,
@@ -177,6 +262,57 @@ public sealed class AIService
         using var document = JsonDocument.Parse(responseBody);
         var text = document.RootElement.GetProperty("content")[0].GetProperty("text").GetString();
         return RequireText(text);
+    }
+
+    private async Task<string> StreamClaudeAsync(
+        AIConfig config,
+        string systemPrompt,
+        string question,
+        Action<string> onUpdate,
+        int maxTokens,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, config.ApiUrl);
+        request.Headers.Add("x-api-key", config.ApiKey);
+        request.Headers.Add("anthropic-version", "2023-06-01");
+        request.Content = JsonContent.Create(new
+        {
+            model = config.Model,
+            max_tokens = maxTokens,
+            stream = true,
+            system = systemPrompt,
+            messages = new[] { new { role = "user", content = question } }
+        });
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            EnsureSuccess(response, error);
+        }
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        var result = new StringBuilder();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null) break;
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                using var json = JsonDocument.Parse(line[5..].Trim());
+                var root = json.RootElement;
+                if (!root.TryGetProperty("type", out var type) || type.GetString() != "content_block_delta" ||
+                    !root.TryGetProperty("delta", out var delta) || !delta.TryGetProperty("text", out var text) ||
+                    text.ValueKind != JsonValueKind.String) continue;
+                var token = text.GetString();
+                if (string.IsNullOrEmpty(token)) continue;
+                result.Append(token);
+                onUpdate(result.ToString());
+            }
+            catch (JsonException) { }
+        }
+        return RequireText(result.ToString());
     }
 
     private async Task<string> CompleteGeminiAsync(

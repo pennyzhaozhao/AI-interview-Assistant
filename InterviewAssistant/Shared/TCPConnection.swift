@@ -371,12 +371,29 @@ final class TCPLineServer {
         connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
 
-    private static let controllerWebPage = """
+    private static let controllerWebPageEnglish = """
     <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Director Mode</title>
     <style>*{box-sizing:border-box}body{margin:0;background:#f7f8fb;color:#111;font:16px -apple-system,BlinkMacSystemFont,sans-serif}.wrap{max-width:760px;margin:auto;padding:24px}h1{font-size:34px}.status{color:#ef3434;font-weight:700}.card{background:#fff;border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 8px 30px #0000000d}.q{min-height:110px;font-size:20px;white-space:pre-wrap}.nav{display:flex;justify-content:space-between;align-items:center}textarea{width:100%;min-height:180px;border:1px solid #ddd;border-radius:12px;padding:14px;font:16px ui-monospace,monospace}button{border:0;border-radius:10px;background:#111;color:#fff;padding:12px 22px;font-weight:700}.muted{color:#777;font-size:13px}</style></head>
     <body><main class="wrap"><h1>Director Mode</h1><div id="status" class="status">Connecting…</div><section class="card"><div class="nav"><button onclick="move(-1)">‹</button><b>Question</b><button onclick="move(1)">›</button></div><p id="question" class="q"></p><div id="count" class="muted"></div></section><section class="card"><textarea id="answer" placeholder="Send Markdown content…"></textarea><div class="nav"><span class="muted">Markdown supported</span><button onclick="sendAnswer()">Send</button></div></section></main>
     <script>let history=[],index=-1,last='',mode='director',boardOpen=false;async function refresh(){try{let s=await(await fetch('/state',{cache:'no-store'})).json();mode=s.mode||'director';boardOpen=s.hostBoardOpen===true;document.getElementById('status').textContent=boardOpen?(mode==='ai'?'Host opened the prompt board · AI mode':'Host opened the prompt board · Director mode'):'Host closed the prompt board';if(s.questionID&&s.questionID!==last){last=s.questionID;history.push({id:s.questionID,text:s.text||''});index=history.length-1;render()}}catch(e){document.getElementById('status').textContent='Disconnected'}}function render(){let q=history[index];document.getElementById('question').textContent=q?.text||'';document.getElementById('count').textContent=history.length?`${index+1} / ${history.length}`:''}function move(n){index=Math.max(0,Math.min(history.length-1,index+n));render()}async function sendAnswer(){if(!boardOpen){alert('Host closed the prompt board');return}if(mode==='ai'){alert('Host is in AI mode');return}let q=history[index],v=document.getElementById('answer').value.trim();if(!v)return;let d=new Date().toISOString().split('.')[0]+'Z';await fetch('/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'answer',questionID:q?.id,text:v,createdAt:d})});document.getElementById('answer').value=''}setInterval(refresh,800);refresh()</script></body></html>
     """
+
+    private static var controllerWebPage: String {
+        guard AppLanguage.current == .chinese else { return controllerWebPageEnglish }
+        return controllerWebPageEnglish
+            .replacingOccurrences(of: "<html>", with: "<html lang=\"zh-CN\">")
+            .replacingOccurrences(of: "Director Mode", with: "导演模式")
+            .replacingOccurrences(of: "Connecting…", with: "连接中…")
+            .replacingOccurrences(of: ">Question<", with: ">当前问题<")
+            .replacingOccurrences(of: "Send Markdown content…", with: "输入要发送到提示板的 Markdown 内容…")
+            .replacingOccurrences(of: "Markdown supported", with: "支持 Markdown")
+            .replacingOccurrences(of: ">Send<", with: ">发送<")
+            .replacingOccurrences(of: "Host opened the prompt board · AI mode", with: "Host 已打开提示板 · AI 模式")
+            .replacingOccurrences(of: "Host opened the prompt board · Director mode", with: "Host 已打开提示板 · 导演模式")
+            .replacingOccurrences(of: "Host closed the prompt board", with: "Host 已关闭提示板")
+            .replacingOccurrences(of: "Disconnected", with: "连接已断开")
+            .replacingOccurrences(of: "Host is in AI mode", with: "Host 当前处于 AI 模式")
+    }
 }
 
 private extension JSONEncoder {

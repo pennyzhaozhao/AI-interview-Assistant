@@ -3,7 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:vm="clr-namespace:InterviewAssistant.ViewModels"
+        xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
         Title="Interview AI"
+        Icon="/InterviewAssistant;component/Assets/InterviewAssistant.ico"
         Width="1280" Height="820"
         MinWidth="980" MinHeight="680"
         WindowStartupLocation="CenterScreen"
@@ -71,7 +73,7 @@
                                             <ColumnDefinition Width="34" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Icon}" Style="{StaticResource FluentIconStyle}" FontSize="17" />
+                                        <infra:MacStyleIcon Kind="{Binding Icon}" Width="19" Height="19" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                                         <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" Visibility="{Binding DataContext.BrandVisibility, RelativeSource={RelativeSource AncestorType=Window}}" />
                                     </Grid>
                                 </Button>
@@ -95,6 +97,10 @@
                 </Ellipse>
                 <ContentControl Content="{Binding CurrentPage}" />
             </Grid>
+        </Grid>
+
+        <Grid x:Name="MockInterviewHost" Grid.Row="1" Panel.ZIndex="50" Visibility="Collapsed" Background="{DynamicResource BackgroundBrush}">
+            <ContentControl x:Name="MockInterviewContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
         </Grid>
     </Grid>
 </Window>

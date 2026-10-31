@@ -1,13 +1,11 @@
-<Window x:Class="InterviewAssistant.Windows.MockInterviewWindow"
+<UserControl x:Class="InterviewAssistant.Windows.MockInterviewWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:InterviewAssistant.Services"
         xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
-        Width="1120" Height="860" MinWidth="820" MinHeight="620"
-        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
-        Background="Transparent" WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" Foreground="{DynamicResource TextPrimaryBrush}">
-    <Window.Resources>
+        MinWidth="820" MinHeight="620" Background="Transparent"
+        FontFamily="Segoe UI Variable Text, SimSun, Segoe UI" Foreground="{DynamicResource TextPrimaryBrush}">
+    <UserControl.Resources>
         <!-- Mirrors the macOS premiumCard() modifier. -->
         <Style x:Key="MockCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
@@ -64,7 +62,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
-    </Window.Resources>
+    </UserControl.Resources>
 
     <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" ClipToBounds="True" Background="{DynamicResource BackgroundBrush}">
         <Grid>
@@ -283,4 +281,4 @@
             </Grid>
         </Grid>
     </Border>
-</Window>
+</UserControl>

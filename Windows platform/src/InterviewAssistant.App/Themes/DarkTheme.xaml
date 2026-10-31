@@ -44,7 +44,7 @@
     </LinearGradientBrush>
 
     <Style TargetType="Window">
-        <Setter Property="FontFamily" Value="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" />
+        <Setter Property="FontFamily" Value="Segoe UI Variable Text, SimSun, Segoe UI" />
         <Setter Property="Background" Value="{DynamicResource BackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>

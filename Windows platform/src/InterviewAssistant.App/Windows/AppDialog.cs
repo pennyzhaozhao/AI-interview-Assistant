@@ -27,7 +27,7 @@ public sealed class AppDialog : Window
         ShowInTaskbar = false;
         SizeToContent = SizeToContent.Height;
         Width = 440;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text, SimSun, Segoe UI");
         SetResourceReference(ForegroundProperty, "TextPrimaryBrush");
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 

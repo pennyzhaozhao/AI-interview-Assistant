@@ -173,7 +173,10 @@ public sealed class HomeViewModel : PageViewModel
         StatusMessage = LocalizationManager.Text("Parsing the company website and generating a research summary...");
         try
         {
-            var summary = await WebsiteResearchService.ResearchCompanyAsync(input, CurrentAIConfig());
+            var summary = await WebsiteResearchService.ResearchCompanyAsync(
+                input,
+                CurrentAIConfig(),
+                InterviewPromptBuilder.AnswerLanguageCode(_store.Data.Preferences));
             var block = $"{LocalizationManager.Text("Website research summary (please review manually):")}\n{summary}";
             var existing = CompanyNotes.Trim();
             CompanyNotes = existing.Length == 0 ? block : $"{existing}\n\n{block}";

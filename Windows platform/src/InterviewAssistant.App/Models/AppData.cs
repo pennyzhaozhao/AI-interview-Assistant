@@ -35,6 +35,7 @@ public sealed class AppPreferences
     public double ScreenshotRegionY { get; set; }
     public double ScreenshotRegionWidth { get; set; }
     public double ScreenshotRegionHeight { get; set; }
+    public bool ScreenshotRegionUsesPhysicalPixels { get; set; }
     public string SpeechRecognitionEngine { get; set; } = "volcano";
     public string SpeechResourceId { get; set; } = "volc.seedasr.sauc.duration";
     /// <summary>0…1, higher is stricter when deciding whether a speaker is the candidate (macOS default 0.5).</summary>
@@ -97,6 +98,7 @@ public sealed class ConversationTurnModel
     public int Score { get; set; }
     public string SpeakerLabel { get; set; } = "unknown";
     public string? ScreenshotPath { get; set; }
+    public List<string> ScreenshotPaths { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
 }
 

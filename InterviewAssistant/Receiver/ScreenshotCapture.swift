@@ -289,28 +289,44 @@ final class ScreenshotCapture: ObservableObject {
 
     private func captureRegion(_ rect: CGRect) async -> NSImage? {
         guard await requestScreenCapturePermissionIfNeeded() else { return nil }
-
-        do {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first else {
-                captureError = "No display available for screenshot capture."
-                return nil
+        let result = await withTaskGroup(of: ScreenshotCaptureResult.self) { group in
+            group.addTask {
+                do {
+                    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                    guard let display = content.displays.first else { return .failure("No display available") }
+                    let configuration = SCStreamConfiguration()
+                    configuration.sourceRect = rect
+                    // Full Retina resolution makes Vision OCR unnecessarily expensive for large regions.
+                    let longestSide = max(rect.width, rect.height)
+                    let scale = max(0.75, min(2.0, 2200.0 / max(1.0, longestSide)))
+                    configuration.width = max(1, Int(rect.width * scale))
+                    configuration.height = max(1, Int(rect.height * scale))
+                    configuration.capturesAudio = false
+                    configuration.showsCursor = false
+                    let filter = SCContentFilter(display: display, excludingWindows: [])
+                    let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+                    return .image(CapturedImageBox(NSImage(cgImage: cgImage, size: rect.size)))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
             }
-
-            let configuration = SCStreamConfiguration()
-            configuration.sourceRect = rect
-            configuration.width = max(1, Int(rect.width * 2))
-            configuration.height = max(1, Int(rect.height * 2))
-            configuration.capturesAudio = false
-            configuration.showsCursor = false
-
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            return NSImage(cgImage: cgImage, size: rect.size)
-        } catch {
-            captureError = String(format: L.t("Screenshot failed: %@. If macOS denied this version, enable InterviewAssistant in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app."), error.localizedDescription)
-            return nil
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                return .timeout
+            }
+            let first = await group.next() ?? .timeout
+            group.cancelAll()
+            return first
         }
+        switch result {
+        case .image(let box):
+            return box.image
+        case .timeout:
+            captureError = L.t("Screenshot capture timed out. Try a smaller region and capture again.")
+        case .failure(let message):
+            captureError = String(format: L.t("Screenshot failed: %@. If macOS denied this version, enable InterviewAssistant in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app."), message)
+        }
+        return nil
     }
 
     @discardableResult
@@ -336,26 +352,29 @@ final class ScreenshotCapture: ObservableObject {
         let imageBox = SendableCGImage(cgImage)
 
         let result: TextRecognitionResult = await withCheckedContinuation { continuation in
+            let completion = TextRecognitionCompletion(continuation)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 8) {
+                completion.finish(TextRecognitionResult(text: "", errorDescription: L.t("OCR timed out. Try a smaller or clearer screenshot region.")))
+            }
             DispatchQueue.global(qos: .userInitiated).async {
                 autoreleasepool {
-                    let accurate = performTextRecognition(
-                        cgImage: imageBox.image,
-                        level: .accurate,
-                        usesLanguageCorrection: true
-                    )
-                    if !accurate.text.isEmpty {
-                        continuation.resume(returning: accurate)
-                        return
-                    }
-
-                    // The fast recognizer uses a different Vision path and is a
-                    // useful fallback for small text or a damaged accurate-model cache.
+                    // Fast mode is normally sufficient for screen text and avoids minute-long
+                    // CPU-only accurate-model stalls on some Macs and virtual machines.
                     let fast = performTextRecognition(
                         cgImage: imageBox.image,
                         level: .fast,
                         usesLanguageCorrection: false
                     )
-                    continuation.resume(returning: fast.text.isEmpty ? accurate.merging(errorFrom: fast) : fast)
+                    if !fast.text.isEmpty {
+                        completion.finish(fast)
+                        return
+                    }
+                    let accurate = performTextRecognition(
+                        cgImage: imageBox.image,
+                        level: .accurate,
+                        usesLanguageCorrection: true
+                    )
+                    completion.finish(accurate.text.isEmpty ? fast.merging(errorFrom: accurate) : accurate)
                 }
             }
         }
@@ -365,6 +384,17 @@ final class ScreenshotCapture: ObservableObject {
         }
         return result.text
     }
+}
+
+private enum ScreenshotCaptureResult: @unchecked Sendable {
+    case image(CapturedImageBox)
+    case failure(String)
+    case timeout
+}
+
+private final class CapturedImageBox: @unchecked Sendable {
+    let image: NSImage
+    init(_ image: NSImage) { self.image = image }
 }
 
 private final class SendableCGImage: @unchecked Sendable {
@@ -384,6 +414,23 @@ private struct TextRecognitionResult: Sendable {
             text: text,
             errorDescription: errorDescription ?? other.errorDescription
         )
+    }
+}
+
+private final class TextRecognitionCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<TextRecognitionResult, Never>?
+
+    init(_ continuation: CheckedContinuation<TextRecognitionResult, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ result: TextRecognitionResult) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(returning: result)
     }
 }
 

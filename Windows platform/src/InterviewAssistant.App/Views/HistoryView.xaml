@@ -225,7 +225,7 @@
                   <DataTemplate>
                     <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="16" Padding="16" Margin="0,0,0,12">
                       <StackPanel>
-                        <TextBlock Text="QUESTION" Foreground="{DynamicResource PrimaryBrush}" FontSize="11" FontWeight="Bold"/>
+                        <TextBlock Text="{loc:Loc Key='QUESTION'}" Foreground="{DynamicResource PrimaryBrush}" FontSize="11" FontWeight="Bold"/>
                         <TextBlock Text="{Binding Question}" Margin="0,6,0,14" TextWrapping="Wrap"/>
                         <!-- Screenshot captured for this question; double-click to view full size. -->
                         <Border CornerRadius="12" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" Margin="0,0,0,14" HorizontalAlignment="Left" MaxWidth="460" Cursor="Hand" ClipToBounds="True"
@@ -233,7 +233,7 @@
                           <Border.Visibility><Binding Path="HasScreenshot" Converter="{StaticResource BoolToVisibility}"/></Border.Visibility>
                           <Image Source="{Binding Thumbnail}" Stretch="Uniform" MaxHeight="260"/>
                         </Border>
-                        <TextBlock Text="ANSWER" Foreground="{DynamicResource SuccessBrush}" FontSize="11" FontWeight="Bold"/>
+                        <TextBlock Text="{loc:Loc Key='ANSWER'}" Foreground="{DynamicResource SuccessBrush}" FontSize="11" FontWeight="Bold"/>
                         <TextBlock Text="{Binding Answer}" Margin="0,6,0,0" TextWrapping="Wrap"/>
                         <!-- Scores / feedback only exist for mock interviews; formal interviews show Q&A only. -->
                         <TextBlock Text="{Binding Score, StringFormat={}{0}/100}" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold" Margin="0,14,0,0">

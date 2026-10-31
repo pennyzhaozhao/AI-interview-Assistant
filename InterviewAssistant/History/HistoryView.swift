@@ -27,7 +27,7 @@ struct HistoryView: View {
     @State private var isSelecting = false
     @State private var selectedSessionIDs = Set<UUID>()
     @State private var showBulkDeleteConfirm = false
-    @State private var previewImageData: Data?
+    @State private var previewImageItem: ImagePreviewItem?
 
     var body: some View {
         Group {
@@ -65,8 +65,8 @@ struct HistoryView: View {
         } message: {
             Text(L.t("This cannot be undone."))
         }
-        .sheet(item: imagePreviewBinding) { item in
-            imagePreview(item.data)
+        .sheet(item: $previewImageItem) { item in
+            HistoryImagePreview(data: item.data)
         }
     }
 
@@ -443,7 +443,7 @@ struct HistoryView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.appBorder))
                     .onTapGesture(count: 2) {
-                        previewImageData = imageData
+                        previewImageItem = ImagePreviewItem(data: imageData)
                     }
                     .help(L.t("Double-click to view image"))
             }
@@ -852,18 +852,6 @@ struct HistoryView: View {
         return value.isEmpty ? "mock-interview" : value
     }
 
-    private var imagePreviewBinding: Binding<ImagePreviewItem?> {
-        Binding(
-            get: {
-                guard let previewImageData else { return nil }
-                return ImagePreviewItem(data: previewImageData)
-            },
-            set: { item in
-                previewImageData = item?.data
-            }
-        )
-    }
-
     @ViewBuilder
     private func previewImage(_ data: Data) -> some View {
         #if os(macOS)
@@ -881,31 +869,58 @@ struct HistoryView: View {
         #endif
     }
 
-    private func imagePreview(_ data: Data) -> some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-            previewImage(data)
-                .padding(24)
-            Button {
-                previewImageData = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.16))
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(20)
-        }
-        .frame(minWidth: 720, minHeight: 520)
-    }
 }
 
 private struct ImagePreviewItem: Identifiable {
     let id = UUID()
     let data: Data
+}
+
+private struct HistoryImagePreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let data: Data
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            preview
+                .padding(28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 42, height: 42)
+                    .background(Color.black.opacity(0.72))
+                    .overlay(Circle().stroke(Color.white.opacity(0.34), lineWidth: 1))
+                    .clipShape(Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help(L.t("Close"))
+            .padding(18)
+            .zIndex(10)
+        }
+        .frame(minWidth: 720, minHeight: 520)
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        #if os(macOS)
+        if let image = NSImage(data: data) {
+            Image(nsImage: image).resizable().scaledToFit()
+        } else {
+            Text(L.t("Unable to load image")).foregroundStyle(.white)
+        }
+        #else
+        if let image = UIImage(data: data) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else {
+            Text(L.t("Unable to load image")).foregroundStyle(.white)
+        }
+        #endif
+    }
 }
 
 private var mobileToolbarTrailingPlacement: ToolbarItemPlacement {

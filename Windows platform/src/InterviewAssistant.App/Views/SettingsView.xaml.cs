@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 using System.Windows.Media;
+using System.Windows.Input;
 using Microsoft.Win32;
 using InterviewAssistant.Services;
 namespace InterviewAssistant.Views;
@@ -14,6 +15,58 @@ public partial class SettingsView : UserControl
     private ViewModels.SettingsViewModel? _subscribedViewModel;
 
     public SettingsView() => InitializeComponent();
+
+    private string? _hotkeyBeforeRecording;
+
+    private void ScreenshotHotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        _hotkeyBeforeRecording = (DataContext as ViewModels.SettingsViewModel)?.ScreenshotHotkey;
+        ScreenshotHotkeyBox.Text = LocalizationManager.Text("Press shortcut…");
+        ScreenshotHotkeyBox.SelectAll();
+    }
+
+    private void ScreenshotHotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (DataContext is ViewModels.SettingsViewModel viewModel) ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
+        _hotkeyBeforeRecording = null;
+    }
+
+    private void ScreenshotHotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        e.Handled = true;
+        if (DataContext is not ViewModels.SettingsViewModel viewModel) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.Escape)
+        {
+            ScreenshotHotkeyBox.Text = _hotkeyBeforeRecording ?? viewModel.ScreenshotHotkey;
+            Keyboard.ClearFocus();
+            return;
+        }
+        if (key is Key.Back or Key.Delete)
+        {
+            viewModel.ScreenshotHotkey = "Ctrl+Shift+S";
+            ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
+            Keyboard.ClearFocus();
+            return;
+        }
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return;
+
+        var modifiers = Keyboard.Modifiers;
+        if (modifiers == ModifierKeys.None)
+        {
+            ScreenshotHotkeyBox.Text = LocalizationManager.Text("Include Ctrl, Alt, Shift, or Win");
+            return;
+        }
+        var parts = new List<string>();
+        if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+        if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+        if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+        if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+        parts.Add(key.ToString().ToUpperInvariant());
+        viewModel.ScreenshotHotkey = string.Join("+", parts);
+        ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
+        Keyboard.ClearFocus();
+    }
 
     private void SettingsView_Loaded(object sender, System.Windows.RoutedEventArgs e)
     {

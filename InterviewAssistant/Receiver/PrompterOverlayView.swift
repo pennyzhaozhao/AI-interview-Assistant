@@ -1970,7 +1970,7 @@ private struct AnswerRenderer: View {
     }
 }
 
-private struct MarkdownTextView: View {
+struct MarkdownTextView: View {
     let markdown: String
     let fontSize: CGFloat
     let color: Color

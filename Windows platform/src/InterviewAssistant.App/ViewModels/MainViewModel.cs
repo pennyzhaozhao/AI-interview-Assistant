@@ -30,11 +30,11 @@ public sealed class MainViewModel : ObservableObject
         home.MockInterviewOptionsRequested += () => MockInterviewOptionsRequested?.Invoke();
         NavigationItems =
         [
-            new("Interview", "\uE734", home),
-            new("Director Mode", "\uE716", new DirectorViewModel()),
-            new("Knowledge Base", "\uE8B7", knowledge),
-            new("History", "\uE81C", history),
-            new("Settings", "\uE713", new SettingsViewModel())
+            new("Interview", "sparkles", home),
+            new("Director Mode", "director", new DirectorViewModel()),
+            new("Knowledge Base", "folder", knowledge),
+            new("History", "clock", history),
+            new("Settings", "sliders", new SettingsViewModel())
         ];
 
         home.KnowledgeSelectionRequested += () =>

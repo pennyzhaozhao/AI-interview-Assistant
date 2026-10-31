@@ -12,6 +12,9 @@ public partial class MainWindow : Window
     private const int ScreenshotHotkeyId = 0x4941;
     private PrompterWindow? _prompterWindow;
     private nint _windowHandle;
+    private string _registeredScreenshotHotkey = "";
+    private int _activeInterviewWindows;
+    private Windows.MockInterviewWindow? _mockInterviewView;
 
     public MainWindow()
     {
@@ -22,6 +25,7 @@ public partial class MainWindow : Window
             viewModel.MockInterviewRequested += OpenMockInterview;
             viewModel.MockInterviewOptionsRequested += OpenMockInterviewOptions;
         }
+        Services.AppServices.Current.DataStore.Changed += DataStore_Changed;
     }
 
     private void OpenMockInterviewOptions()
@@ -39,13 +43,11 @@ public partial class MainWindow : Window
         {
             try
             {
-                var window = new Windows.MockInterviewWindow(config) { Owner = this };
-                window.Closed += (_, _) =>
-                {
-                    if (DataContext is ViewModels.MainViewModel viewModel) viewModel.RefreshHistory();
-                };
-                window.Show();
-                window.Activate();
+                CloseEmbeddedMockInterview();
+                _mockInterviewView = new Windows.MockInterviewWindow(config);
+                _mockInterviewView.CloseRequested += CloseEmbeddedMockInterview;
+                MockInterviewContent.Content = _mockInterviewView;
+                MockInterviewHost.Visibility = Visibility.Visible;
             }
             catch (Exception exception)
             {
@@ -58,6 +60,19 @@ public partial class MainWindow : Window
         }), System.Windows.Threading.DispatcherPriority.Normal);
     }
 
+    private void CloseEmbeddedMockInterview()
+    {
+        if (_mockInterviewView is not null)
+        {
+            _mockInterviewView.CloseRequested -= CloseEmbeddedMockInterview;
+            _mockInterviewView.CloseSession();
+        }
+        MockInterviewContent.Content = null;
+        MockInterviewHost.Visibility = Visibility.Collapsed;
+        _mockInterviewView = null;
+        if (DataContext is ViewModels.MainViewModel viewModel) viewModel.RefreshHistory();
+    }
+
     private void OpenInterviewPrompter(Models.InterviewSessionModel session)
     {
         Dispatcher.BeginInvoke(
@@ -66,7 +81,12 @@ public partial class MainWindow : Window
             {
                 _prompterWindow?.Close();
                 _prompterWindow = new PrompterWindow(session);
-                _prompterWindow.Closed += (_, _) => _prompterWindow = null;
+                BeginInterviewWindow();
+                _prompterWindow.Closed += (_, _) =>
+                {
+                    _prompterWindow = null;
+                    EndInterviewWindow();
+                };
                 _prompterWindow.Show();
             }));
     }
@@ -106,6 +126,9 @@ public partial class MainWindow : Window
     private void RegisterScreenshotHotkey()
     {
         var text = Services.AppServices.Current.DataStore.Data.Preferences.ScreenshotHotkey;
+        if (_windowHandle == nint.Zero || string.Equals(text, _registeredScreenshotHotkey, StringComparison.OrdinalIgnoreCase)) return;
+        _ = NativeMethods.UnregisterHotKey(_windowHandle, ScreenshotHotkeyId);
+        _registeredScreenshotHotkey = text;
         var modifiers = 0u;
         var key = Key.S;
         foreach (var part in text.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
@@ -117,10 +140,38 @@ public partial class MainWindow : Window
             else if (Enum.TryParse<Key>(part, true, out var parsed)) key = parsed;
         }
         if (modifiers == 0) modifiers = NativeMethods.ModControl | NativeMethods.ModShift;
-        if (!NativeMethods.RegisterHotKey(_windowHandle, ScreenshotHotkeyId, modifiers, (uint)KeyInterop.VirtualKeyFromKey(key)))
+        if (NativeMethods.RegisterHotKey(_windowHandle, ScreenshotHotkeyId, modifiers, (uint)KeyInterop.VirtualKeyFromKey(key)))
+        {
+            return;
+        }
+        else
         {
             MessageBox.Show(Services.LocalizationManager.Instance.IsChinese ? "截图全局快捷键注册失败，可能已被其他程序占用。" : "The screenshot hotkey is already used by another application.", "Interview AI", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+    }
+
+    private void DataStore_Changed()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            RegisterScreenshotHotkey();
+            if (_activeInterviewWindows > 0)
+            {
+                ShowInTaskbar = !Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview;
+            }
+        }));
+    }
+
+    private void BeginInterviewWindow()
+    {
+        _activeInterviewWindows++;
+        if (Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview) ShowInTaskbar = false;
+    }
+
+    private void EndInterviewWindow()
+    {
+        _activeInterviewWindows = Math.Max(0, _activeInterviewWindows - 1);
+        if (_activeInterviewWindows == 0) ShowInTaskbar = true;
     }
 
     private void ApplyRoundedCorners()
@@ -154,8 +205,10 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        Services.AppServices.Current.DataStore.Changed -= DataStore_Changed;
         if (_windowHandle != nint.Zero) _ = NativeMethods.UnregisterHotKey(_windowHandle, ScreenshotHotkeyId);
         _prompterWindow?.Close();
+        CloseEmbeddedMockInterview();
         base.OnClosed(e);
     }
 

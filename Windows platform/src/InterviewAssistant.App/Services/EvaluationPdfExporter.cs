@@ -111,7 +111,7 @@ public static class EvaluationPdfExporter
             <!doctype html>
             <html><head><meta charset="utf-8">
             <style>
-              body { font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; color: #111827; font-size: 11pt; line-height: 1.55; margin: 0; }
+              body { font-family: "Segoe UI", "SimSun", "宋体", serif; color: #111827; font-size: 11pt; line-height: 1.55; margin: 0; }
               h1 { font-size: 24pt; margin: 0 0 8pt; }
               h2 { font-size: 16pt; margin: 18pt 0 6pt; }
               h3 { font-size: 13pt; margin: 14pt 0 4pt; }

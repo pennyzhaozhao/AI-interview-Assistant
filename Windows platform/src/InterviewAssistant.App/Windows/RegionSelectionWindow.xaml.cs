@@ -59,6 +59,15 @@ public partial class RegionSelectionWindow : Window
         Canvas.SetTop(SelectionBorder, top);
         SelectionBorder.Width = width;
         SelectionBorder.Height = height;
-        SelectedRegion = new Rect(left + Left, top + Top, width, height);
+        // WPF lays out in device-independent units, while Graphics.CopyFromScreen
+        // expects physical desktop pixels. PointToScreen performs the DPI conversion
+        // (including Windows display scaling) and prevents shifted/cropped captures.
+        var screenTopLeft = PointToScreen(new Point(left, top));
+        var screenBottomRight = PointToScreen(new Point(left + width, top + height));
+        SelectedRegion = new Rect(
+            Math.Min(screenTopLeft.X, screenBottomRight.X),
+            Math.Min(screenTopLeft.Y, screenBottomRight.Y),
+            Math.Abs(screenBottomRight.X - screenTopLeft.X),
+            Math.Abs(screenBottomRight.Y - screenTopLeft.Y));
     }
 }

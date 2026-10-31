@@ -22,7 +22,7 @@ public partial class HistoryView : UserControl
     {
         if (e.ClickCount < 2 || sender is not FrameworkElement { DataContext: ViewModels.HistoryTurnItem { ScreenshotPath: string path } }) return;
         e.Handled = true;
-        try { new Windows.ImagePreviewWindow(path) { Owner = Window.GetWindow(this) }.Show(); }
+        try { _ = new Windows.ImagePreviewWindow(path) { Owner = Window.GetWindow(this) }.ShowDialog(); }
         catch (Exception exception) { Windows.AppDialog.Show(Window.GetWindow(this), LocalizationManager.Text("Screenshot"), exception.Message, Windows.DialogTone.Warning); }
     }
 

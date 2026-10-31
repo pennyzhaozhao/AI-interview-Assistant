@@ -16,6 +16,8 @@ public sealed class ImagePreviewWindow : Window
         Background = new SolidColorBrush(Color.FromArgb(0xD8, 0x05, 0x08, 0x10));
         WindowState = WindowState.Maximized;
         ShowInTaskbar = false;
+        ShowActivated = true;
+        Topmost = true;
 
         var image = new BitmapImage();
         image.BeginInit();
@@ -38,9 +40,9 @@ public sealed class ImagePreviewWindow : Window
 
         var close = new Button
         {
-            Content = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14, Foreground = Brushes.White },
-            Width = 40,
-            Height = 40,
+            Content = new TextBlock { Text = "×", FontFamily = new FontFamily("Segoe UI Variable Text, SimSun, Segoe UI"), FontSize = 28, FontWeight = FontWeights.Light, Foreground = Brushes.White },
+            Width = 48,
+            Height = 48,
             Margin = new Thickness(20),
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
@@ -55,6 +57,8 @@ public sealed class ImagePreviewWindow : Window
         root.Children.Add(close);
         root.MouseLeftButtonDown += (_, _) => Close();
         Content = root;
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; Close(); } };
+        MouseRightButtonDown += (_, e) => { e.Handled = true; Close(); };
+        Loaded += (_, _) => { Activate(); Focus(); };
     }
 }

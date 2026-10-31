@@ -31,11 +31,27 @@ public sealed class SpeechRecognitionService : IDisposable
         {
             _doubao = new DoubaoSpeechRecognitionService();
             var doubao = _doubao;
+            string? doubaoStatus = null;
             _doubao.Recognized += text => Deliver(text, () => doubao.TakeUtteranceAudio());
             _doubao.PartialRecognized += text => PartialRecognized?.Invoke(text);
-            _doubao.StatusChanged += text => StatusChanged?.Invoke(text);
+            // Hold connection errors until we know whether the transparent local fallback is needed.
+            // Otherwise a transient Doubao timeout covers the prompter even though Windows speech
+            // recognition starts successfully a moment later.
+            _doubao.StatusChanged += text => doubaoStatus = text;
             _isListening = await _doubao.StartAsync(languageCode, systemAudio);
-            return _isListening;
+            if (_isListening)
+            {
+                if (!string.IsNullOrWhiteSpace(doubaoStatus)) StatusChanged?.Invoke(doubaoStatus);
+                return true;
+            }
+            _doubao.Dispose();
+            _doubao = null;
+            if (systemAudio)
+            {
+                if (!string.IsNullOrWhiteSpace(doubaoStatus)) StatusChanged?.Invoke(doubaoStatus);
+                return false;
+            }
+            StatusChanged?.Invoke("Doubao Voice is unavailable; using Windows speech recognition instead.");
         }
         if (systemAudio)
         {

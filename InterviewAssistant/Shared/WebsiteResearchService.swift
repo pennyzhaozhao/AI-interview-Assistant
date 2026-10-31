@@ -8,7 +8,7 @@ enum WebsiteResearchService {
         return URLSession(configuration: config)
     }()
 
-    static func researchCompany(from input: String, config: APIConfig) async throws -> String {
+    static func researchCompany(from input: String, config: APIConfig, answerLanguage: MockInterviewLanguage) async throws -> String {
         let urlString = normalizedURL(input)
         let html = try await fetchRawText(urlString, maxCharacters: 350_000)
         let context = try await websiteContext(from: html, baseURLString: urlString)
@@ -19,7 +19,7 @@ enum WebsiteResearchService {
                 userInfo: [NSLocalizedDescriptionKey: L.t("No content suitable for analysis was extracted from the company website.")]
             )
         }
-        return try await summarizeCompany(context: context, sourceURL: urlString, config: config)
+        return try await summarizeCompany(context: context, sourceURL: urlString, config: config, answerLanguage: answerLanguage)
     }
 
     private static func normalizedURL(_ input: String) -> String {
@@ -70,12 +70,14 @@ enum WebsiteResearchService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func summarizeCompany(context: String, sourceURL: String, config: APIConfig) async throws -> String {
+    private static func summarizeCompany(context: String, sourceURL: String, config: APIConfig, answerLanguage: MockInterviewLanguage) async throws -> String {
+        let language = answerLanguage.instruction(appLanguage: AppLanguage.current)
         let systemPrompt = """
         You are a company research analyst helping a candidate prepare for an interview.
-        Write in Simplified Chinese. Use only the supplied website text. If a detail is uncertain, say it looks like or appears to be, not as a fact.
-        The output should be useful for answering “你对我们公司有什么了解？” in an interview.
+        Write the entire result in \(language). Use only the supplied website text. If a detail is uncertain, describe it as uncertain rather than as a fact.
+        The output should be useful for answering a company-understanding question in an interview.
         Avoid generic website-summary language. Extract business model, target customers, services, market, proof points, and interview talking points.
+        Return clean Markdown with short headings and bullet lists. Do not use a Markdown table.
         """
         let question = """
         Source URL: \(sourceURL)
@@ -83,13 +85,13 @@ enum WebsiteResearchService {
         Website text:
         \(context.prefix(24_000))
 
-        Please produce a concise but rich company research note with this structure:
-        1. 一句话概括这家公司
-        2. 目标客户 / 服务对象
-        3. 主要业务或产品
-        4. 关键卖点、数据或资源
-        5. 面试中可以怎么回答“你对我们公司有什么了解”
-        6. 候选人可以追问公司的 3 个问题
+        Produce a concise but rich Markdown research note in \(language) with these sections:
+        1. One-sentence company summary
+        2. Target customers
+        3. Main business or products
+        4. Differentiators, evidence, data, or resources
+        5. A natural interview-ready answer about the company
+        6. Three useful questions the candidate can ask
         """
         let result = try await AIService.callAIModel(
             config: config,

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -19,7 +20,7 @@ public partial class PrompterWindow : Window
     private const double DefaultExpandedHeight = 240;
     private const double CompactWidth = 80;
     private const double CompactHeight = 37;
-    private const double AnswerFontSize = 17;
+    private double _answerFontSize = 17;
     private const double MessageFontSize = 15;
     private readonly AppDataStore _store = AppServices.Current.DataStore;
     private readonly InterviewSessionModel _session;
@@ -28,6 +29,7 @@ public partial class PrompterWindow : Window
     private bool _isDirectorMode;
     private readonly DispatcherTimer _waveTimer;
     private readonly DispatcherTimer _modeToastTimer;
+    private readonly DispatcherTimer _speechDebounceTimer;
     private nint _windowHandle;
     private int _turnIndex = -1;
     private bool _isCompact;
@@ -39,6 +41,13 @@ public partial class PrompterWindow : Window
     private int _waveStep;
     private string _codeLanguage = "python";
     private bool _showingError;
+    private string _pendingSpeechQuestion = "";
+    private CancellationTokenSource? _answerCancellation;
+    private DateTimeOffset _lastStreamPaint = DateTimeOffset.MinValue;
+    private readonly List<(string Path, string Text)> _screenshotSegments = [];
+    private bool _screenshotBusy;
+    private bool _autoScroll;
+    private bool _aiEnabled = true;
 
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
@@ -63,6 +72,14 @@ public partial class PrompterWindow : Window
         {
             _modeToastTimer.Stop();
             ModeToast.Visibility = Visibility.Collapsed;
+        };
+        _speechDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
+        _speechDebounceTimer.Tick += async (_, _) =>
+        {
+            _speechDebounceTimer.Stop();
+            var question = _pendingSpeechQuestion.Trim();
+            _pendingSpeechQuestion = "";
+            if (question.Length > 0) await SubmitRecognizedQuestionAsync(question);
         };
         KnowledgeCountText.Text = session.ActiveKnowledgeBaseIds.Count.ToString();
         ApplyPrompterMode(refreshContent: false);
@@ -95,6 +112,9 @@ public partial class PrompterWindow : Window
     {
         _waveTimer.Stop();
         _modeToastTimer.Stop();
+        _speechDebounceTimer.Stop();
+        _answerCancellation?.Cancel();
+        _answerCancellation?.Dispose();
         _store.Changed -= StoreChanged;
         _speechRecognition.Recognized -= SpeechRecognition_Recognized;
         _speechRecognition.PartialRecognized -= SpeechRecognition_PartialRecognized;
@@ -124,20 +144,41 @@ public partial class PrompterWindow : Window
         _session.Turns.Add(turn);
         _session.UpdatedAt = DateTimeOffset.Now;
         _turnIndex = _session.Turns.Count - 1;
+        var turnIndex = _turnIndex;
         ShowPreparing(question);
         _store.ScheduleSave();
+        _answerCancellation?.Cancel();
+        _answerCancellation?.Dispose();
+        _answerCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var requestCancellation = _answerCancellation;
+        var answerToken = requestCancellation.Token;
         try
         {
-            var answer = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), systemPrompt, userPrompt, maxTokens, cancellationToken);
+            var answer = await AppServices.Current.AI.StreamAsync(CurrentAIConfig(), systemPrompt, userPrompt, partial =>
+            {
+                if (DateTimeOffset.UtcNow - _lastStreamPaint < TimeSpan.FromMilliseconds(55)) return;
+                _lastStreamPaint = DateTimeOffset.UtcNow;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_turnIndex != turnIndex) return;
+                    turn.Answer = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
+                    QuestionText.Text = turn.Question;
+                    PreparingPanel.Visibility = Visibility.Collapsed;
+                    AnswerScroller.Visibility = Visibility.Visible;
+                    MarkdownAnswerRenderer.Render(AnswerContent, turn.Answer, (Brush)FindResource("IslandPrimary"), _answerFontSize, (Style)FindResource("CodeScrollBarStyle"));
+                    if (_autoScroll) AnswerScroller.ScrollToEnd();
+                }));
+            }, maxTokens, answerToken);
             turn.Answer = InterviewPromptBuilder.DisplayableAnswer(answer, _codeLanguage);
             turn.SpeakerLabel = "assistant";
             _session.UpdatedAt = DateTimeOffset.Now;
             _store.ScheduleSave();
-            Dispatcher.Invoke(() => RenderTurn(_turnIndex));
+            Dispatcher.Invoke(() => { if (_turnIndex == turnIndex) RenderTurn(turnIndex); });
         }
         catch (OperationCanceledException)
         {
-            Dispatcher.Invoke(() => ShowMessage(Localized("Answer generation was cancelled.", "回答生成已取消。"), true));
+            if (ReferenceEquals(_answerCancellation, requestCancellation))
+                Dispatcher.Invoke(() => ShowMessage(Localized("Answer generation was cancelled.", "回答生成已取消。"), true));
         }
         catch (Exception exception)
         {
@@ -145,7 +186,12 @@ public partial class PrompterWindow : Window
                 ? $"暂时无法生成回答建议，请稍后重试或截取更清晰的题目区域。\n\n{exception.Message}"
                 : $"I could not generate a suggestion yet. Please try again or capture a clearer question area.\n\n{exception.Message}";
             _store.ScheduleSave();
-            Dispatcher.Invoke(() => RenderTurn(_turnIndex));
+            Dispatcher.Invoke(() => { if (_turnIndex == turnIndex) RenderTurn(turnIndex); });
+        }
+        finally
+        {
+            if (ReferenceEquals(_answerCancellation, requestCancellation)) _answerCancellation = null;
+            requestCancellation.Dispose();
         }
     }
 
@@ -226,7 +272,7 @@ public partial class PrompterWindow : Window
         if (string.IsNullOrWhiteSpace(turn.Answer))
             ShowPlaceholder(_isDirectorMode ? Localized("Waiting for answer", "等待回答") : Localized("Waiting for AI answer...", "等待 AI 回答…"));
         else
-            MarkdownAnswerRenderer.Render(AnswerContent, turn.Answer, (Brush)FindResource("IslandPrimary"), AnswerFontSize, (Style)FindResource("CodeScrollBarStyle"));
+            MarkdownAnswerRenderer.Render(AnswerContent, turn.Answer, (Brush)FindResource("IslandPrimary"), _answerFontSize, (Style)FindResource("CodeScrollBarStyle"));
         _showingError = false;
         PreparingPanel.Visibility = Visibility.Collapsed;
         AnswerScroller.Visibility = Visibility.Visible;
@@ -258,7 +304,7 @@ public partial class PrompterWindow : Window
     private void ShowPlaceholder(string text)
     {
         _showingError = false;
-        MarkdownAnswerRenderer.RenderPlain(AnswerContent, text, (Brush)FindResource("IslandSecondary"), AnswerFontSize);
+        MarkdownAnswerRenderer.RenderPlain(AnswerContent, text, (Brush)FindResource("IslandSecondary"), _answerFontSize);
     }
 
     private void UpdateNavigationButtons()
@@ -358,73 +404,160 @@ public partial class PrompterWindow : Window
     }
     private void PreviousButton_Click(object sender, RoutedEventArgs e) { if (_turnIndex > 0) RenderTurn(--_turnIndex); }
     private void NextButton_Click(object sender, RoutedEventArgs e) { if (_turnIndex < _session.Turns.Count - 1) RenderTurn(++_turnIndex); }
-    private void ScreenshotButton_Click(object sender, RoutedEventArgs e)
+    private async void ScreenshotButton_Click(object sender, RoutedEventArgs e)
     {
-        _ = CaptureAndAnalyzeScreenshotAsync();
+        await CaptureScreenshotSegmentAsync();
     }
 
-    public async Task CaptureAndAnalyzeScreenshotAsync()
+    private async Task CaptureScreenshotSegmentAsync()
     {
+        if (_screenshotBusy) return;
+        _screenshotBusy = true;
         try
         {
-            Rect region;
-            if (_store.Data.Preferences.ScreenshotMode is "selectRegion" or "manualSelect")
-            {
-                var selector = new RegionSelectionWindow { Owner = Application.Current.MainWindow };
-                if (selector.ShowDialog() != true) return;
-                region = selector.SelectedRegion;
-            }
-            else
-            {
-                region = ScreenshotCaptureService.PresetRegion();
-                if (region.Width < 24 || region.Height < 24)
-                {
-                    ShowMessage(Localized("Set a screenshot region in Settings first.", "请先在设置中设定截图区域。"), true);
-                    return;
-                }
-            }
+            var path = await CaptureScreenshotImageAsync();
+            if (path is null) return;
+            _screenshotSegments.Add((path, ""));
+            ShowScreenshotSessionControls();
+        }
+        catch (Exception exception) { ShowMessage(Localized("Screenshot analysis failed: ", "截图分析失败：") + exception.Message, true); }
+        finally { _screenshotBusy = false; }
+    }
 
-            QuestionText.Text = Localized("Reading screenshot…", "正在识别截图…");
-            PreparingText.Text = Localized("Extracting the visible question and preparing an answer…", "正在提取可见题目并准备回答…");
-            AnswerScroller.Visibility = Visibility.Collapsed;
-            PreparingPanel.Visibility = Visibility.Visible;
-            await Task.Delay(90);
-            var path = ScreenshotCaptureService.Capture(region);
-            ScreenshotRequested?.Invoke();
-            string result;
-            try
+    private void ShowScreenshotSessionMenu()
+    {
+        var menu = new ContextMenu { PlacementTarget = ScreenshotButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var count = new MenuItem { Header = Localized($"Captured {_screenshotSegments.Count} screenshot(s)", $"已截取 {_screenshotSegments.Count} 张"), IsEnabled = false };
+        var more = new MenuItem { Header = Localized("Capture another", "继续截图") };
+        more.Click += async (_, _) => await CaptureScreenshotSegmentAsync();
+        var finish = new MenuItem { Header = Localized("Finish and analyze", "完成并分析"), FontWeight = FontWeights.SemiBold };
+        finish.Click += async (_, _) => await FinishScreenshotSessionAsync();
+        var clear = new MenuItem { Header = Localized("Discard screenshots", "放弃这些截图") };
+        clear.Click += (_, _) => { _screenshotSegments.Clear(); RefreshTurns(showLatest: true); };
+        menu.Items.Add(count); menu.Items.Add(new Separator()); menu.Items.Add(more); menu.Items.Add(finish); menu.Items.Add(clear);
+        menu.IsOpen = true;
+    }
+
+    private async Task FinishScreenshotSessionAsync()
+    {
+        if (_screenshotSegments.Count == 0 || _screenshotBusy) return;
+        _screenshotBusy = true;
+        ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
+        QuestionText.Text = Localized("Reading screenshot…", "正在识别截图…");
+        PreparingText.Text = Localized("Extracting the visible question…", "正在提取可见题目…");
+        AnswerScroller.Visibility = Visibility.Collapsed;
+        PreparingPanel.Visibility = Visibility.Visible;
+        var captured = _screenshotSegments.ToArray();
+        var recognized = new List<(string Path, string Text)>();
+        try
+        {
+            foreach (var segment in captured)
             {
-                result = await WindowsOcrService.RecognizeAsync(path);
-            }
-            catch
-            {
-                result = "";
-            }
-            if (string.IsNullOrWhiteSpace(result))
-            {
-                // OCR found nothing: ask the vision model only to transcribe the question,
-                // then answer it through the same prompt pipeline as OCR text.
-                result = await AppServices.Current.AI.AnalyzeImageAsync(
-                    CurrentAIConfig(),
-                    path,
-                    "Read the screenshot and return only the exact interview question or coding task visible in it. Do not answer it and do not add commentary.");
-            }
-            if (_isDirectorMode)
-            {
-                DirectorQuestionCaptured?.Invoke(result);
-                return;
-            }
-            await SubmitQuestionAsync(result, fromScreenshot: true);
-            if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count)
-            {
-                _session.Turns[_turnIndex].ScreenshotPath = path;
-                _store.ScheduleSave();
+                var text = await RecognizeScreenshotAsync(segment.Path);
+                recognized.Add((segment.Path, text));
             }
         }
         catch (Exception exception)
         {
             ShowMessage(Localized("Screenshot analysis failed: ", "截图分析失败：") + exception.Message, true);
+            ShowScreenshotSessionControls();
+            _screenshotBusy = false;
+            return;
         }
+        var segments = recognized.ToArray();
+        _screenshotSegments.Clear();
+        _screenshotBusy = false;
+        var question = string.Join("\n\n", segments.Select((item, index) => $"[Screenshot {index + 1}]\n{item.Text}"));
+        if (_isDirectorMode) { DirectorQuestionCaptured?.Invoke(question); return; }
+        await SubmitQuestionAsync(question, fromScreenshot: true);
+        if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count)
+        {
+            _session.Turns[_turnIndex].ScreenshotPath = segments[0].Path;
+            _session.Turns[_turnIndex].ScreenshotPaths = segments.Select(item => item.Path).ToList();
+            _store.ScheduleSave();
+        }
+    }
+
+    public async Task CaptureAndAnalyzeScreenshotAsync()
+    {
+        // Keep toolbar clicks and the global shortcut on the same visible multi-shot flow.
+        await CaptureScreenshotSegmentAsync();
+    }
+
+    private async Task<string?> CaptureScreenshotImageAsync()
+    {
+        Rect region;
+        if (_store.Data.Preferences.ScreenshotMode is "selectRegion" or "manualSelect")
+        {
+            var selector = new RegionSelectionWindow { Owner = Application.Current.MainWindow };
+            if (selector.ShowDialog() != true) return null;
+            region = selector.SelectedRegion;
+        }
+        else
+        {
+            region = ScreenshotCaptureService.PresetRegion();
+            if (region.Width < 24 || region.Height < 24)
+            {
+                ShowMessage(Localized("Set a screenshot region in Settings first.", "请先在设置中设定截图区域。"), true);
+                return null;
+            }
+        }
+        // Let the translucent selection window leave the compositor before copying pixels.
+        await Task.Delay(140);
+        var path = ScreenshotCaptureService.Capture(region);
+        ScreenshotRequested?.Invoke();
+        return path;
+    }
+
+    private async Task<string> RecognizeScreenshotAsync(string path)
+    {
+        var ocrTask = WindowsOcrService.RecognizeAsync(path);
+        var ocr = "";
+        if (await Task.WhenAny(ocrTask, Task.Delay(TimeSpan.FromSeconds(6))) == ocrTask)
+        {
+            try { ocr = await ocrTask; } catch { }
+        }
+
+        var language = InterviewPromptBuilder.IsChinese(AnswerLanguageCode()) ? "Simplified Chinese" : "English";
+        var instruction = $"""
+            Transcribe the complete question shown in this screenshot, including its question stem and every visible answer option.
+            Return only the faithfully reconstructed question text; do not answer it, summarize it, describe the image, or infer that it is a skills checklist.
+            Preserve option labels such as A, B, C and D. Prefer the image whenever the OCR hint is incomplete.
+            The later answer will be written in {language}.
+
+            OCR hint (may be incomplete or wrong):
+            {ocr}
+            """;
+        var result = "";
+        using (var visionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(18)))
+        {
+            try { result = await AppServices.Current.AI.AnalyzeImageAsync(CurrentAIConfig(), path, instruction, visionTimeout.Token); }
+            catch { result = ""; }
+        }
+        result = string.IsNullOrWhiteSpace(result) ? ocr : result.Trim();
+        if (string.IsNullOrWhiteSpace(result))
+            throw new TimeoutException(Localized("No readable question was found within 24 seconds. Try a smaller, clearer region.", "24 秒内未识别到清晰题目，请缩小截图范围后重试。"));
+        return result;
+    }
+
+    private void ShowScreenshotSessionControls()
+    {
+        ScreenshotCountText.Text = Localized(
+            $"Captured {_screenshotSegments.Count} screenshot(s)",
+            $"获取{_screenshotSegments.Count}张截图");
+        ScreenshotSessionPanel.Visibility = Visibility.Visible;
+        PreparingPanel.Visibility = Visibility.Collapsed;
+        AnswerScroller.Visibility = Visibility.Visible;
+    }
+
+    private async void ScreenshotAddButton_Click(object sender, RoutedEventArgs e) => await CaptureScreenshotSegmentAsync();
+    private async void ScreenshotFinishButton_Click(object sender, RoutedEventArgs e) => await FinishScreenshotSessionAsync();
+    private void ScreenshotDiscardButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_screenshotBusy) return;
+        _screenshotSegments.Clear();
+        ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
+        RefreshTurns(showLatest: true);
     }
 
     public void ApplyDirectorPacket(DirectorPacket packet)
@@ -584,18 +717,69 @@ public partial class PrompterWindow : Window
 
     private Task<bool> StartMicrophoneRecognitionAsync() => _speechRecognition.StartAsync(SpeechLanguageCode());
 
-    private async void SpeechRecognition_Recognized(string text)
+    private void SpeechRecognition_Recognized(string text)
     {
-        if (_audioMode == PrompterAudioMode.Muted || !_speechSubmissionGate.Wait(0)) return;
+        if (_audioMode == PrompterAudioMode.Muted) return;
         if (_isDirectorMode)
         {
-            try { DirectorQuestionCaptured?.Invoke(text); }
-            finally { _speechSubmissionGate.Release(); }
+            DirectorQuestionCaptured?.Invoke(text);
             return;
         }
-        try { await SubmitQuestionAsync(text); }
+        if (LooksLikeAnswerEcho(text)) return;
+        _pendingSpeechQuestion = MergeSpeechFragments(_pendingSpeechQuestion, text);
+        _speechDebounceTimer.Stop();
+        _speechDebounceTimer.Start();
+    }
+
+    private async Task SubmitRecognizedQuestionAsync(string text)
+    {
+        if (!_speechSubmissionGate.Wait(0)) return;
+        try
+        {
+            if (_aiEnabled) await SubmitQuestionAsync(text);
+            else
+            {
+                _session.Turns.Add(new ConversationTurnModel { Question = text, SpeakerLabel = "interviewer" });
+                _turnIndex = _session.Turns.Count - 1;
+                _store.ScheduleSave();
+                RefreshTurns(showLatest: true);
+            }
+        }
         finally { _speechSubmissionGate.Release(); }
     }
+
+    private bool LooksLikeAnswerEcho(string text)
+    {
+        if (_turnIndex < 0 || _turnIndex >= _session.Turns.Count) return false;
+        var answer = _session.Turns[_turnIndex].Answer;
+        var candidate = NormalizeSpeech(text);
+        var source = NormalizeSpeech(answer);
+        if (candidate.Length < 8 || source.Length < 12) return false;
+        if (source.Contains(candidate, StringComparison.OrdinalIgnoreCase)) return true;
+        var pieces = candidate.Chunk(Math.Max(4, candidate.Length / 3)).Select(chars => new string(chars)).ToArray();
+        return pieces.Length > 0 && pieces.Count(piece => source.Contains(piece, StringComparison.OrdinalIgnoreCase)) >= Math.Max(1, pieces.Length - 1);
+    }
+
+    private static string MergeSpeechFragments(string existing, string next)
+    {
+        existing = existing.Trim();
+        next = next.Trim();
+        if (existing.Length == 0) return next;
+        if (existing.Contains(next, StringComparison.OrdinalIgnoreCase)) return existing;
+        if (next.Contains(existing, StringComparison.OrdinalIgnoreCase)) return next;
+        var maxOverlap = Math.Min(existing.Length, next.Length);
+        for (var length = maxOverlap; length >= 2; length--)
+        {
+            if (existing.EndsWith(next[..length], StringComparison.OrdinalIgnoreCase)) return existing + next[length..];
+        }
+        return existing + (NeedsSpeechSeparator(existing, next) ? " " : "") + next;
+    }
+
+    private static bool NeedsSpeechSeparator(string left, string right) =>
+        left.Length > 0 && right.Length > 0 && left[^1] <= 127 && right[0] <= 127;
+
+    private static string NormalizeSpeech(string value) =>
+        new(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     private void SpeechRecognition_CandidateSpeechDetected(string text)
     {
@@ -622,9 +806,49 @@ public partial class PrompterWindow : Window
 
     private void KnowledgeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (Application.Current.MainWindow?.DataContext is MainViewModel mainViewModel) mainViewModel.NavigateTo("Knowledge Base");
-        Application.Current.MainWindow?.Show();
-        Application.Current.MainWindow?.Activate();
+        var menu = new ContextMenu { PlacementTarget = AiKnowledgeButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var knowledgeBase in _store.Data.KnowledgeBases)
+        {
+            var item = new MenuItem { Header = knowledgeBase.Name, IsCheckable = true, IsChecked = _session.ActiveKnowledgeBaseIds.Contains(knowledgeBase.Id), StaysOpenOnClick = true };
+            item.Click += (_, _) =>
+            {
+                if (item.IsChecked && !_session.ActiveKnowledgeBaseIds.Contains(knowledgeBase.Id)) _session.ActiveKnowledgeBaseIds.Add(knowledgeBase.Id);
+                else if (!item.IsChecked) _session.ActiveKnowledgeBaseIds.Remove(knowledgeBase.Id);
+                KnowledgeCountText.Text = _session.ActiveKnowledgeBaseIds.Count.ToString();
+                _store.ScheduleSave();
+            };
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+        var manage = new MenuItem { Header = Localized("Manage knowledge bases…", "管理知识库…") };
+        manage.Click += (_, _) =>
+        {
+            if (Application.Current.MainWindow?.DataContext is MainViewModel mainViewModel) mainViewModel.NavigateTo("Knowledge Base");
+            Application.Current.MainWindow?.Show(); Application.Current.MainWindow?.Activate();
+        };
+        menu.Items.Add(manage);
+        menu.IsOpen = true;
+    }
+
+    private void MoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = MoreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var smaller = new MenuItem { Header = Localized("Smaller text", "缩小字体") };
+        smaller.Click += (_, _) => { _answerFontSize = Math.Max(12, _answerFontSize - 1); RefreshTurns(false); };
+        var larger = new MenuItem { Header = Localized("Larger text", "放大字体") };
+        larger.Click += (_, _) => { _answerFontSize = Math.Min(28, _answerFontSize + 1); RefreshTurns(false); };
+        var auto = new MenuItem { Header = Localized("Auto-scroll", "自动滚动"), IsCheckable = true, IsChecked = _autoScroll };
+        auto.Click += (_, _) => _autoScroll = auto.IsChecked;
+        var ai = new MenuItem { Header = Localized("AI answers enabled", "启用 AI 回答"), IsCheckable = true, IsChecked = _aiEnabled };
+        ai.Click += (_, _) => _aiEnabled = ai.IsChecked;
+        var pin = new MenuItem { Header = Localized("Always on top", "始终置顶"), IsCheckable = true, IsChecked = Topmost };
+        pin.Click += (_, _) => Topmost = pin.IsChecked;
+        var copy = new MenuItem { Header = Localized("Copy current answer", "复制当前回答"), IsEnabled = _turnIndex >= 0 && _turnIndex < _session.Turns.Count };
+        copy.Click += (_, _) => { if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count) Clipboard.SetText(_session.Turns[_turnIndex].Answer ?? ""); };
+        var history = new MenuItem { Header = Localized("Open history", "打开历史记录") };
+        history.Click += (_, _) => { if (Application.Current.MainWindow?.DataContext is MainViewModel vm) vm.NavigateTo("History"); Application.Current.MainWindow?.Show(); Application.Current.MainWindow?.Activate(); };
+        menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy); menu.Items.Add(history);
+        menu.IsOpen = true;
     }
 
     private void ResizeHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

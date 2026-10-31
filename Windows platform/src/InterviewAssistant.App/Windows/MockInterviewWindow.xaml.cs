@@ -4,13 +4,14 @@ using System.Speech.Synthesis;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using InterviewAssistant.Models;
 using InterviewAssistant.Services;
 
 namespace InterviewAssistant.Windows;
 
-public partial class MockInterviewWindow : Window
+public partial class MockInterviewWindow : UserControl
 {
     private readonly MockInterviewLaunchConfig _config;
     private readonly AppDataStore _store = AppServices.Current.DataStore;
@@ -21,19 +22,30 @@ public partial class MockInterviewWindow : Window
     private InterviewSessionModel? _session;
     private int _currentIndex;
     private bool _isRecording;
+    private bool _hasStarted;
+    private bool _isClosed;
+
+    public event Action? CloseRequested;
 
     public MockInterviewWindow(MockInterviewLaunchConfig config)
     {
         _config = config;
         InitializeComponent();
-        Loaded += async (_, _) => await StartInterviewAsync();
+        Loaded += async (_, _) =>
+        {
+            if (_hasStarted) return;
+            _hasStarted = true;
+            await StartInterviewAsync();
+        };
         _speech.Recognized += Speech_Recognized;
         _speech.PartialRecognized += text => Dispatcher.BeginInvoke(new Action(() => SpeechStatusText.Text = text));
         _speech.StatusChanged += text => Dispatcher.BeginInvoke(new Action(() => SpeechStatusText.Text = text));
     }
 
-    protected override void OnClosing(CancelEventArgs e)
+    public void CloseSession()
     {
+        if (_isClosed) return;
+        _isClosed = true;
         _cancellation.Cancel();
         _speech.Dispose();
         try { _speaker.SpeakAsyncCancelAll(); _speaker.Dispose(); } catch { }
@@ -43,7 +55,6 @@ public partial class MockInterviewWindow : Window
             _session.UpdatedAt = DateTimeOffset.Now;
             _store.ScheduleSave();
         }
-        base.OnClosing(e);
     }
 
     private async Task StartInterviewAsync()
@@ -401,10 +412,19 @@ public partial class MockInterviewWindow : Window
     private void ClearAnswer_Click(object sender, RoutedEventArgs e) => AnswerBox.Clear();
     private void ReplayQuestion_Click(object sender, RoutedEventArgs e) => SpeakCurrentQuestion();
     private async void RetryButton_Click(object sender, RoutedEventArgs e) => await StartInterviewAsync();
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) { if (e.LeftButton == MouseButtonState.Pressed) DragMove(); }
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.LeftButton == MouseButtonState.Pressed) Window.GetWindow(this)?.DragMove();
+    }
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
+    };
     private sealed record MockQuestionDraft(string Category, string Question);
 
     /// <summary>Row model for the "Question Review Details" list.</summary>

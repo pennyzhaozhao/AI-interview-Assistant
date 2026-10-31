@@ -48,7 +48,7 @@ public sealed class VoiceEnrollmentWindow : Window
         Height = 760;
         ShowInTaskbar = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text, SimSun, Segoe UI");
         SetResourceReference(ForegroundProperty, "TextPrimaryBrush");
         _subtitle.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
         _status.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");

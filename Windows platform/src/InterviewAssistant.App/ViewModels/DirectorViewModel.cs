@@ -30,9 +30,9 @@ public sealed class DirectorViewModel : PageViewModel
         PreviousQuestionCommand = new RelayCommand(PreviousQuestion, () => SelectedQuestionIndex > 0);
         NextQuestionCommand = new RelayCommand(NextQuestion, () => SelectedQuestionIndex >= 0 && SelectedQuestionIndex < Questions.Count - 1);
         OpenHostBoardCommand = new AsyncRelayCommand(StartHostBoardAsync);
-        _connection.StatusChanged += status => Application.Current.Dispatcher.Invoke(() => Status = status);
+        _connection.StatusChanged += status => Application.Current.Dispatcher.Invoke(() => Status = LocalizeStatus(status));
         _connection.PacketReceived += packet => Application.Current.Dispatcher.Invoke(() => Receive(packet));
-        _host.StatusChanged += status => Application.Current.Dispatcher.Invoke(() => Status = status);
+        _host.StatusChanged += status => Application.Current.Dispatcher.Invoke(() => Status = LocalizeStatus(status));
         _host.PacketReceived += packet => Application.Current.Dispatcher.Invoke(() => Receive(packet));
         LocalizationManager.Instance.LanguageChanged += () => OnPropertyChanged(nameof(ModeStatusText));
     }
@@ -94,7 +94,8 @@ public sealed class DirectorViewModel : PageViewModel
             if (SetProperty(ref _remoteMode, value)) OnPropertyChanged(nameof(ModeStatusText));
         }
     }
-    public string ModeStatusText => LocalizationManager.Instance.IsChinese ? $"用户模式：{RemoteMode}" : $"User mode: {RemoteMode}";
+    public string ModeStatusText => LocalizationManager.Instance.IsChinese
+        ? $"用户模式：{(RemoteMode.Equals("director", StringComparison.OrdinalIgnoreCase) ? "导演" : "AI")}" : $"User mode: {RemoteMode}";
 
     private async Task ConnectAsync()
     {
@@ -145,17 +146,17 @@ public sealed class DirectorViewModel : PageViewModel
         if (text.Length == 0) return;
         if (!_connection.IsConnected)
         {
-            Status = "Connect to a Host before sending.";
+            Status = LocalizationManager.Instance.IsChinese ? "请先连接 Host。" : "Connect to a Host before sending.";
             return;
         }
         if (!HostBoardOpen)
         {
-            Status = "The Host prompt board is closed.";
+            Status = LocalizationManager.Instance.IsChinese ? "Host 提示板已关闭。" : "The Host prompt board is closed.";
             return;
         }
         if (string.Equals(RemoteMode, "ai", StringComparison.OrdinalIgnoreCase))
         {
-            Status = "The Host is currently in AI mode.";
+            Status = LocalizationManager.Instance.IsChinese ? "Host 当前处于 AI 模式。" : "The Host is currently in AI mode.";
             return;
         }
 
@@ -169,7 +170,7 @@ public sealed class DirectorViewModel : PageViewModel
             });
             SelectedQuestion?.Answers.Add(text);
             Draft = "";
-            Status = "Answer sent";
+            Status = LocalizationManager.Instance.IsChinese ? "回答已发送" : "Answer sent";
         }
         catch (Exception exception)
         {
@@ -205,6 +206,17 @@ public sealed class DirectorViewModel : PageViewModel
 
     private void PreviousQuestion() { var index = SelectedQuestionIndex; if (index > 0) SelectedQuestion = Questions[index - 1]; }
     private void NextQuestion() { var index = SelectedQuestionIndex; if (index >= 0 && index < Questions.Count - 1) SelectedQuestion = Questions[index + 1]; }
+
+    private static string LocalizeStatus(string status)
+    {
+        if (!LocalizationManager.Instance.IsChinese) return status;
+        if (status.StartsWith("Connecting to ", StringComparison.OrdinalIgnoreCase)) return "正在连接 Host…";
+        if (status.Equals("Connected to host", StringComparison.OrdinalIgnoreCase)) return "已连接 Host";
+        if (status.Equals("Disconnected", StringComparison.OrdinalIgnoreCase)) return "连接已断开";
+        if (status.StartsWith("Host listening on port ", StringComparison.OrdinalIgnoreCase)) return "Host 服务已启动，正在等待控制端连接";
+        if (status.StartsWith("Host error:", StringComparison.OrdinalIgnoreCase)) return "Host 服务异常：" + status[11..].Trim();
+        return status;
+    }
 
     private static BitmapImage CreateQrCode(string value)
     {

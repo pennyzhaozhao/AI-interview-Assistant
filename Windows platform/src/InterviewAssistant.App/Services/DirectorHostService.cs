@@ -113,7 +113,7 @@ public sealed class DirectorHostService : IAsyncDisposable
                 }
                 if (method == "GET")
                 {
-                    await WriteHtmlAsync(stream, ControllerPage, cancellationToken);
+                    await WriteHtmlAsync(stream, ControllerPageForCurrentLanguage(), cancellationToken);
                     return;
                 }
                 await WriteResponseAsync(stream, "404 Not Found", "text/plain", "Not found", cancellationToken);
@@ -151,7 +151,48 @@ public sealed class DirectorHostService : IAsyncDisposable
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
+
+    private static string ControllerPageForCurrentLanguage()
+    {
+        if (AppServices.Current.DataStore.Data.Preferences.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase)) return ControllerPage;
+        return ControllerPage
+            .Replace("lang=\"zh-CN\"", "lang=\"en\"")
+            .Replace("Interview AI 导演控制端", "Interview AI Director Controller")
+            .Replace("与 Host 同一网络即可实时控制", "Connect on the same network as the Host")
+            .Replace("连接中…", "Connecting…")
+            .Replace("当前问题 / QUESTION", "CURRENT QUESTION")
+            .Replace("等待 Host 捕获问题…", "Waiting for the Host to capture a question…")
+            .Replace("发送 MARKDOWN 内容", "SEND MARKDOWN CONTENT")
+            .Replace("输入要显示在 Host 提示板上的回答，支持 Markdown…", "Enter an answer for the Host prompter. Markdown is supported…")
+            .Replace("准备就绪", "Ready")
+            .Replace("发送到提示板", "Send to Prompter")
+            .Replace("Host 提示板已打开", "Host prompter is open")
+            .Replace("Host 提示板未打开", "Host prompter is closed")
+            .Replace("已连接 · ", "Connected · ")
+            .Replace("导演模式", "Director mode")
+            .Replace("AI 模式", "AI mode")
+            .Replace("连接中断，正在重试…", "Connection lost. Retrying…")
+            .Replace("发送中…", "Sending…")
+            .Replace("已发送到 Host 提示板", "Sent to the Host prompter")
+            .Replace("发送失败：", "Send failed: ");
+    }
     private const string ControllerPage = """
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Interview AI Director</title><style>body{font-family:Segoe UI,sans-serif;background:#f3f6fb;color:#172238;max-width:760px;margin:40px auto;padding:20px}.card{background:white;border-radius:24px;padding:26px;box-shadow:0 12px 40px #1c315018}textarea{width:100%;min-height:240px;box-sizing:border-box;border:1px solid #dce3ef;border-radius:16px;padding:16px;font:16px Segoe UI}button{margin-top:16px;background:#2f6bff;color:white;border:0;border-radius:14px;padding:13px 24px;font-weight:700}#status{color:#71809a;margin-top:12px}</style></head><body><div class="card"><h1>Interview AI 导演控制端</h1><p>输入要发送到 Host 提示板的 Markdown 回答。</p><textarea id="text" placeholder="输入提示内容…"></textarea><button onclick="send()">发送</button><div id="status">已连接到 Host</div></div><script>async function send(){let t=document.getElementById('text');let s=document.getElementById('status');if(!t.value.trim())return;s.textContent='发送中…';try{let r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'answer',text:t.value})});if(!r.ok)throw Error(r.status);t.value='';s.textContent='已发送';}catch(e){s.textContent='发送失败：'+e}}</script></body></html>
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Interview AI Director</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,"Segoe UI","SimSun","宋体",serif;background:#f4f7fc;color:#142038}.shell{max-width:900px;margin:auto;padding:24px}.hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.hero h1{font-size:28px;margin:0}.badge{padding:9px 14px;border-radius:999px;background:#eaf0fb;color:#71809a;font-weight:700}.badge.live{background:#e5f8ee;color:#199653}.card{background:#fff;border:1px solid #e3e9f2;border-radius:24px;padding:24px;margin-bottom:18px;box-shadow:0 12px 36px #213b6410}.label{color:#71809a;font-size:13px;font-weight:800;letter-spacing:.08em}.question-row{display:grid;grid-template-columns:46px 1fr 46px;gap:12px;align-items:center;margin-top:14px}.round{width:46px;height:46px;border:0;border-radius:50%;font-size:25px;background:#edf2f9;color:#63728c}.round:disabled{opacity:.35}.question{min-height:92px;padding:18px;border-radius:17px;background:#f5f7fb;font-size:20px;font-weight:700;line-height:1.45}.meta{color:#8290a8;font-size:13px;margin-top:10px;text-align:center}textarea{width:100%;min-height:230px;resize:vertical;border:1px solid #dce3ef;border-radius:17px;padding:17px;font:16px/1.55 inherit;outline:none}textarea:focus{border-color:#3672ff;box-shadow:0 0 0 3px #3672ff18}.actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.send{background:#326dff;color:#fff;border:0;border-radius:14px;padding:13px 25px;font-weight:800;font-size:15px}.status{color:#71809a}.empty{color:#99a5b7;font-weight:500}@media(max-width:600px){.shell{padding:14px}.hero h1{font-size:22px}.card{padding:17px;border-radius:19px}.question{font-size:17px}.question-row{grid-template-columns:38px 1fr 38px}.round{width:38px;height:38px}}
+</style></head>
+<body><main class="shell"><header class="hero"><div><h1>Interview AI 导演控制端</h1><div class="status">与 Host 同一网络即可实时控制</div></div><div id="hostBadge" class="badge">连接中…</div></header>
+<section class="card"><div class="label">当前问题 / QUESTION</div><div class="question-row"><button id="prev" class="round" onclick="move(-1)">‹</button><div id="question" class="question"><span class="empty">等待 Host 捕获问题…</span></div><button id="next" class="round" onclick="move(1)">›</button></div><div id="questionMeta" class="meta">0 / 0</div></section>
+<section class="card"><div class="label">发送 MARKDOWN 内容</div><textarea id="text" placeholder="输入要显示在 Host 提示板上的回答，支持 Markdown…"></textarea><div class="actions"><div id="status" class="status">准备就绪</div><button class="send" onclick="sendAnswer()">发送到提示板</button></div></section></main>
+<script>
+let sequence=0, questions=[], index=-1, boardOpen=false;
+function render(){let q=questions[index], box=document.getElementById('question');box.innerHTML=q?escapeHtml(q.text):'<span class="empty">等待 Host 捕获问题…</span>';document.getElementById('questionMeta').textContent=q?`${index+1} / ${questions.length}`:`0 / 0`;document.getElementById('prev').disabled=index<=0;document.getElementById('next').disabled=index<0||index>=questions.length-1;let badge=document.getElementById('hostBadge');badge.textContent=boardOpen?'Host 提示板已打开':'Host 提示板未打开';badge.className='badge '+(boardOpen?'live':'');}
+function escapeHtml(v){let d=document.createElement('div');d.textContent=v||'';return d.innerHTML.replace(/\n/g,'<br>')}
+function move(delta){index=Math.max(0,Math.min(questions.length-1,index+delta));render()}
+async function poll(){try{let r=await fetch('/api/state?after='+sequence,{cache:'no-store'});if(!r.ok)throw Error(r.status);let state=await r.json();boardOpen=!!state.hostBoardOpen;for(let p of state.packets||[]){sequence=Math.max(sequence,p.sequence||0);if((p.kind==='question'||p.kind==='snapshot')&&p.text){let existing=questions.findIndex(q=>q.id===(p.questionID||p.questionId));let item={id:p.questionID||p.questionId||String(p.sequence),text:p.text};if(existing>=0)questions[existing]=item;else{questions.push(item);index=questions.length-1}}}render();document.getElementById('status').textContent='已连接 · '+(state.mode==='director'?'导演模式':'AI 模式')}catch(e){document.getElementById('status').textContent='连接中断，正在重试…'}finally{setTimeout(poll,900)}}
+async function sendAnswer(){let t=document.getElementById('text'),s=document.getElementById('status'),q=questions[index];if(!t.value.trim())return;s.textContent='发送中…';try{let r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'answer',questionID:q?.id,text:t.value})});if(!r.ok)throw Error(r.status);t.value='';s.textContent='已发送到 Host 提示板'}catch(e){s.textContent='发送失败：'+e.message}}
+render();poll();
+</script></body></html>
 """;
 }

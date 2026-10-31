@@ -226,6 +226,7 @@ public sealed class SettingsViewModel : PageViewModel
             preferences.ScreenshotRegionY = region.Y;
             preferences.ScreenshotRegionWidth = region.Width;
             preferences.ScreenshotRegionHeight = region.Height;
+            preferences.ScreenshotRegionUsesPhysicalPixels = true;
         });
         OnPropertyChanged(nameof(HasScreenshotRegion));
         OnPropertyChanged(nameof(ScreenshotRegionStatus));
@@ -240,6 +241,7 @@ public sealed class SettingsViewModel : PageViewModel
             preferences.ScreenshotRegionY = 0;
             preferences.ScreenshotRegionWidth = 0;
             preferences.ScreenshotRegionHeight = 0;
+            preferences.ScreenshotRegionUsesPhysicalPixels = true;
         });
         OnPropertyChanged(nameof(HasScreenshotRegion));
         OnPropertyChanged(nameof(ScreenshotRegionStatus));

@@ -32,6 +32,7 @@ struct SetupView: View {
     @State private var mockQuestionCount = 6
     @State private var mockQuestionCountText = "6"
     @AppStorage(AppPreferenceKey.mockInterviewLanguage) private var mockInterviewLanguageRaw = MockInterviewLanguage.followApp.rawValue
+    @AppStorage(AppPreferenceKey.interviewerLanguage) private var interviewerLanguageRaw = MockInterviewLanguage.followApp.rawValue
     #if os(macOS)
     @AppStorage(AppPreferenceKey.hideDockIcon) private var hideDockIcon = false
     @State private var floatingReceiver: NSWindowController?
@@ -302,6 +303,19 @@ struct SetupView: View {
             }
             labeledField(L.t("Company Notes")) {
                 companyNotesEditor
+            }
+            if !companyNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(L.t("Markdown Preview"))
+                        .font(.appSmall.weight(.semibold))
+                        .foregroundStyle(Color.appMuted)
+                    MarkdownTextView(markdown: companyNotes, fontSize: 14, color: Color.appText)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.appField)
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous).stroke(Color.appBorder))
+                }
             }
             if !companyParseStatus.isEmpty {
                 Text(companyParseStatus)
@@ -591,7 +605,8 @@ struct SetupView: View {
         do {
             let summary = try await WebsiteResearchService.researchCompany(
                 from: url,
-                config: AIService.config(from: modelContext)
+                config: AIService.config(from: modelContext),
+                answerLanguage: companyResearchLanguage
             )
             let block = """
 
@@ -605,6 +620,10 @@ struct SetupView: View {
         } catch {
             companyParseStatus = String(format: L.t("Parsing failed: %@. You can fill in the company notes manually."), error.localizedDescription)
         }
+    }
+
+    private var companyResearchLanguage: MockInterviewLanguage {
+        MockInterviewLanguage(rawValue: interviewerLanguageRaw) ?? .followApp
     }
 
     private func interviewContext(role: String, jobDescription: String) -> String {
