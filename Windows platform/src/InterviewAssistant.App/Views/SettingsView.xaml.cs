@@ -151,6 +151,8 @@ public partial class SettingsView : UserControl
         UpdateStatusText.Text = string.Format(
             LocalizationManager.Text("InterviewAssistant {0} is installed."),
             UpdateChecker.CurrentVersion);
+        UpdateTitleText.Text = LocalizationManager.Text("Check for Updates...");
+        UpdateResultCard.Visibility = Visibility.Collapsed;
     }
 
     private void BackFromAbout_Click(object sender, RoutedEventArgs e)
@@ -164,20 +166,31 @@ public partial class SettingsView : UserControl
         CheckUpdatesButton.IsEnabled = false;
         UpdateTitleText.Text = LocalizationManager.Text("Checking for Updates...");
         UpdateStatusText.Text = LocalizationManager.Text("Contacting GitHub Releases...");
+        UpdateChevron.Visibility = Visibility.Collapsed;
+        UpdateSpinner.Visibility = Visibility.Visible;
+        UpdateResultCard.Visibility = Visibility.Collapsed;
         DownloadUpdateButton.Visibility = Visibility.Collapsed;
         try
         {
-            _lastUpdateResult = await UpdateChecker.CheckAsync();
-            UpdateStatusText.Text = _lastUpdateResult.Status;
-            UpdateTitleText.Text = _lastUpdateResult.UpdateAvailable
-                ? string.Format(LocalizationManager.Text("Version {0} is available"), _lastUpdateResult.LatestVersion)
-                : LocalizationManager.Text("Check for Updates...");
-            DownloadUpdateButton.Visibility = _lastUpdateResult.UpdateAvailable
+            var result = await UpdateChecker.CheckAsync();
+            _lastUpdateResult = result;
+            UpdateTitleText.Text = LocalizationManager.Text("Check for Updates...");
+            UpdateStatusText.Text = result.Status;
+
+            UpdateResultTitle.Text = result.Title;
+            UpdateResultMessage.Text = result.Message;
+            UpdateResultIcon.Text = !result.Succeeded ? "\uE7BA" : result.UpdateAvailable ? "\uE896" : "\uE930";
+            UpdateResultIcon.Foreground = (System.Windows.Media.Brush)FindResource(
+                !result.Succeeded ? "WarningBrush" : result.UpdateAvailable ? "PrimaryBrush" : "SuccessBrush");
+            DownloadUpdateButton.Visibility = result.UpdateAvailable && !string.IsNullOrWhiteSpace(result.DownloadUrl)
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            UpdateResultCard.Visibility = Visibility.Visible;
         }
         finally
         {
+            UpdateSpinner.Visibility = Visibility.Collapsed;
+            UpdateChevron.Visibility = Visibility.Visible;
             CheckUpdatesButton.IsEnabled = true;
         }
     }

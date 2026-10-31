@@ -159,16 +159,48 @@
                     </StackPanel>
                 </Border>
 
-                <Button x:Name="CheckUpdatesButton" Click="CheckUpdates_Click" Style="{StaticResource SecondaryButtonStyle}" HorizontalContentAlignment="Stretch" Padding="18" Margin="0,0,0,18">
-                    <Grid MinHeight="54">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="52"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource PrimarySoftBrush}" HorizontalAlignment="Left"><TextBlock Text="&#xE72C;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}"/></Border>
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock x:Name="UpdateTitleText" Text="{loc:Loc Key='Check for Updates...'}" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionStyle}" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
-                        <TextBlock Grid.Column="2" Text="&#xE76C;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="14" Margin="12,0"/>
+                <!-- Plain template: the shared button styles have a fixed 46px height and a centered
+                     presenter, which clipped this card. -->
+                <Button x:Name="CheckUpdatesButton" Click="CheckUpdates_Click" Cursor="Hand" Margin="0,0,0,18" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Focusable="True">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Root" Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="18">
+                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger>
+                                <Trigger Property="IsPressed" Value="True"><Setter TargetName="Root" Property="Opacity" Value="0.85"/></Trigger>
+                                <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Root" Property="Opacity" Value="0.9"/></Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Grid MinHeight="52">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="54"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource PrimarySoftBrush}" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock Text="&#xE895;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="UpdateTitleText" Text="{loc:Loc Key='Check for Updates...'}" FontSize="15" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="UpdateStatusText" Style="{StaticResource CaptionStyle}" FontSize="12.5" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Grid Grid.Column="2" Width="24" Margin="12,0,4,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="UpdateChevron" Text="&#xE76C;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13"/>
+                            <infra:ActivitySpinner x:Name="UpdateSpinner" Width="18" Height="18" SpokeThickness="1.8" SpokeBrush="{DynamicResource TextSecondaryBrush}" Visibility="Collapsed"/>
+                        </Grid>
                     </Grid>
                 </Button>
 
-                <Button x:Name="DownloadUpdateButton" Click="DownloadUpdate_Click" Content="{loc:Loc Key='Download Update'}" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,-8,0,18"/>
+                <!-- Result card (macOS shows the same title / message / download in an alert). -->
+                <Border x:Name="UpdateResultCard" Style="{StaticResource CardStyle}" Padding="20" CornerRadius="20" Visibility="Collapsed" Margin="0,-6,0,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="UpdateResultIcon" Text="&#xE930;" Style="{StaticResource FluentIconStyle}" FontSize="18" Margin="0,0,10,0"/>
+                            <TextBlock x:Name="UpdateResultTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <TextBlock x:Name="UpdateResultMessage" Style="{StaticResource CaptionStyle}" FontSize="13.5" LineHeight="21" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                        <Button x:Name="DownloadUpdateButton" Click="DownloadUpdate_Click" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Left" Visibility="Collapsed" Margin="0,16,0,0">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE896;" Style="{StaticResource FluentIconStyle}" FontSize="15" Foreground="White" Margin="0,0,8,0"/><TextBlock Text="{loc:Loc Key='Download Update'}" VerticalAlignment="Center"/></StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
 
                 <Border Style="{StaticResource CardStyle}" Padding="18" CornerRadius="20">
                     <StackPanel>

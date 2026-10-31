@@ -92,7 +92,15 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["YOUR IP ADDRESS"] = "你的 IP 地址", ["ENTER HOST IP ADDRESS"] = "输入 HOST IP 地址", ["WEB CONTROLLER"] = "网页控制端", ["Scan to send without the app"] = "扫码即可发送，无需安装 App",
         ["Waiting for host connection"] = "等待 Host 连接",
         ["The Host prompt board must be running on the same Wi-Fi."] = "Host 提示板需要在同一 Wi-Fi 下运行。", ["Controller address QR"] = "网页控制端已就绪", ["QUESTION"] = "问题", ["Host prompt board status"] = "Host 提示板状态",
-        ["Waiting for the Host to hear or capture a question"] = "等待 Host 听到或截取题目", ["SEND MARKDOWN CONTENT"] = "发送 MARKDOWN 内容", ["Supports headings, lists, code blocks and links"] = "支持标题、列表、代码块和链接"
+        ["Waiting for the Host to hear or capture a question"] = "等待 Host 听到或截取题目", ["SEND MARKDOWN CONTENT"] = "发送 MARKDOWN 内容", ["Supports headings, lists, code blocks and links"] = "支持标题、列表、代码块和链接",
+        // Mock interview + About page wording aligned with the macOS app.
+        ["End Interview"] = "结束面试", ["Score"] = "得分", ["Start Another Mock Interview"] = "再来一场模拟面试",
+        ["Strengths"] = "表现优势", ["Question Review Details"] = "问答记录详情", ["Your Answer"] = "你的回答",
+        ["AI Deep Feedback"] = "AI 深度评价", ["Suggested Answer"] = "参考优化答案", ["No feedback yet."] = "暂无评估。",
+        ["Edit the transcript before submitting. No AI help is shown during mock interviews."] = "提交前可以编辑语音转写稿。模拟面试过程中不会显示 AI 帮助回答。",
+        ["You're up to date"] = "已是最新版本", ["A newer version is ready to download."] = "新版本已可下载。",
+        ["Check your internet connection and try again."] = "请检查网络连接后重试。", ["Unable to Check for Updates"] = "无法检查更新",
+        ["Release Notes"] = "更新说明"
     };
 
     public static LocalizationManager Instance { get; } = new();

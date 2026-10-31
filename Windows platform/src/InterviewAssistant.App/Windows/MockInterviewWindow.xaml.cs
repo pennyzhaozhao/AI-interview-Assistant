@@ -93,13 +93,16 @@ public partial class MockInterviewWindow : Window
             Role: {{_config.Role}}
             Job description: {{_config.JobDescription}}
             Interviewer language: {{language}}
-            Include behavioral, project deep-dive, and role-specific questions. Use the candidate context for personal questions.
-            Return strict JSON only: {"questions":[{"category":"Project Deep Dive","question":"..."}]}
+
+            Use the candidate knowledge base to ask personal, project-specific questions. Include behavioral, project deep-dive, and role-specific questions.
+            All category and question values must be written in {{language}}.
+            Return strict JSON only:
+            {"questions":[{"category":"Project Deep Dive","question":"..."}]}
 
             Context:
             {{context}}
             """;
-        var raw = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), $"You are a realistic interviewer. Return valid JSON only in {language}.", prompt, 1800, cancellationToken);
+        var raw = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), $"You are a realistic interviewer. Return valid JSON only. Write all content in {language}.", prompt, 1800, cancellationToken);
         var decoded = JsonSerializer.Deserialize<MockQuestionEnvelope>(ExtractJson(raw), JsonOptions);
         return decoded?.Questions?.Where(item => !string.IsNullOrWhiteSpace(item.Question)).Take(_config.QuestionCount).ToList() ?? [];
     }
@@ -143,6 +146,8 @@ public partial class MockInterviewWindow : Window
     {
         RecordButtonText.Text = LocalizationManager.Text(_isRecording ? "Stop Recording" : "Start Recording");
         RecordIcon.Text = _isRecording ? "\uE71A" : "\uE720";
+        // Like macOS: the record button turns prominent while listening.
+        RecordButton.Style = (Style)FindResource(_isRecording ? "PrimaryButtonStyle" : "SecondaryButtonStyle");
     }
 
     private void Speech_Recognized(string text)
@@ -189,11 +194,27 @@ public partial class MockInterviewWindow : Window
         try
         {
             var interview = string.Join("\n\n", _session.Turns.Select((turn, index) => $"Q{index + 1} [{turn.Category}] {turn.Question}\nAnswer: {turn.Answer}"));
+            var language = OutputLanguage();
             var prompt = $$"""
-                Evaluate this mock interview for role "{{_session.Role}}" in {{OutputLanguage()}}.
-                Give specific coaching based on the candidate's actual answers. Return strict JSON only:
-                {"overallScore":76,"summary":"...","strengths":["..."],"improvements":["..."],"questions":[{"index":1,"score":80,"feedback":"...","suggestedAnswer":"..."}]}
-                Include one questions item for every question.
+                Evaluate this mock interview for role "{{_session.Role}}".
+                Evaluation language: {{language}}
+                Give polished, professional, specific coaching like a senior interviewer. Do not be vague. Every strength and improvement must cite evidence from the candidate's answers or explain what was missing.
+                For each question:
+                - feedback must evaluate the user's actual answer: what was strong, what was missing, why it matters, and one concrete next action.
+                - suggestedAnswer must be a rewritten model answer in first person, customized to the user's answer, role, JD, and context.
+                - feedback and suggestedAnswer must NOT be the same text.
+                - If the user's answer is short, explicitly say which details are missing and produce a stronger sample answer with plausible structure, not a generic template.
+                Return strict JSON only:
+                {
+                  "overallScore": 76,
+                  "summary": "A concise 120-180 word overall evaluation with role fit, answer structure, evidence quality, and readiness.",
+                  "strengths": ["Specific observed strength with evidence", "Specific observed strength with evidence", "Specific observed strength with evidence"],
+                  "improvements": ["Concrete improvement with next action", "Concrete improvement with next action", "Concrete improvement with next action"],
+                  "questions": [
+                    {"index":1,"score":88,"feedback":"Specific critique of this answer only. Mention evidence and missing details.","suggestedAnswer":"First-person polished answer that the candidate could say."}
+                  ]
+                }
+                Include one questions item for every interview question.
 
                 Interview:
                 {{interview}}
@@ -201,7 +222,7 @@ public partial class MockInterviewWindow : Window
                 Context:
                 {{_session.Context}}
                 """;
-            var raw = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), "You are a senior interview coach. Return valid JSON only.", prompt, 3600, _cancellation.Token);
+            var raw = await AppServices.Current.AI.CompleteAsync(CurrentAIConfig(), $"You are a senior interview coach. Return valid JSON only. Write all feedback and suggested answers in {language}.", prompt, 3600, _cancellation.Token);
             ApplyEvaluation(raw);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -271,7 +292,7 @@ public partial class MockInterviewWindow : Window
         SummaryText.Text = _session.SummaryFeedback;
         StrengthsText.Text = _session.StrengthsText;
         ImprovementsText.Text = _session.ImprovementsText;
-        ReviewList.ItemsSource = _session.Turns;
+        ReviewList.ItemsSource = _session.Turns.Select((turn, index) => new ReviewItem(index + 1, turn)).ToList();
         SetVisiblePanel(ResultsPanel);
     }
 
@@ -362,6 +383,19 @@ public partial class MockInterviewWindow : Window
     private void SetVisiblePanel(UIElement panel)
     {
         foreach (var item in new UIElement[] { LoadingPanel, InterviewPanel, EvaluatingPanel, ResultsPanel, ErrorPanel }) item.Visibility = ReferenceEquals(item, panel) ? Visibility.Visible : Visibility.Collapsed;
+        PageScroller.ScrollToTop();
+    }
+
+    private void AnswerBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e) =>
+        SubmitAnswerButton.IsEnabled = AnswerBox.Text.Trim().Length > 0;
+
+    private async void StartAnother_Click(object sender, RoutedEventArgs e)
+    {
+        _session = null;
+        _questions = [];
+        _currentIndex = 0;
+        AnswerBox.Clear();
+        await StartInterviewAsync();
     }
 
     private void ClearAnswer_Click(object sender, RoutedEventArgs e) => AnswerBox.Clear();
@@ -372,6 +406,22 @@ public partial class MockInterviewWindow : Window
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private sealed record MockQuestionDraft(string Category, string Question);
+
+    /// <summary>Row model for the "Question Review Details" list.</summary>
+    public sealed class ReviewItem(int number, ConversationTurnModel turn)
+    {
+        public int Number { get; } = number;
+        public string Category { get; } = turn.Category;
+        public string Question { get; } = turn.Question;
+        public string Answer { get; } = turn.Answer;
+        public string Feedback { get; } = turn.Feedback;
+        public string SuggestedAnswer { get; } = turn.SuggestedAnswer;
+        public string ScoreText { get; } = $"{turn.Score} {LocalizationManager.Text("Score")}";
+        public Visibility CategoryVisibility => string.IsNullOrWhiteSpace(Category) ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility ScoreVisibility { get; } = turn.Score > 0 ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility FeedbackVisibility => string.IsNullOrWhiteSpace(Feedback) ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility SuggestedVisibility => string.IsNullOrWhiteSpace(SuggestedAnswer) ? Visibility.Collapsed : Visibility.Visible;
+    }
     private sealed record MockQuestionEnvelope(List<MockQuestionDraft>? Questions);
     private sealed record MockEvaluation(int OverallScore, string? Summary, List<string>? Strengths, List<string>? Improvements, List<MockQuestionEvaluation>? Questions);
     private sealed record MockQuestionEvaluation(int Index, int Score, string? Feedback, string? SuggestedAnswer);
