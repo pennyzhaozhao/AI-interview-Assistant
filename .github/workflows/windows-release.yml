@@ -1,0 +1,79 @@
+name: Windows release
+
+# Builds the Windows app as a single self-contained InterviewAssistant.exe and attaches it to a
+# GitHub Release, next to the macOS .dmg. The in-app update checker (UpdateChecker.cs) picks the
+# .exe asset of the latest release.
+#
+# - Publishing a release (tag like v1.2.0) builds and uploads automatically.
+# - "Run workflow" lets you build for an existing tag (creates the release if it does not exist).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload to (e.g. v1.1.0). The selected branch is what gets built."
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      PROJECT: Windows platform/src/InterviewAssistant.App/InterviewAssistant.App.csproj
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Release event: build the tagged commit. Manual run: build the branch you ran it on
+      # (normally main) and upload under the given tag.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Resolve version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = $env:TAG.TrimStart('v', 'V')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$env:TAG' must look like v1.2.3" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish single-file exe
+        shell: pwsh
+        run: |
+          dotnet publish "$env:PROJECT" `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:GenerateDocumentationFile=false `
+            -p:Version=${{ steps.version.outputs.version }} `
+            -p:AssemblyVersion=${{ steps.version.outputs.version }}.${{ github.run_number }} `
+            -p:FileVersion=${{ steps.version.outputs.version }}.${{ github.run_number }} `
+            -o publish
+          $asset = "InterviewAssistant-${{ steps.version.outputs.version }}-Windows-x64.exe"
+          Move-Item publish/InterviewAssistant.exe $asset
+          Get-Item $asset | Format-List Name, Length
+          "ASSET=$asset" >> $env:GITHUB_ENV
+
+      - name: Upload to release
+        shell: pwsh
+        run: |
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes "Windows build."
+          }
+          gh release upload $env:TAG $env:ASSET --repo $env:GITHUB_REPOSITORY --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
