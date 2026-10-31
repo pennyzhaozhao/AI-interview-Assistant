@@ -6,7 +6,7 @@
         Width="1120" Height="860" MinWidth="820" MinHeight="620"
         WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterOwner"
-        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI">
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI" Foreground="{DynamicResource TextPrimaryBrush}">
     <Window.Resources>
         <!-- Mirrors the macOS premiumCard() modifier. -->
         <Style x:Key="MockCardStyle" TargetType="Border">

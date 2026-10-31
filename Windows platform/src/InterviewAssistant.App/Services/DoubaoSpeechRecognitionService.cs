@@ -15,6 +15,10 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     private int _sequence;
     private double _resamplePosition;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    // Audio of the utterance currently being recognized (16 kHz mono), used for speaker verification.
+    private readonly List<float> _utteranceAudio = [];
+    private readonly object _utteranceGate = new();
+    private const int MaxUtteranceSamples = 16_000 * 20;
 
     public event Action<string>? Recognized;
     public event Action<string>? PartialRecognized;
@@ -127,11 +131,34 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
                 ? ConvertLoopbackToPcm16(e.Buffer.AsSpan(0, e.BytesRecorded), loopback.WaveFormat)
                 : e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
             if (pcm.Length == 0) return;
+            AppendUtteranceAudio(pcm);
             await SendFrameAsync(0x02, 0x01, 0x00, 0x01, Interlocked.Increment(ref _sequence), Gzip(pcm), cancellation.Token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             StatusChanged?.Invoke($"Doubao audio upload failed: {exception.Message}");
+        }
+    }
+
+    private void AppendUtteranceAudio(byte[] pcm16)
+    {
+        lock (_utteranceGate)
+        {
+            for (var offset = 0; offset + 1 < pcm16.Length; offset += 2)
+                _utteranceAudio.Add(BitConverter.ToInt16(pcm16, offset) / 32768f);
+            var overflow = _utteranceAudio.Count - MaxUtteranceSamples;
+            if (overflow > 0) _utteranceAudio.RemoveRange(0, overflow);
+        }
+    }
+
+    /// <summary>Returns the audio captured since the previous final result and starts a new utterance.</summary>
+    public float[] TakeUtteranceAudio()
+    {
+        lock (_utteranceGate)
+        {
+            var samples = _utteranceAudio.ToArray();
+            _utteranceAudio.Clear();
+            return samples;
         }
     }
 
@@ -289,6 +316,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         _socket = null;
         _sequence = 0;
         _resamplePosition = 0;
+        lock (_utteranceGate) _utteranceAudio.Clear();
     }
 
     public void Dispose() => Stop();

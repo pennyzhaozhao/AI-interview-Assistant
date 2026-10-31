@@ -4,7 +4,7 @@
         xmlns:loc="clr-namespace:InterviewAssistant.Services"
         Width="720" Height="640" MinWidth="560" MinHeight="460"
         WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResizeWithGrip"
-        AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False">
+        AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False" Foreground="{DynamicResource TextPrimaryBrush}">
     <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="24">
         <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="34" ShadowDepth="10" Opacity="0.28"/></Border.Effect>
         <Grid>

@@ -19,7 +19,8 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["ScreenshotModeDescription"] = "Choose whether screenshots use a preset region for silent capture during interviews.",
         ["PresetRegionDescription"] = "Set the region before the interview, then capture silently without stealing focus.",
         ["ManualRegionDescription"] = "Select an area manually each time. This can briefly move focus away from the interview.",
-        ["RegionSetupHint"] = "Set the region before the interview starts so capturing does not affect the interview window."
+        ["RegionSetupHint"] = "Set the region before the interview starts so capturing does not affect the interview window.",
+        ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded."
     };
 
     private static readonly IReadOnlyDictionary<string, string> Chinese = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -100,7 +101,51 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["Edit the transcript before submitting. No AI help is shown during mock interviews."] = "提交前可以编辑语音转写稿。模拟面试过程中不会显示 AI 帮助回答。",
         ["You're up to date"] = "已是最新版本", ["A newer version is ready to download."] = "新版本已可下载。",
         ["Check your internet connection and try again."] = "请检查网络连接后重试。", ["Unable to Check for Updates"] = "无法检查更新",
-        ["Release Notes"] = "更新说明"
+        ["Release Notes"] = "更新说明",
+        // Voices (speaker recognition), wording from the macOS app.
+        ["OK"] = "好",
+        ["Later"] = "稍后",
+        ["Delete"] = "删除",
+        ["Done"] = "完成",
+        ["More"] = "更多",
+        ["Voice"] = "声音",
+        ["Voices"] = "声音",
+        ["None"] = "无",
+        ["Active"] = "正在使用",
+        ["Available"] = "可用",
+        ["Choose the voice that belongs to you during an interview."] = "选择面试时代表你的声音；选择“无”可关闭识别。",
+        ["Turn off voice recognition"] = "关闭说话人识别",
+        ["Add Voice…"] = "添加声音…",
+        ["Rename Voice"] = "重命名声音",
+        ["Voice Name"] = "声音名称",
+        ["Enter a name that will help you recognize this voice."] = "输入一个便于辨认的声音名称。",
+        ["Delete Voice"] = "删除声音",
+        ["This removes the voiceprint from this device."] = "这会从本机删除该声纹。",
+        ["Voice recognition is off."] = "说话人识别已关闭。",
+        ["Active voice updated."] = "已切换当前声音。",
+        ["Recognition Sensitivity"] = "识别灵敏度",
+        ["Higher sensitivity is stricter when deciding whether a speaker is you."] = "灵敏度越高，判断说话人是否为你时越严格。",
+        ["VoiceprintPrivacyNote"] = "声纹属于生物特征数据，会使用 Windows 数据保护加密保存在本机，绝不会上传。",
+        ["Add a Voice"] = "添加声音",
+        ["Voice Added"] = "声音已添加",
+        ["This voice is now selected for speaker recognition."] = "此声音已设为当前识别声音。",
+        ["Speak naturally using the microphone and room you normally use for interviews."] = "请使用平时面试的麦克风和环境自然说话。",
+        ["Start Voice Setup"] = "开始设置声音",
+        ["Processing…"] = "正在处理…",
+        ["Voice setup is complete."] = "声音设置完成。",
+        ["Downloading..."] = "正在下载…",
+        ["Download Speaker Model (28.3 MB)"] = "下载声纹模型（28.3 MB）",
+        ["Downloading the on-device speaker model..."] = "正在下载端侧声纹模型…",
+        ["Speaker model downloaded and verified"] = "声纹模型已下载并校验",
+        ["Read this passage for about 15 seconds using the same microphone and room you will use for interviews."] = "请使用面试时相同的麦克风和环境，朗读这段文字约 15 秒。",
+        ["Recording..."] = "正在录音…",
+        ["Keep speaking naturally until recording finishes."] = "请自然朗读，直到录音结束。",
+        ["No voice profile is enrolled"] = "尚未注册声纹",
+        ["Record at least three voice samples"] = "请至少录制三段声音样本",
+        ["The voice sample was too short or unclear"] = "声音样本太短或不够清晰",
+        ["Download the speaker model first"] = "请先下载声纹模型",
+        ["The downloaded speaker model failed verification"] = "下载的声纹模型校验失败",
+        ["Speaker Recognition"] = "说话人识别"
     };
 
     public static LocalizationManager Instance { get; } = new();

@@ -70,6 +70,9 @@ public partial class PrompterWindow : Window
         _speechRecognition.Recognized += SpeechRecognition_Recognized;
         _speechRecognition.PartialRecognized += SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged += SpeechRecognition_StatusChanged;
+        // Like macOS: when a voice is selected in Settings › Voices, the candidate's own speech is ignored.
+        _speechRecognition.FilterCandidateVoice = true;
+        _speechRecognition.CandidateSpeechDetected += SpeechRecognition_CandidateSpeechDetected;
         RefreshTurns(showLatest: true);
     }
 
@@ -96,6 +99,7 @@ public partial class PrompterWindow : Window
         _speechRecognition.Recognized -= SpeechRecognition_Recognized;
         _speechRecognition.PartialRecognized -= SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged -= SpeechRecognition_StatusChanged;
+        _speechRecognition.CandidateSpeechDetected -= SpeechRecognition_CandidateSpeechDetected;
         _speechRecognition.Dispose();
         if (_windowHandle != nint.Zero) _ = NativeMethods.SetWindowDisplayAffinity(_windowHandle, 0);
         if (_session.EndedAt is null && _session.Turns.Count > 0)
@@ -591,6 +595,12 @@ public partial class PrompterWindow : Window
         }
         try { await SubmitQuestionAsync(text); }
         finally { _speechSubmissionGate.Release(); }
+    }
+
+    private void SpeechRecognition_CandidateSpeechDetected(string text)
+    {
+        if (_audioMode == PrompterAudioMode.Muted) return;
+        Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = Localized("🙋 You are answering", "🙋 你在作答")));
     }
 
     private void SpeechRecognition_PartialRecognized(string text)
