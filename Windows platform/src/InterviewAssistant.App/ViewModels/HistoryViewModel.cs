@@ -90,8 +90,27 @@ public sealed class HistoryViewModel : PageViewModel
 public sealed class InterviewHistoryItem(InterviewSessionModel model) : ObservableObject
 {
     private bool _isBulkSelected;
+    private IReadOnlyList<HistoryTurnItem>? _turns;
+    public InterviewSessionModel Model => model;
     public Guid Id => model.Id;
     public string Role => string.IsNullOrWhiteSpace(model.Role) ? model.Title : model.Role;
+
+    /// <summary>Editable conversation title (macOS "Conversation title"); falls back to the role.</summary>
+    public string Title
+    {
+        get => model.Title;
+        set
+        {
+            if (model.Title == value) return;
+            model.Title = value;
+            model.UpdatedAt = DateTimeOffset.Now;
+            AppServices.Current.DataStore.ScheduleSave();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayTitle));
+        }
+    }
+
+    public string DisplayTitle => !string.IsNullOrWhiteSpace(model.Title) ? model.Title.Trim() : Role;
     public string StartedAtText => model.StartedAt.LocalDateTime.ToString("g");
     public int QuestionCount => model.Turns.Count;
     public string QuestionCountText => LocalizationManager.Instance.IsChinese
@@ -103,6 +122,45 @@ public sealed class InterviewHistoryItem(InterviewSessionModel model) : Observab
     public string StrengthsText => model.StrengthsText;
     public string ImprovementsText => model.ImprovementsText;
     public string Summary => string.IsNullOrWhiteSpace(model.SummaryFeedback) ? LocalizationManager.Text("No summary yet") : model.SummaryFeedback;
-    public IReadOnlyList<ConversationTurnModel> Turns => model.Turns;
+    public IReadOnlyList<HistoryTurnItem> Turns => _turns ??= model.Turns.OrderBy(turn => turn.CreatedAt).Select(turn => new HistoryTurnItem(turn)).ToList();
     public bool IsBulkSelected { get => _isBulkSelected; set => SetProperty(ref _isBulkSelected, value); }
+}
+
+public sealed class HistoryTurnItem(ConversationTurnModel model)
+{
+    private System.Windows.Media.ImageSource? _thumbnail;
+    private bool _thumbnailLoaded;
+    public ConversationTurnModel Model => model;
+    public string Question => model.Question;
+    public string Answer => model.Answer;
+    public int Score => model.Score;
+    public string Feedback => model.Feedback;
+    public string SuggestedAnswer => model.SuggestedAnswer;
+    public string Category => model.Category;
+    public string? ScreenshotPath => !string.IsNullOrWhiteSpace(model.ScreenshotPath) && System.IO.File.Exists(model.ScreenshotPath) ? model.ScreenshotPath : null;
+    public bool HasScreenshot => ScreenshotPath is not null;
+
+    /// <summary>Downscaled, file-unlocked thumbnail of the captured screenshot.</summary>
+    public System.Windows.Media.ImageSource? Thumbnail
+    {
+        get
+        {
+            if (_thumbnailLoaded) return _thumbnail;
+            _thumbnailLoaded = true;
+            if (ScreenshotPath is null) return null;
+            try
+            {
+                var image = new System.Windows.Media.Imaging.BitmapImage();
+                image.BeginInit();
+                image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                image.DecodePixelWidth = 720;
+                image.UriSource = new Uri(ScreenshotPath);
+                image.EndInit();
+                image.Freeze();
+                _thumbnail = image;
+            }
+            catch { _thumbnail = null; }
+            return _thumbnail;
+        }
+    }
 }

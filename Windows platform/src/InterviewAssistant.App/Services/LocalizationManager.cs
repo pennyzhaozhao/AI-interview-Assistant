@@ -20,6 +20,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["PresetRegionDescription"] = "Set the region before the interview, then capture silently without stealing focus.",
         ["ManualRegionDescription"] = "Select an area manually each time. This can briefly move focus away from the interview.",
         ["RegionSetupHint"] = "Set the region before the interview starts so capturing does not affect the interview window.",
+        ["WebView2RuntimeMissing"] = "Exporting PDF needs the Microsoft Edge WebView2 Runtime. Install it and try again.",
         ["WebsiteBlockedMessage"] = "The website refused automated access (HTTP {0}), usually because of bot protection. Try another company page (home or About page), or paste the company introduction into the notes",
         ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded."
     };
@@ -156,7 +157,29 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["The current AI provider did not return company information."] = "当前 AI 服务没有返回公司信息。",
         ["Source returned HTTP {0}"] = "网站返回 HTTP {0}",
         ["WebsiteBlockedMessage"] = "该网站拒绝了程序访问（HTTP {0}），通常是网站开启了反爬虫保护。可以换成公司的其他页面（如官网首页、About 页面），或把公司介绍直接粘贴到公司备注里",
-        ["Enter a valid company website first."] = "请先输入有效的公司官网地址。"
+        ["Enter a valid company website first."] = "请先输入有效的公司官网地址。",
+        // History / knowledge parity (macOS wording).
+        ["PDF Preview"] = "PDF 预览",
+        ["PDF source"] = "PDF 来源",
+        ["Manual source"] = "手动来源",
+        ["Export Evaluation PDF"] = "导出评估 PDF",
+        ["Conversation title"] = "会话标题",
+        ["Add a clear review title"] = "添加清晰的复盘标题",
+        ["Double-click to view image"] = "双击查看大图",
+        ["PDF export failed."] = "PDF 导出失败。",
+        ["Mock Interview Evaluation"] = "模拟面试评估",
+        ["Created At"] = "创建时间",
+        ["Job Role"] = "岗位",
+        ["Overall Score"] = "总分",
+        ["Question Review"] = "问答记录",
+        ["AI Improvement Suggestion"] = "AI 改进建议",
+        ["Screenshot"] = "截图",
+        ["The original PDF file is not available. Re-import this PDF to enable preview."] = "原始 PDF 文件不可用。请重新导入该 PDF 以启用预览。",
+        ["Loading PDF…"] = "正在加载 PDF…",
+        ["Showing the first {0} pages."] = "仅显示前 {0} 页。",
+        ["PDF exported"] = "PDF 已导出",
+        ["Open"] = "打开",
+        ["WebView2RuntimeMissing"] = "导出 PDF 需要 Microsoft Edge WebView2 运行时，请先安装后重试。"
     };
 
     public static LocalizationManager Instance { get; } = new();

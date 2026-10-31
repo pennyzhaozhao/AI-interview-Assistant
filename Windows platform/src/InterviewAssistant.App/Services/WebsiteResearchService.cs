@@ -35,17 +35,34 @@ public static class WebsiteResearchService
 
     private static HttpClient CreateClient()
     {
-        var handler = new HttpClientHandler
+        var handler = new SocketsHttpHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
-            AllowAutoRedirect = true
+            AllowAutoRedirect = true,
+            UseCookies = true,
+            CookieContainer = new CookieContainer(),
+            ConnectTimeout = TimeSpan.FromSeconds(12)
         };
-        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
-        // Same identity as the macOS app (URLSession also sends Accept / Accept-Language by default).
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(25),
+            // macOS URLSession negotiates HTTP/2; .NET defaults to HTTP/1.1, which some CDNs reject.
+            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+        };
+        // Same request identity as the macOS app (URLSession defaults + its User-Agent).
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 InterviewAssistant/1.0");
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "*/*");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Language", AcceptLanguage());
         return client;
+    }
+
+    private static string AcceptLanguage()
+    {
+        var culture = System.Globalization.CultureInfo.CurrentUICulture;
+        var name = string.IsNullOrEmpty(culture.Name) ? "en-US" : culture.Name;
+        var language = culture.TwoLetterISOLanguageName;
+        return language == "en" ? $"{name},en;q=0.9" : $"{name},{language};q=0.9,en;q=0.8";
     }
 
     private static async Task<string> FetchRawTextAsync(string url, int maxCharacters, CancellationToken cancellationToken)

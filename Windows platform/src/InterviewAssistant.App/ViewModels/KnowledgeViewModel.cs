@@ -376,7 +376,15 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
 public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action onChanged, Action onDelete) : ObservableObject
 {
     public Guid Id => model.Id;
-    public string SourceLabel => model.Source == "manual" ? "Manual source" : model.Source;
+    public string SourceLabel => model.Source switch
+    {
+        "manual" => LocalizationManager.Text("Manual source"),
+        var source when source.StartsWith("pdf:", StringComparison.OrdinalIgnoreCase) => LocalizationManager.Text("PDF source"),
+        _ => model.Source
+    };
+
+    /// <summary>Copied original PDF ("pdf:&lt;path&gt;", same convention as macOS), when available.</summary>
+    public string? PdfPath => model.Source.StartsWith("pdf:", StringComparison.OrdinalIgnoreCase) ? model.Source[4..] : null;
     public string ContentPreview
     {
         get

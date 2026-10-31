@@ -69,18 +69,20 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
 
+    <!-- Slim overlay-style scrollbar: thin rounded pill that brightens on hover / drag. -->
     <Style TargetType="ScrollBar">
-        <Setter Property="Width" Value="12"/>
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="MinWidth" Value="10"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
-                    <Grid Background="Transparent" Margin="2,4">
+                    <Grid x:Name="Root" Background="Transparent" Margin="0,4">
                         <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}" IsDirectionReversed="True">
                             <Track.DecreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
                             <Track.Thumb>
-                                <Thumb MinHeight="58" Background="{DynamicResource TextSecondaryBrush}" Opacity="0.38">
-                                    <Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="6"/><ControlTemplate.Triggers><Trigger Property="IsDragging" Value="True"><Setter TargetName="Pill" Property="Opacity" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template>
+                                <Thumb MinHeight="32" Background="{DynamicResource TextSecondaryBrush}">
+                                    <Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Pill" Width="5" HorizontalAlignment="Center" Background="{TemplateBinding Background}" CornerRadius="2.5" Opacity="0.38"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Pill" Property="Width" Value="7"/><Setter TargetName="Pill" Property="CornerRadius" Value="3.5"/><Setter TargetName="Pill" Property="Opacity" Value="0.6"/></Trigger><Trigger Property="IsDragging" Value="True"><Setter TargetName="Pill" Property="Width" Value="7"/><Setter TargetName="Pill" Property="Opacity" Value="0.75"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template>
                                 </Thumb>
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
@@ -89,6 +91,27 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <!-- Horizontal bars are rare here; keep them thin too. -->
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto"/>
+                <Setter Property="MinWidth" Value="0"/>
+                <Setter Property="Height" Value="10"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid Background="Transparent" Margin="4,0">
+                                <Track x:Name="PART_Track" Orientation="Horizontal">
+                                    <Track.DecreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+                                    <Track.Thumb><Thumb MinWidth="32"><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Height="5" VerticalAlignment="Center" Background="{DynamicResource TextSecondaryBrush}" CornerRadius="2.5" Opacity="0.38"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+                                    <Track.IncreaseRepeatButton><RepeatButton Command="{x:Static ScrollBar.PageRightCommand}" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+        </Style.Triggers>
     </Style>
     <Style x:Key="PageTitleStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="38" />
@@ -166,7 +189,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
                     <Border x:Name="InputBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="15">
-                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
+                        <ScrollViewer x:Name="PART_ContentHost" Padding="{TemplateBinding Padding}" Margin="0,3,3,3" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsKeyboardFocused" Value="True">

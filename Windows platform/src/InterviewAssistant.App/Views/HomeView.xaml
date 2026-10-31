@@ -63,7 +63,7 @@
                     <TextBlock Text="{loc:Loc Key=Company Notes}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
                     <TextBox Text="{Binding CompanyNotes, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="False" Height="190" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
 
-                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionStyle}" Margin="2,14,0,0"/>
+                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionStyle}" TextWrapping="Wrap" LineHeight="21" Margin="2,14,0,0"/>
                 </StackPanel>
             </Border>
         </StackPanel>
