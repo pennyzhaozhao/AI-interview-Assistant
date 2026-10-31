@@ -31,7 +31,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["Role"] = "角色", ["Target role"] = "目标岗位", ["Job description"] = "职位描述", ["Company Introduction"] = "公司介绍",
         ["Company Name"] = "公司名称", ["Company Website"] = "公司官网", ["Company Notes"] = "公司备注", ["Parse Website"] = "解析网站",
         ["Add a target role before starting."] = "请先填写目标岗位。", ["Mock interview setup is ready. The interview room is the next module."] = "模拟面试资料已就绪，下一步将进入面试房间。",
-        ["Generating mock interview questions…"] = "正在生成模拟面试题…", ["Answer with your own voice. AI asks, records, and evaluates after the interview."] = "用自己的声音回答。AI 负责提问、录音转写，并在结束后评估。",
+        ["Generating mock interview questions…"] = "正在生成模拟面试题…", ["Generating…"] = "正在生成…", ["Answer with your own voice. AI asks, records, and evaluates after the interview."] = "用自己的声音回答。AI 负责提问、录音转写，并在结束后评估。",
         ["Generating mock interview questions from your role, JD, and selected knowledge bases."] = "正在根据岗位、职位描述和选中的知识库生成模拟面试题。",
         ["Interviewer"] = "面试官", ["Replay"] = "重播", ["Start Recording"] = "开始录音", ["Stop Recording"] = "停止录音", ["Ready to record"] = "可以开始录音",
         ["Submit Answer"] = "提交回答", ["Submit Interview"] = "提交面试", ["Record or type an answer first."] = "请先录制或输入回答。", ["Speech recognized"] = "语音已识别",

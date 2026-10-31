@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using InterviewAssistant.Infrastructure;
 using InterviewAssistant.Models;
 using InterviewAssistant.Services;
 using InterviewAssistant.ViewModels;
@@ -18,6 +19,8 @@ public partial class PrompterWindow : Window
     private const double DefaultExpandedHeight = 240;
     private const double CompactWidth = 80;
     private const double CompactHeight = 37;
+    private const double AnswerFontSize = 17;
+    private const double MessageFontSize = 15;
     private readonly AppDataStore _store = AppServices.Current.DataStore;
     private readonly InterviewSessionModel _session;
     private readonly SpeechRecognitionService _speechRecognition = new();
@@ -35,6 +38,7 @@ public partial class PrompterWindow : Window
     private double _resizeStartHeight;
     private int _waveStep;
     private string _codeLanguage = "python";
+    private bool _showingError;
 
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
@@ -142,10 +146,9 @@ public partial class PrompterWindow : Window
             QuestionText.Text = _isDirectorMode
                 ? Localized("Waiting for Host question...", "等待 Host 问题…")
                 : Localized("Waiting for interview question...", "等待面试问题…");
-            AnswerText.Text = _isDirectorMode
+            ShowPlaceholder(_isDirectorMode
                 ? Localized("Waiting for answer", "等待回答")
-                : Localized("Waiting for AI answer...", "等待 AI 回答…");
-            AnswerText.Foreground = (Brush)FindResource("IslandSecondary");
+                : Localized("Waiting for AI answer...", "等待 AI 回答…"));
             PreparingPanel.Visibility = Visibility.Collapsed;
             AnswerScroller.Visibility = Visibility.Visible;
             UpdateNavigationButtons();
@@ -209,10 +212,11 @@ public partial class PrompterWindow : Window
         if (index < 0 || index >= _session.Turns.Count) return;
         var turn = _session.Turns[index];
         QuestionText.Text = string.IsNullOrWhiteSpace(turn.Question) ? Localized("Interview question", "面试问题") : turn.Question;
-        AnswerText.Text = string.IsNullOrWhiteSpace(turn.Answer)
-            ? (_isDirectorMode ? Localized("Waiting for answer", "等待回答") : Localized("Waiting for AI answer...", "等待 AI 回答…"))
-            : turn.Answer;
-        AnswerText.Foreground = (Brush)FindResource(string.IsNullOrWhiteSpace(turn.Answer) ? "IslandSecondary" : "IslandPrimary");
+        if (string.IsNullOrWhiteSpace(turn.Answer))
+            ShowPlaceholder(_isDirectorMode ? Localized("Waiting for answer", "等待回答") : Localized("Waiting for AI answer...", "等待 AI 回答…"));
+        else
+            MarkdownAnswerRenderer.Render(AnswerContent, turn.Answer, (Brush)FindResource("IslandPrimary"), AnswerFontSize, (Style)FindResource("CodeScrollBarStyle"));
+        _showingError = false;
         PreparingPanel.Visibility = Visibility.Collapsed;
         AnswerScroller.Visibility = Visibility.Visible;
         AnswerScroller.ScrollToTop();
@@ -235,8 +239,15 @@ public partial class PrompterWindow : Window
     {
         PreparingPanel.Visibility = Visibility.Collapsed;
         AnswerScroller.Visibility = Visibility.Visible;
-        AnswerText.Text = message;
-        AnswerText.Foreground = isError ? Brushes.IndianRed : (Brush)FindResource("IslandSecondary");
+        _showingError = isError;
+        MarkdownAnswerRenderer.RenderPlain(AnswerContent, message, isError ? Brushes.IndianRed : (Brush)FindResource("IslandSecondary"), MessageFontSize);
+        AnswerScroller.ScrollToTop();
+    }
+
+    private void ShowPlaceholder(string text)
+    {
+        _showingError = false;
+        MarkdownAnswerRenderer.RenderPlain(AnswerContent, text, (Brush)FindResource("IslandSecondary"), AnswerFontSize);
     }
 
     private void UpdateNavigationButtons()
@@ -437,6 +448,8 @@ public partial class PrompterWindow : Window
         if (mode == PrompterAudioMode.Muted)
         {
             foreach (var bar in new[] { Wave1, Wave2, Wave3, Wave4, Wave5, Wave6 }) bar.Height = 3;
+            // Drop a speech-connection error that was on screen; it no longer applies once muted.
+            if (_showingError && PreparingPanel.Visibility != Visibility.Visible) RefreshTurns(showLatest: false);
         }
     }
 
@@ -559,7 +572,12 @@ public partial class PrompterWindow : Window
     private void SpeechRecognition_StatusChanged(string status)
     {
         if (!status.Contains("could not", StringComparison.OrdinalIgnoreCase) && !status.Contains("No Windows", StringComparison.OrdinalIgnoreCase)) return;
-        Dispatcher.BeginInvoke(new Action(() => ShowMessage(status, true)));
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            // A connection that times out after the user switched to mute is irrelevant; don't cover the answer with it.
+            if (_audioMode == PrompterAudioMode.Muted) return;
+            ShowMessage(status, true);
+        }));
     }
 
     private void KnowledgeButton_Click(object sender, RoutedEventArgs e)
