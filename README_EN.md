@@ -5,7 +5,7 @@
 
   # InterviewAssistant
 
-  **A local-first, open-source AI interview preparation and assistance tool for Apple platforms**
+  **A local-first, open-source desktop (macOS / Windows) AI interview preparation and assistance tool**
 
   Speech recognition · Real-time answers · Personal knowledge bases · Screenshot Q&A · Mock interviews · Local review
 
@@ -17,18 +17,18 @@
 
 ## About the Project
 
-InterviewAssistant, displayed as **Interview AI** inside the app, is built with SwiftUI and supports macOS. It helps you:
+InterviewAssistant, displayed as **Interview AI** inside the app, is a desktop app available for **macOS** and **Windows**. The macOS app is built with SwiftUI and the Windows app with WPF (.NET 10); both share the same interface, prompts, and core features. It helps you:
 
 - Organize the target role, job description, company information, and personal experience before an interview;
 - Create multiple personal knowledge bases and decide which materials the AI may use in each interview;
-- Recognize speech, analyze screenshots, and generate suggested answers in a floating macOS prompt panel;
+- Recognize speech, analyze screenshots, and generate suggested answers in a floating prompt panel;
 - Run mock interviews with per-question feedback, suggested answers, and an overall evaluation;
 - Review real and mock interview history locally on your device.
 
 AI requests are sent directly from the app to the model provider selected by the user.
 
 > [!NOTE]
-> “Local-first” does not mean every configuration is fully offline. When you use OpenAI, Claude, DeepSeek, Gemini, Volcengine Ark, or Doubao Speech, the text, relevant knowledge-base context, screenshots, or audio required for the request is sent directly to that provider. To minimize data leaving your device, use **Ollama + Apple on-device speech recognition**.
+> “Local-first” does not mean every configuration is fully offline. When you use OpenAI, Claude, DeepSeek, Gemini, Volcengine Ark, or Doubao Speech, the text, relevant knowledge-base context, screenshots, or audio required for the request is sent directly to that provider. To minimize data leaving your device, use **Ollama + on-device system speech recognition** (Apple speech recognition on macOS, Windows speech recognition on Windows).
 
 ## Screenshots
 
@@ -40,7 +40,7 @@ Enter the target role, job description, and company information, then choose the
   <img src="./presentation%20img/index.png" width="920" alt="InterviewAssistant interview preparation screen" />
 </p>
 
-### macOS Live Prompt Panel
+### Live Prompt Panel
 
 The floating panel displays recognized questions, AI-generated answers, and screenshot analysis results.
 
@@ -65,13 +65,14 @@ The panel can be minimized to cover less of the screen.
 - Automatically preserve the latest workspace draft;
 - Start a real or mock interview from the same entry point.
 
-### macOS Live Prompt Panel
+### Live Prompt Panel
 
 - Display transcripts and suggested answers in a separate floating window;
 - Use microphone or system-audio input;
-- Choose Apple speech recognition or Doubao streaming speech recognition;
-- Stream AI responses as they are generated;
-- Expand, minimize, keep the panel on top, and adjust text size;
+- Choose on-device system speech recognition (Apple on macOS, Windows speech on Windows) or Doubao streaming speech recognition;
+- Render answers as Markdown, with code blocks that show line numbers, syntax highlighting, and a copy button;
+- Stream AI responses as they are generated (macOS);
+- Expand, minimize, keep the panel on top, and adjust its height;
 - Attempt to hide the panel from screenshots or screen sharing;
 - Use Chinese or English with light and dark themes.
 
@@ -80,7 +81,7 @@ The panel can be minimized to cover less of the screen.
 - Use one device as a Director controller on the same local network and send questions or Markdown answers to the Host prompt panel;
 - Display the local IP address and a connection QR code for quick setup from another device;
 - Switch between AI and Director modes while synchronizing whether the Host prompt panel is open;
-- Use either macOS or iOS / iPadOS as the controller or Host.
+- Use either macOS or Windows as the controller or Host.
 
 ### On-device Speaker Recognition
 
@@ -93,8 +94,8 @@ The panel can be minimized to cover less of the screen.
 
 - Set a fixed capture region before the interview;
 - Manually select an area for every screenshot instead;
-- Use the default macOS shortcut `⌘ Command + ⇧ Shift + S`;
-- Capture multiple regions before analyzing them together;
+- Default shortcut: `⌘ Command + ⇧ Shift + S` on macOS, `Ctrl + Shift + S` on Windows;
+- Capture multiple regions before analyzing them together (macOS);
 - Store screenshots, questions, and answers in local history.
 
 ### Local Knowledge Bases
@@ -103,7 +104,7 @@ The panel can be minimized to cover less of the screen.
 - Manually add, edit, enable, or disable knowledge entries;
 - Import PDF, TXT, Markdown, RTF, HTML, JSON, DOC, and DOCX files;
 - Import public webpages or GitHub links;
-- Review text extracted from imported sources;
+- Review text extracted from imported sources, and preview the original pages of PDFs;
 - Enable different knowledge bases for different interviews;
 - Keep the detail panel empty when no knowledge base exists, entering edit mode only after “New Material” is selected.
 
@@ -120,30 +121,43 @@ The panel can be minimized to cover less of the screen.
 
 ## Platform Differences
 
-| Feature | macOS | iOS / iPadOS |
+| Feature | macOS | Windows |
 | --- | :---: | :---: |
-| Interview preparation, knowledge bases, and history | ✅ | ✅ |
-| Mock interviews | ✅ | ✅ |
-| AI model configuration | ✅ | ✅ |
-| Apple speech recognition | ✅ | ✅ |
+| Interview preparation, company website research, knowledge bases, history | ✅ | ✅ |
+| Mock interviews, scoring, and evaluation PDF export | ✅ | ✅ |
+| AI model configuration (Ollama, DeepSeek, OpenAI, Claude, Gemini, Volcengine Ark) | ✅ | ✅ |
+| Floating prompt panel (Markdown and code-block rendering) | ✅ | ✅ |
+| On-device system speech recognition | ✅ Apple Speech | ✅ Windows speech |
+| Doubao streaming speech recognition | ✅ | ✅ |
+| System-audio capture | ✅ | ✅ (with Doubao Speech) |
 | On-device speaker recognition and multiple voices | ✅ | ✅ |
 | Director Mode local-network control | ✅ | ✅ |
-| Floating prompt panel | ✅ | — |
-| System-audio capture | ✅ | — |
-| Preset screenshot region and global shortcut | ✅ | — |
-| Connect to Ollama on the local network | ✅ | ✅ |
+| Preset screenshot region and global shortcut | ✅ | ✅ |
+| Hide the panel from screenshots / screen sharing | ✅ | ✅ |
+| Capture several screenshots, then analyze together | ✅ | — |
+| Streaming AI responses | ✅ | — |
 
 ## Requirements
 
-- macOS 14.0 or later, or iOS / iPadOS 17.0 or later;
-- Xcode 16 or a later version compatible with Swift 6 when building from source;
-- Microphone, speech recognition, and screen/system-audio recording permissions for the full macOS feature set;
+- **macOS**: macOS 14.0 or later (universal: Apple Silicon and Intel); the full feature set needs microphone, speech recognition, and screen/system-audio recording permissions;
+- **Windows**: Windows 10 or Windows 11 (64-bit); the .NET runtime is bundled, so nothing else needs to be installed; PDF export uses the Microsoft Edge WebView2 Runtime, which is normally preinstalled on Windows 10/11;
+- Building from source: Xcode 16 or a later Swift 6–compatible version for macOS; the .NET 10 SDK for Windows;
 - Ollama and at least one downloaded local model when using Ollama;
 - Your own credentials and a network connection when using an external model or Doubao Speech.
 
 ## Quick Start
 
-Regular users can download the signed and Apple-notarized macOS installer from [GitHub Releases](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases). Developers can also build the project from source.
+Regular users can download the app from [GitHub Releases](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases):
+
+| Platform | File | Notes |
+| --- | --- | --- |
+| macOS | `InterviewAssistant-<version>-macOS.dmg` | Developer ID signed and Apple-notarized; open the DMG and drag the app to Applications |
+| Windows | `InterviewAssistant-<version>-Windows-x64.exe` | Single portable file; download and double-click to run |
+
+> [!NOTE]
+> The Windows build is not code-signed yet. If Windows shows “Windows protected your PC” on first launch, select **More info → Run anyway**.
+
+Developers can also build the macOS app from source as follows; for Windows, see [Building the Windows App from Source](#building-the-windows-app-from-source).
 
 ### 1. Clone the Repository
 
@@ -174,10 +188,24 @@ A Personal Team is sufficient for local development. Public distribution require
 
 ### 4. Run
 
-- macOS: select `My Mac`;
-- iOS / iPadOS: select a simulator or physical device;
-- Select the `InterviewAssistant` scheme;
+- Select the `InterviewAssistant` scheme and `My Mac`;
 - Press `⌘R` to build and run.
+
+### Building the Windows App from Source
+
+The Windows app lives in `Windows platform/` and requires the [.NET 10 SDK](https://dotnet.microsoft.com/download):
+
+```powershell
+cd "Windows platform"
+dotnet build InterviewAssistant.Windows.sln
+dotnet run --project "src/InterviewAssistant.App/InterviewAssistant.App.csproj"
+```
+
+To produce a single-file exe:
+
+```powershell
+dotnet publish "src/InterviewAssistant.App/InterviewAssistant.App.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+```
 
 ## Recommended First-Launch Setup
 
@@ -185,10 +213,10 @@ Complete setup in this order:
 
 1. Choose the interface language and theme under **Settings → Appearance**;
 2. Confirm or change the local data directory under **Settings → Data Storage**;
-3. Choose Apple or Doubao speech recognition under **Settings → API Configuration → Speech Recognition**;
+3. Choose on-device system speech recognition (Apple / Windows) or Doubao speech recognition under **Settings → API Configuration → Speech Recognition**;
 4. Choose an AI provider and model under **Settings → API Configuration**;
 5. Save the configuration and run “Test Connection” once;
-6. Grant the required permissions in macOS System Settings;
+6. Grant the required permissions (see [macOS Permissions](#macos-permissions); on Windows, allow microphone access);
 7. Create a knowledge base, enter a target role and job description, and start your first interview.
 
 ## Choosing an AI Model
@@ -252,7 +280,7 @@ Then, in the app:
 5. Select Test Connection;
 6. Select Save.
 
-To connect an iPhone or iPad to Ollama running on a Mac, both devices must be on the same trusted local network. Use the Mac's local network address, for example:
+On Windows, use `http://localhost:11434/v1` as well. To use Ollama running on another computer, both devices must be on the same trusted local network. Use that computer's local network address, for example:
 
 ```text
 http://192.168.1.10:11434/v1
@@ -264,7 +292,7 @@ Allow Ollama to listen on the local network:
 OLLAMA_HOST=0.0.0.0 ollama serve
 ```
 
-Only expose this port on a trusted network, and configure the macOS firewall as needed.
+Only expose this port on a trusted network, and configure the system firewall as needed.
 
 ## Configuring Speech Recognition
 
@@ -279,9 +307,17 @@ Open **Settings → API Configuration → Speech Recognition** and select **Appl
 - It can reduce the amount of audio leaving the device;
 - Language support and offline availability depend on the OS version, region, and installed speech resources.
 
+### Windows Speech Recognition
+
+Open **Settings → API Configuration → Speech Recognition** and select **Windows on-device speech**.
+
+- No third-party speech API credentials are required;
+- Install the speech recognition pack for your language under Windows **Settings → Time & language → Speech** first;
+- Microphone input only; use Doubao Speech to recognize system audio (meeting apps).
+
 ### Doubao Speech Recognition
 
-If Apple speech recognition does not meet your needs, connect directly to Doubao Speech:
+If on-device speech recognition does not meet your needs, connect directly to Doubao Speech:
 
 1. Create an application in the Volcengine / Doubao Speech console;
 2. Enable the appropriate streaming speech recognition product;
@@ -310,6 +346,8 @@ Refer to the provider console for current resource IDs, permissions, and pricing
 
 If a feature still does not respond after permission is granted, fully quit and reopen the app. Changing the signing identity or Bundle Identifier may cause macOS to treat the build as a new app and request permission again.
 
+On Windows, only allow desktop apps to use the microphone under **Settings → Privacy & security → Microphone**; screenshots and system-audio capture need no extra permission.
+
 ## User Guide
 
 ### Create and Select a Knowledge Base
@@ -334,7 +372,7 @@ For each project, consider organizing at least: context, goals, personal respons
 4. Manually review any generated company summary;
 5. Select the knowledge bases that may be used during this interview;
 6. Select Start Interview;
-7. Choose microphone, system audio, or mute in the macOS prompt panel;
+7. Choose microphone, system audio, or mute in the prompt panel;
 8. Review the session under History when finished.
 
 ### Use the Floating Prompt Panel
@@ -345,19 +383,18 @@ The panel supports three audio states:
 - **System Audio**: recognize audio played by meeting software, a browser, or another app;
 - **Mute**: stop speech recognition while keeping screenshot Q&A available.
 
-“Hide panel during screen sharing” depends on the capture behavior of macOS and the screen-recording application. It cannot be guaranteed to remain invisible with every OS version and application. Test your setup before real use.
+“Hide panel during screen sharing” depends on the capture behavior of the operating system and the screen-recording application. It cannot be guaranteed to remain invisible with every OS version and application. Test your setup before real use.
 
 ### Use Screenshot Q&A
 
 Preset-region mode:
 
 1. Open **Settings → Screenshot Mode**;
-2. Grant screen recording permission;
+2. On macOS, grant screen recording permission;
 3. Select Preset Region Screenshot;
 4. Select Set Region before the interview;
-5. Press `⌘⇧S` or use the screenshot button in the prompt panel;
-6. Continue capturing other regions if needed;
-7. Analyze all captures together when ready.
+5. Press `⌘⇧S` (Windows: `Ctrl+Shift+S`) or use the screenshot button in the prompt panel;
+6. On macOS, continue capturing other regions if needed and analyze all captures together when ready.
 
 Manual-selection mode asks you to select a region for every capture and is useful when the page layout changes frequently. If the shortcut conflicts with another app, record a different shortcut in Settings.
 
@@ -375,7 +412,7 @@ Manual-selection mode asks you to select a region for every capture and is usefu
 
 ### Review and Delete History
 
-History contains both real and mock interview sessions. You can search and review conversations, scores, screenshots, and suggested answers, or delete sessions that you no longer need.
+History contains both real and mock interview sessions. You can search, rename sessions, review conversations, scores, screenshots (double-click to enlarge), and suggested answers, export a mock interview evaluation as PDF, or delete sessions that you no longer need.
 
 ## Data Storage and Privacy
 
@@ -387,7 +424,7 @@ Open:
 Settings → Data Storage
 ```
 
-You can view the current directory, select a new folder, or erase user data. On macOS, you can also open the current directory directly in Finder.
+You can view the current directory, select a new folder, open it in Finder / File Explorer, or erase user data.
 
 When selecting a new location:
 
@@ -413,6 +450,16 @@ When selecting a new location:
 | Language, theme, and shortcuts | UserDefaults | Not actively uploaded |
 | Microphone / system audio | Recognition pipeline memory | Sent to the selected provider when external ASR is used |
 
+On Windows, the equivalent locations are:
+
+| Data | Windows storage |
+| --- | --- |
+| API keys and ASR credentials | Windows Credential Manager |
+| Interview history, knowledge bases, preferences | `%LOCALAPPDATA%\InterviewAssistant\Data` (movable from Settings) |
+| Imported PDF preview copies | `ImportedPDFs` inside the data directory |
+| Voiceprints | `%LOCALAPPDATA%\InterviewAssistant\voiceprints.dat`, encrypted with Windows Data Protection (DPAPI) |
+| Speaker model | `%LOCALAPPDATA%\InterviewAssistant\SpeakerModels` |
+
 The project maintainer does not operate a server that receives this data. How third-party model and speech providers process data depends on the provider selected by the user and its privacy policy.
 
 ## FAQ
@@ -433,8 +480,8 @@ Open **Settings → API Configuration**. Provider and Current Model show the glo
 - Run `ollama list` and confirm that the required model is downloaded;
 - Run `ollama serve` and confirm that the service is running;
 - Use `http://localhost:11434/v1` on macOS;
-- On iOS, use the Mac's local IP address, not the iPhone's own `localhost`;
-- Check the macOS firewall and Local Network permission.
+- When Ollama runs on another computer, use that computer's local IP address instead of `localhost`;
+- Check the system firewall and, on macOS, the Local Network permission.
 
 ### System audio is not recognized
 
@@ -450,6 +497,10 @@ Open **Settings → API Configuration**. Provider and Current Model show the glo
 - Check whether the selected language is supported by the system;
 - Download the required system speech resources;
 - Confirm that the selected input device can record audio.
+
+### Windows shows “Windows protected your PC” on first launch
+
+The Windows build is not code-signed yet, so SmartScreen warns about newly downloaded programs. Select **More info → Run anyway**. Only download the app from this repository's GitHub Releases.
 
 ### The screenshot shortcut does not respond
 
@@ -482,18 +533,21 @@ Voice management follows a Touch ID-style flow: use **Add Voice…** to enroll m
 
 Audio shorter than 1.2 seconds is conservatively classified as unknown. Similar voices, background noise, microphone distance, and room changes can reduce accuracy, so enroll each voice with the microphone and environment intended for the interview.
 
-The implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxruntime-libs 1.27.1` dependency (ONNX Runtime is MIT). The current upstream 1.13.8 macOS binary archive fails framework-symlink validation with some Xcode versions, so 1.13.6 is pinned for now. The recommended `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx` model comes from the Apache-2.0 3D-Speaker project and is verified with SHA-256 after download.
+The Windows app uses the same model, enrollment flow, and thresholds (via the `org.k2fsa.sherpa.onnx 1.13.8` NuGet package). Voiceprints are encrypted on the device with Windows Data Protection (DPAPI), and enrollment audio is likewise neither kept nor uploaded.
+
+The macOS implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxruntime-libs 1.27.1` dependency (ONNX Runtime is MIT). The current upstream 1.13.8 macOS binary archive fails framework-symlink validation with some Xcode versions, so 1.13.6 is pinned for now. The recommended `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx` model comes from the Apache-2.0 3D-Speaker project and is verified with SHA-256 after download.
 
 ## Technology Stack
 
 | Area | Technology |
 | --- | --- |
-| Client | Swift 6, SwiftUI, SwiftData |
+| macOS client | Swift 6, SwiftUI, SwiftData |
+| Windows client | .NET 10, WPF, NAudio, WebView2, Windows.Data.Pdf / Windows.Media.Ocr |
 | macOS audio | AVFoundation, ScreenCaptureKit |
 | Local speech | Apple Speech framework |
 | Local voiceprint | sherpa-onnx, 3D-Speaker CAMPPlus |
 | Optional external speech | Doubao / Volcengine streaming ASR over WebSocket |
-| Credentials | Apple Keychain |
+| Credentials | Apple Keychain / Windows Credential Manager |
 | Document processing | PDFKit and system document import capabilities |
 | Local models | Ollama (OpenAI-compatible API) |
 | External models | OpenAI, Claude, DeepSeek, Gemini, Volcengine Ark |
@@ -513,6 +567,8 @@ The implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxruntime-l
 │   ├── Shared/                   # Data models, Keychain, AI, and shared services
 │   └── Setup/                    # Interview preparation workflow
 ├── InterviewAssistant.xcodeproj/ # Xcode project
+├── Windows platform/             # Windows app (WPF / .NET 10)
+├── .github/workflows/            # Windows build-and-release workflow
 ├── presentation img/             # README screenshots
 ├── scripts/build-dmg.sh           # macOS DMG build script
 ├── DESIGN_SYSTEM.md               # UI design guidelines
@@ -545,6 +601,16 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 4. Installation and first-run permissions are tested on a Mac without a development environment;
 5. The artifact contains no API keys, personal certificates, or local databases.
 
+## Releasing the Windows App
+
+The GitHub Actions workflow `.github/workflows/windows-release.yml` packages the Windows app:
+
+- Publishing a new GitHub Release (tag such as `v1.2.0`) automatically builds `InterviewAssistant-<version>-Windows-x64.exe` and uploads it to that release;
+- It can also be run manually from **Actions → Windows release → Run workflow** to build and upload for an existing tag;
+- The version comes from the tag, which the in-app update checker uses for comparison.
+
+Keep the macOS DMG and the Windows exe in the same release; both apps check the latest release for updates.
+
 ## Development and Security Notes
 
 - Document where data is sent whenever adding an external request;
@@ -552,7 +618,7 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 - Keep provider URLs, authentication, and response parsing centralized in `AIService.swift`;
 - Design a migration path for existing users whenever changing SwiftData models;
 - Update `Info.plist`, entitlements, and the README together when changing permissions;
-- Verify at least the macOS and iOS builds before committing;
+- Verify at least the macOS and Windows builds before committing;
 - `.gitignore` excludes databases, credentials, Xcode user data, and common build artifacts.
 
 If you discover leaked credentials, exposed private data, or another security issue, do not paste sensitive details into a public Issue. Start with a report that contains no sensitive information, then continue through a security contact publicly provided by the repository maintainer.
