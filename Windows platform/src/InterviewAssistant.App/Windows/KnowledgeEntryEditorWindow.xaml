@@ -1,0 +1,31 @@
+<Window x:Class="InterviewAssistant.Windows.KnowledgeEntryEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:InterviewAssistant.Services"
+        Width="720" Height="640" MinWidth="560" MinHeight="460"
+        WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResizeWithGrip"
+        AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False">
+    <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="24">
+        <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="34" ShadowDepth="10" Opacity="0.28"/></Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <StackPanel><TextBlock x:Name="DialogTitle" Style="{StaticResource SectionTitleStyle}" FontSize="26"/><TextBlock Text="{loc:Loc Key=EditSourceDescription}" Style="{StaticResource CaptionStyle}" Margin="0,5,0,0"/></StackPanel>
+                <Button Content="×" Width="38" Height="38" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource WindowButtonStyle}" Click="Cancel_Click"/>
+            </Grid>
+            <StackPanel Grid.Row="1" Margin="0,24,0,16">
+                <TextBlock Text="{loc:Loc Key=Source title}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,7"/>
+                <TextBox x:Name="TitleBox" Style="{StaticResource InputStyle}"/>
+            </StackPanel>
+            <Grid Grid.Row="2">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <TextBlock Text="{loc:Loc Key=Content}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,7"/>
+                <TextBox x:Name="ContentBox" Grid.Row="1" Style="{StaticResource InputStyle}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" Padding="14"/>
+            </Grid>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                <Button Content="{loc:Loc Key=Cancel}" Style="{StaticResource SecondaryButtonStyle}" Click="Cancel_Click"/>
+                <Button Content="{loc:Loc Key=Save}" Style="{StaticResource PrimaryButtonStyle}" Click="Save_Click" Margin="10,0,0,0"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

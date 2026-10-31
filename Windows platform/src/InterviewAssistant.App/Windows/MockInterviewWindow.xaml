@@ -1,0 +1,58 @@
+<Window x:Class="InterviewAssistant.Windows.MockInterviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:InterviewAssistant.Services"
+        Width="1040" Height="760" MinWidth="820" MinHeight="620"
+        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterOwner"
+        FontFamily="Segoe UI Variable Text, Microsoft YaHei UI, Segoe UI">
+    <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" ClipToBounds="True">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid Grid.Row="0" Background="{DynamicResource SurfaceBrush}" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <StackPanel Orientation="Horizontal" Margin="22,0" VerticalAlignment="Center"><Border Width="34" Height="34" CornerRadius="11" Background="{DynamicResource PrimaryBrush}"><TextBlock Text="&#xE720;" Style="{StaticResource FluentIconStyle}" Foreground="White" FontSize="16"/></Border><StackPanel Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock Text="{loc:Loc Key='Mock Interview'}" FontSize="17" FontWeight="SemiBold"/><TextBlock Text="{loc:Loc Key='Answer with your own voice. AI asks, records, and evaluates after the interview.'}" Style="{StaticResource CaptionStyle}" FontSize="11"/></StackPanel></StackPanel>
+                <Button HorizontalAlignment="Right" Width="42" Height="42" Margin="0,0,12,0" Background="Transparent" BorderThickness="0" Click="CloseButton_Click"><TextBlock Text="&#xE711;" Style="{StaticResource FluentIconStyle}" FontSize="16"/></Button>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="28">
+                <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Width="620">
+                    <ProgressBar IsIndeterminate="True" Height="8"/>
+                    <TextBlock Text="{loc:Loc Key='Generating mock interview questions…'}" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,0"/>
+                    <TextBlock Text="{loc:Loc Key='Generating mock interview questions from your role, JD, and selected knowledge bases.'}" Style="{StaticResource CaptionStyle}" FontSize="15" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                </StackPanel>
+
+                <Grid x:Name="InterviewPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="Auto"/><RowDefinition Height="18"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Border Style="{StaticResource CardStyle}" Margin="0" Padding="18"><StackPanel><Grid><TextBlock x:Name="ProgressText" FontWeight="SemiBold"/><TextBlock x:Name="ProgressPercentText" HorizontalAlignment="Right" Style="{StaticResource CaptionStyle}"/></Grid><ProgressBar x:Name="InterviewProgress" Height="8" Margin="0,12,0,0" Minimum="0" Maximum="1"/></StackPanel></Border>
+                    <Border Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0" Padding="22"><StackPanel><StackPanel Orientation="Horizontal"><Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="12" Padding="11,6"><TextBlock Text="{loc:Loc Key='Interviewer'}" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold"/></Border><Border x:Name="CategoryBadge" Background="{DynamicResource ButtonBrush}" CornerRadius="12" Padding="11,6" Margin="8,0,0,0"><TextBlock x:Name="CategoryText" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold"/></Border><Button HorizontalAlignment="Right" Margin="12,0,0,0" Click="ReplayQuestion_Click" Style="{StaticResource SecondaryButtonStyle}"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE767;" Style="{StaticResource FluentIconStyle}" Margin="0,0,7,0"/><TextBlock Text="{loc:Loc Key='Replay'}"/></StackPanel></Button></StackPanel><TextBlock x:Name="QuestionText" FontSize="23" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="32" Margin="0,18,0,0"/></StackPanel></Border>
+                    <Border Grid.Row="4" Style="{StaticResource CardStyle}" Margin="0" Padding="20">
+                        <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="12"/><RowDefinition Height="*"/><RowDefinition Height="14"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <Grid><StackPanel Orientation="Horizontal"><Button x:Name="RecordButton" Click="RecordButton_Click" Style="{StaticResource PrimaryButtonStyle}"><StackPanel Orientation="Horizontal"><TextBlock x:Name="RecordIcon" Text="&#xE720;" Style="{StaticResource FluentIconStyle}" Margin="0,0,8,0"/><TextBlock x:Name="RecordButtonText" Text="{loc:Loc Key='Start Recording'}"/></StackPanel></Button><Button Content="{loc:Loc Key='Clear'}" Click="ClearAnswer_Click" Style="{StaticResource SecondaryButtonStyle}" Margin="10,0,0,0"/></StackPanel><TextBlock x:Name="SpeechStatusText" HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource CaptionStyle}"/></Grid>
+                            <TextBox x:Name="AnswerBox" Grid.Row="2" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Style="{StaticResource InputStyle}" VerticalContentAlignment="Top" MinHeight="180"/>
+                            <Grid Grid.Row="4"><TextBlock Text="{loc:Loc Key='Edit the transcript before submitting. No AI help is shown during mock interviews.'}" Style="{StaticResource CaptionStyle}" TextWrapping="Wrap" MaxWidth="590"/><Button x:Name="SubmitAnswerButton" HorizontalAlignment="Right" Click="SubmitAnswer_Click" Style="{StaticResource PrimaryButtonStyle}"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE724;" Style="{StaticResource FluentIconStyle}" Margin="0,0,8,0"/><TextBlock x:Name="SubmitButtonText" Text="{loc:Loc Key='Submit Answer'}"/></StackPanel></Button></Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <StackPanel x:Name="EvaluatingPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Width="650">
+                    <ProgressBar IsIndeterminate="True" Height="8"/>
+                    <TextBlock Text="{loc:Loc Key='Generating Interview Evaluation'}" FontSize="25" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,0"/>
+                    <TextBlock Text="{loc:Loc Key='AI is reviewing your answers, scoring each question, and preparing improvement suggestions.'}" Style="{StaticResource CaptionStyle}" FontSize="15" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                </StackPanel>
+
+                <ScrollViewer x:Name="ResultsPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Background="{DynamicResource PrimaryBrush}" CornerRadius="18" Padding="28"><StackPanel HorizontalAlignment="Center"><Border Width="86" Height="86" CornerRadius="43" Background="#25FFFFFF"><TextBlock x:Name="ScoreText" Foreground="White" FontSize="32" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><TextBlock Text="{loc:Loc Key='Interview Evaluation'}" Foreground="White" FontSize="24" FontWeight="SemiBold" Margin="0,14,0,0"/><TextBlock x:Name="SummaryText" Foreground="White" Opacity="0.92" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="760" Margin="0,12,0,0"/></StackPanel></Border>
+                        <Border Style="{StaticResource CardStyle}" Margin="0,18,0,0"><StackPanel><TextBlock Text="{loc:Loc Key='Strengths'}" Foreground="{DynamicResource SuccessBrush}" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="StrengthsText" TextWrapping="Wrap" Margin="0,9,0,0"/></StackPanel></Border>
+                        <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="{loc:Loc Key='Improvement Suggestions'}" Foreground="{DynamicResource WarningBrush}" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="ImprovementsText" TextWrapping="Wrap" Margin="0,9,0,0"/></StackPanel></Border>
+                        <TextBlock Text="{loc:Loc Key='Question Review Details'}" FontSize="20" FontWeight="SemiBold" Margin="2,12,0,12"/>
+                        <ItemsControl x:Name="ReviewList"><ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource CardStyle}"><StackPanel><Grid><TextBlock Text="{Binding Question}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,70,0"/><Border HorizontalAlignment="Right" Background="{DynamicResource PrimarySoftBrush}" CornerRadius="12" Padding="10,5"><TextBlock Text="{Binding Score, StringFormat={}{0}/100}" Foreground="{DynamicResource PrimaryBrush}" FontWeight="SemiBold"/></Border></Grid><TextBlock Text="{loc:Loc Key='Your Answer'}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="0,14,0,4"/><TextBlock Text="{Binding Answer}" TextWrapping="Wrap"/><TextBlock Text="{loc:Loc Key='AI Deep Feedback'}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="0,14,0,4"/><TextBlock Text="{Binding Feedback}" TextWrapping="Wrap"/><TextBlock Text="{loc:Loc Key='Suggested Answer'}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="0,14,0,4"/><TextBlock Text="{Binding SuggestedAnswer}" TextWrapping="Wrap"/></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                        <Button Content="{loc:Loc Key='Close'}" Click="CloseButton_Click" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Left" Margin="0,8,0,24"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Border x:Name="ErrorPanel" Visibility="Collapsed" Style="{StaticResource CardStyle}" Width="680" HorizontalAlignment="Center" VerticalAlignment="Center"><StackPanel><TextBlock Text="{loc:Loc Key='Mock Interview Failed'}" Foreground="{DynamicResource DangerBrush}" FontSize="22" FontWeight="SemiBold"/><TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,12,0,18"/><StackPanel Orientation="Horizontal"><Button Content="{loc:Loc Key='Retry'}" Click="RetryButton_Click" Style="{StaticResource PrimaryButtonStyle}"/><Button Content="{loc:Loc Key='Close'}" Click="CloseButton_Click" Style="{StaticResource SecondaryButtonStyle}" Margin="10,0,0,0"/></StackPanel></StackPanel></Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,13 @@
+<Window x:Class="InterviewAssistant.Windows.RegionSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True" Background="#66000000"
+        ShowInTaskbar="False" Topmost="True" Cursor="Cross"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown" MouseMove="Window_MouseMove" MouseLeftButtonUp="Window_MouseLeftButtonUp" KeyDown="Window_KeyDown">
+    <Canvas x:Name="SelectionCanvas">
+        <Border x:Name="SelectionBorder" Visibility="Collapsed" BorderBrush="#2F6BFF" BorderThickness="3" Background="#18FFFFFF"/>
+        <Border Canvas.Left="24" Canvas.Top="24" Background="#E6111827" CornerRadius="12" Padding="16,11" IsHitTestVisible="False">
+            <TextBlock Text="Drag to select the interview screenshot region · Esc to cancel" Foreground="White" FontSize="14" FontWeight="SemiBold"/>
+        </Border>
+    </Canvas>
+</Window>

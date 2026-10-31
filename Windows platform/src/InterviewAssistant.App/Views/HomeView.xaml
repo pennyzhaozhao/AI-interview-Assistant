@@ -1,0 +1,71 @@
+<UserControl x:Class="InterviewAssistant.Views.HomeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
+             xmlns:loc="clr-namespace:InterviewAssistant.Services">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" infra:SmoothScrollBehavior.IsEnabled="True">
+        <StackPanel Margin="32" HorizontalAlignment="Stretch">
+            <Border Style="{StaticResource CardStyle}" Padding="28" Margin="0,0,0,24">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="24"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <Grid>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}"/>
+                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionStyle}" FontSize="16" Margin="0,10,0,0"/>
+                        </StackPanel>
+                        <Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="16" Padding="12,7" HorizontalAlignment="Right" VerticalAlignment="Top">
+                            <TextBlock Text="{Binding KnowledgeCountText}" Foreground="{DynamicResource PrimaryBrush}" FontSize="12" FontWeight="SemiBold"/>
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="360"/></Grid.ColumnDefinitions>
+                        <Button Command="{Binding StartInterviewCommand}" Style="{StaticResource PrimaryButtonStyle}"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE734;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Start Interview}"/></StackPanel></Button>
+                        <Button Grid.Column="1" Command="{Binding MockInterviewCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE720;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Mock Interview}"/></StackPanel></Button>
+                        <Button Grid.Column="3" Command="{Binding ChooseKnowledgeCommand}" Style="{StaticResource SecondaryButtonStyle}" Background="{DynamicResource InputBrush}" Height="62" Padding="14,8" HorizontalContentAlignment="Stretch">
+                            <Grid Width="330">
+                                <StackPanel Margin="32,0,28,0"><TextBlock Text="{Binding KnowledgePickerTitle}" FontSize="14" FontWeight="SemiBold"/><TextBlock Text="{Binding KnowledgeCountText}" Style="{StaticResource CaptionStyle}" FontSize="12" Margin="0,2,0,0"/></StackPanel>
+                                <TextBlock Text="&#xE8B7;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}" HorizontalAlignment="Left"/>
+                                <TextBlock Text="&#xE76C;" Style="{StaticResource FluentIconStyle}" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
+                            </Grid>
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Padding="28" Margin="0,0,0,32">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource PrimarySoftBrush}"><TextBlock Text="&#xE77B;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}"/></Border>
+                        <StackPanel Grid.Column="2"><TextBlock Text="{loc:Loc Key=Role}" Style="{StaticResource SectionTitleStyle}"/><TextBlock Text="{loc:Loc Key=HomeRoleDescription}" Style="{StaticResource CaptionStyle}" Margin="0,3,0,0"/></StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="{loc:Loc Key=Target role}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,20,0,8"/>
+                    <TextBox Text="{Binding Role, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/>
+
+                    <TextBlock Text="{loc:Loc Key=Job description}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
+                    <TextBox Text="{Binding JobDescription, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" Height="170" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
+
+                    <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,22,0,22"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource PrimarySoftBrush}"><TextBlock Text="&#xE80F;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}"/></Border>
+                        <StackPanel Grid.Column="2"><TextBlock Text="{loc:Loc Key=Company Introduction}" Style="{StaticResource SectionTitleStyle}"/><TextBlock Text="{loc:Loc Key=HomeCompanyDescription}" Style="{StaticResource CaptionStyle}" Margin="0,3,0,0"/></StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="{loc:Loc Key=Company Name}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,20,0,8"/>
+                    <TextBox Text="{Binding Company, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/>
+
+                    <TextBlock Text="{loc:Loc Key=Company Website}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox Text="{Binding CompanyWebsite, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}"/><Button Grid.Column="2" Content="{loc:Loc Key=Parse Website}" Command="{Binding ParseWebsiteCommand}" Style="{StaticResource SecondaryButtonStyle}"/></Grid>
+
+                    <TextBlock Text="{loc:Loc Key=Company Notes}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,18,0,8"/>
+                    <TextBox Text="{Binding CompanyNotes, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputStyle}" Height="190" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"/>
+
+                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource CaptionStyle}" Margin="2,14,0,0"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

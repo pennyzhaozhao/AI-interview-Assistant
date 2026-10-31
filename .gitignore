@@ -35,6 +35,55 @@ node_modules/
 # IDE settings
 .idea/
 .vscode/
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# .NET and WPF build output
+bin/
+obj/
+*.user
+*.suo
 
 # Distribution output
 dist/

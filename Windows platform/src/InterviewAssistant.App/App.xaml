@@ -1,0 +1,30 @@
+<Application x:Class="InterviewAssistant.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:InterviewAssistant.ViewModels"
+             xmlns:views="clr-namespace:InterviewAssistant.Views"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+                <views:HomeView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:DirectorViewModel}">
+                <views:DirectorView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:KnowledgeViewModel}">
+                <views:KnowledgeView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:HistoryViewModel}">
+                <views:HistoryView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+                <views:SettingsView />
+            </DataTemplate>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

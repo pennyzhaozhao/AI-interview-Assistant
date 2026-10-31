@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>InterviewAssistant</AssemblyName>
+    <RootNamespace>InterviewAssistant</RootNamespace>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.3</AssemblyVersion>
+    <FileVersion>1.1.0.3</FileVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="System.Speech" Version="10.0.14" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <Resource Include="Assets\*.svg" />
+    <Resource Include="Assets\AppLogo.png" />
+  </ItemGroup>
+</Project>
