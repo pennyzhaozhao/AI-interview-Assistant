@@ -17,8 +17,10 @@ public enum DialogTone { Info, Success, Warning, Danger, Update }
 public sealed class AppDialog : Window
 {
     private readonly TextBox? _input;
+    private readonly CheckBox? _remember;
+    private bool _cancelled;
 
-    private AppDialog(string title, string message, DialogTone tone, string primary, string? secondary, string? inputText, bool destructive)
+    private AppDialog(string title, string message, DialogTone tone, string primary, string? secondary, string? inputText, bool destructive, string? checkboxText = null)
     {
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -81,6 +83,18 @@ public sealed class AppDialog : Window
             stack.Children.Add(_input);
         }
 
+        if (checkboxText is not null)
+        {
+            _remember = new CheckBox
+            {
+                Content = new TextBlock { Text = checkboxText, FontSize = 13, TextWrapping = TextWrapping.Wrap },
+                Margin = new Thickness(0, 16, 0, 0),
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            _remember.SetResourceReference(ForegroundProperty, "TextSecondaryBrush");
+            stack.Children.Add(_remember);
+        }
+
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };
         if (secondary is not null)
         {
@@ -110,7 +124,12 @@ public sealed class AppDialog : Window
         card.MouseLeftButtonDown += (_, e) => { if (e.ChangedButton == MouseButton.Left && e.OriginalSource is not TextBox) DragMove(); };
         Content = card;
 
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) Finish(false); };
+        KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            _cancelled = true;
+            Finish(false);
+        };
         Loaded += (_, _) =>
         {
             card.RenderTransformOrigin = new Point(0.5, 0.5);
@@ -143,6 +162,20 @@ public sealed class AppDialog : Window
         if (resolved is not null && !ReferenceEquals(resolved, dialog)) dialog.Owner = resolved;
         dialog.ShowDialog();
         return dialog._result;
+    }
+
+    /// <summary>
+    /// Two-way choice with a "remember" checkbox. Returns true (primary), false (secondary),
+    /// or null when dismissed with Esc.
+    /// </summary>
+    public static bool? Choose(Window? owner, string title, string message, string primary, string secondary, string checkboxText, out bool remember, DialogTone tone = DialogTone.Info)
+    {
+        var dialog = new AppDialog(title, message, tone, primary, secondary, null, false, checkboxText);
+        var resolved = ResolveOwner(owner);
+        if (resolved is not null && !ReferenceEquals(resolved, dialog)) dialog.Owner = resolved;
+        dialog.ShowDialog();
+        remember = dialog._remember?.IsChecked == true;
+        return dialog._cancelled ? null : dialog._result;
     }
 
     /// <summary>Asks for a line of text. Returns null when cancelled.</summary>

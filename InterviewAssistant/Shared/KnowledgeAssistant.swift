@@ -6,6 +6,14 @@ enum KnowledgeAssistant {
     struct ResumeDigest {
         let summary: String
         let skills: [String]
+        let projects: [ResumeProject]
+    }
+
+    /// A project the resume links to (GitHub repository, demo site, app page…).
+    struct ResumeProject {
+        let name: String
+        let url: String
+        let description: String
     }
 
     /// Turns text extracted from a PDF / Word resume into clean Markdown, keeping every fact.
@@ -27,13 +35,17 @@ enum KnowledgeAssistant {
         let language = detectLanguage(markdown)
         let system = """
         You prepare interview context from a candidate's resume. Return valid JSON only:
-        {"summary":"...","skills":["...","..."]}
+        {"summary":"...","skills":["...","..."],"projects":[{"name":"...","url":"https://...","description":"..."}]}
         - summary: 120-220 words, written in \(language) — the same language as the resume (keep technical terms, company and school names as written).
           Cover role focus, strongest achievements with their real numbers, education, work history, core technologies, certifications.
           Use only facts from the resume; never invent.
         - skills: 8-20 concise skill names actually supported by the resume (languages, frameworks, tools, methods, domains),
           most relevant first, no duplicates, each at most 4 words. Write each skill the way the resume writes it
           (technical terms keep their usual English form); do not translate skills into another language.
+        - projects: every project in the resume that has its own link (GitHub repository, live demo, app store page, paper, website).
+          name: the project name as written; url: the exact link from the resume (never invent or complete a link);
+          description: one sentence in \(language) from the resume text. Do not include personal profile links
+          (LinkedIn, personal homepage, email, a GitHub profile without a repository). Use [] when there are none.
         """
         let raw = try await AIService.callAIModel(config: config, systemPrompt: system, question: String(markdown.prefix(24_000)), maxTokens: 1500)
         guard let data = extractJSON(raw).data(using: .utf8),
@@ -43,7 +55,70 @@ enum KnowledgeAssistant {
             throw NSError(domain: "InterviewAssistant", code: 11, userInfo: [NSLocalizedDescriptionKey: L.t("The AI did not return a summary.")])
         }
         let skills = (json["skills"] as? [Any])?.compactMap { $0 as? String } ?? []
-        return ResumeDigest(summary: summary, skills: normalizeSkills(skills))
+        var projects: [ResumeProject] = []
+        for item in (json["projects"] as? [Any])?.compactMap({ $0 as? [String: Any] }) ?? [] {
+            func field(_ name: String) -> String { ((item[name] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+            let url = field("url")
+            // Only links that really appear in the resume.
+            guard let scheme = URL(string: url)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { continue }
+            let bare = url.hasSuffix("/") ? String(url.dropLast()) : url
+            guard markdown.range(of: bare, options: .caseInsensitive) != nil else { continue }
+            projects.append(ResumeProject(name: field("name"), url: url, description: field("description")))
+        }
+        // Any GitHub repository link the model missed.
+        for url in findGitHubRepositoryLinks(markdown) where !projects.contains(where: { sameURL($0.url, url) }) {
+            projects.append(ResumeProject(name: "", url: url, description: ""))
+        }
+        return ResumeDigest(summary: summary, skills: normalizeSkills(skills), projects: projects)
+    }
+
+    /// github.com/owner/repo links in the text (profile-only links are left out).
+    static func findGitHubRepositoryLinks(_ text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)"#, options: [.caseInsensitive]) else { return [] }
+        let excluded: Set<String> = ["orgs", "topics", "features", "about", "sponsors"]
+        var result: [String] = []
+        let range = NSRange(text.startIndex..., in: text)
+        for match in regex.matches(in: text, range: range) {
+            guard let ownerRange = Range(match.range(at: 1), in: text), let repoRange = Range(match.range(at: 2), in: text) else { continue }
+            let owner = String(text[ownerRange])
+            var repo = String(text[repoRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".,)"))
+            if repo.lowercased().hasSuffix(".git") { repo = String(repo.dropLast(4)) }
+            guard !repo.isEmpty, !excluded.contains(owner.lowercased()) else { continue }
+            let url = "https://github.com/\(owner)/\(repo)"
+            if !result.contains(where: { sameURL($0, url) }) { result.append(url) }
+        }
+        return result
+    }
+
+    /// Compares links ignoring scheme, "www.", a trailing slash and case.
+    static func sameURL(_ lhs: String, _ rhs: String) -> Bool {
+        normalizeURL(lhs).caseInsensitiveCompare(normalizeURL(rhs)) == .orderedSame
+    }
+
+    private static func normalizeURL(_ url: String) -> String {
+        var value = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        for prefix in ["https://", "http://"] where value.lowercased().hasPrefix(prefix) {
+            value = String(value.dropFirst(prefix.count))
+        }
+        if value.lowercased().hasPrefix("www.") { value = String(value.dropFirst(4)) }
+        return value
+    }
+
+    /// "Save original only": tidy extracted text locally (no AI).
+    static func cleanResumeText(_ raw: String) -> String {
+        var text = raw.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\t", with: " ")
+        text = text.replacingOccurrences(of: #"[ \x{00A0}]+\n"#, with: "\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?m)^[ \t]*[•●▪◦·]\s*"#, with: "- ", options: .regularExpression)
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// True when an AI provider is set up (Ollama needs no key).
+    static func isAIConfigured(_ config: APIConfig) -> Bool {
+        config.provider == .ollama || !config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// One or two sentences describing a GitHub project, in the README's language.

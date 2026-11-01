@@ -23,7 +23,10 @@ public static class AIConfigProvider
 /// <summary>AI processing for knowledge bases: resume → Markdown + summary + skills, and project summaries.</summary>
 public static class KnowledgeAssistant
 {
-    public sealed record ResumeDigest(string Summary, IReadOnlyList<string> Skills);
+    public sealed record ResumeDigest(string Summary, IReadOnlyList<string> Skills, IReadOnlyList<ResumeProject> Projects);
+
+    /// <summary>A project the resume links to (GitHub repository, demo site, app page…).</summary>
+    public sealed record ResumeProject(string Name, string Url, string Description);
 
     /// <summary>Turns text extracted from a PDF / Word resume into clean Markdown, keeping every fact.</summary>
     public static async Task<string> ResumeToMarkdownAsync(string rawText, CancellationToken cancellationToken = default)
@@ -46,13 +49,17 @@ public static class KnowledgeAssistant
         var language = DetectLanguage(markdown);
         var system = $$"""
             You prepare interview context from a candidate's resume. Return valid JSON only:
-            {"summary":"...","skills":["...","..."]}
+            {"summary":"...","skills":["...","..."],"projects":[{"name":"...","url":"https://...","description":"..."}]}
             - summary: 120-220 words, written in {{language}} — the same language as the resume (keep technical terms, company and school names as written).
               Cover role focus, strongest achievements with their real numbers, education, work history, core technologies, certifications.
               Use only facts from the resume; never invent.
             - skills: 8-20 concise skill names actually supported by the resume (languages, frameworks, tools, methods, domains),
               most relevant first, no duplicates, each at most 4 words. Write each skill the way the resume writes it
               (technical terms keep their usual English form); do not translate skills into another language.
+            - projects: every project in the resume that has its own link (GitHub repository, live demo, app store page, paper, website).
+              name: the project name as written; url: the exact link from the resume (never invent or complete a link);
+              description: one sentence in {{language}} from the resume text. Do not include personal profile links
+              (LinkedIn, personal homepage, email, a GitHub profile without a repository). Use [] when there are none.
             """;
         var raw = await AppServices.Current.AI.CompleteAsync(AIConfigProvider.Current(), system, Truncate(markdown, 24_000), 1500, cancellationToken);
         using var document = JsonDocument.Parse(ExtractJson(raw));
@@ -62,7 +69,68 @@ public static class KnowledgeAssistant
             ? list.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!.Trim()).Where(item => item.Length > 0).ToList()
             : [];
         if (summary.Trim().Length == 0) throw new InvalidOperationException(LocalizationManager.Text("The AI did not return a summary."));
-        return new ResumeDigest(summary.Trim(), NormalizeSkills(skills));
+        var projects = new List<ResumeProject>();
+        if (root.TryGetProperty("projects", out var projectList) && projectList.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in projectList.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.Object))
+            {
+                string Field(string name) => item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() ?? "" : "";
+                var url = Field("url");
+                // Only links that really appear in the resume.
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) continue;
+                if (!markdown.Contains(url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) continue;
+                projects.Add(new ResumeProject(Field("name"), url, Field("description")));
+            }
+        }
+        // Any GitHub repository link the model missed.
+        foreach (var url in FindGitHubRepositoryLinks(markdown))
+            if (!projects.Any(project => SameUrl(project.Url, url))) projects.Add(new ResumeProject("", url, ""));
+        return new ResumeDigest(summary.Trim(), NormalizeSkills(skills), projects);
+    }
+
+    /// <summary>github.com/owner/repo links in the text (profile-only links are left out).</summary>
+    public static List<string> FindGitHubRepositoryLinks(string text)
+    {
+        var result = new List<string>();
+        foreach (Match match in Regex.Matches(text, @"(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)", RegexOptions.IgnoreCase))
+        {
+            var owner = match.Groups[1].Value;
+            var repo = match.Groups[2].Value.TrimEnd('.', ',', ')');
+            if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) repo = repo[..^4];
+            if (repo.Length == 0 || owner is "orgs" or "topics" or "features" or "about" or "sponsors") continue;
+            var url = $"https://github.com/{owner}/{repo}";
+            if (!result.Any(existing => SameUrl(existing, url))) result.Add(url);
+        }
+        return result;
+    }
+
+    public static bool SameUrl(string left, string right) =>
+        string.Equals(NormalizeUrl(left), NormalizeUrl(right), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeUrl(string url)
+    {
+        var value = url.Trim().TrimEnd('/');
+        foreach (var prefix in new[] { "https://", "http://" })
+            if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) value = value[prefix.Length..];
+        if (value.StartsWith("www.", StringComparison.OrdinalIgnoreCase)) value = value[4..];
+        return value;
+    }
+
+    /// <summary>"Save original only": tidy extracted text locally (no AI).</summary>
+    public static string CleanResumeText(string raw)
+    {
+        var text = raw.Replace("\r\n", "\n").Replace('\r', '\n').Replace('\t', ' ');
+        text = Regex.Replace(text, @"[ \u00A0]+\n", "\n");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+        text = Regex.Replace(text, @"^[ \t]*[•●▪◦·]\s*", "- ", RegexOptions.Multiline);
+        return text.Trim();
+    }
+
+    /// <summary>True when an AI provider is set up (Ollama needs no key).</summary>
+    public static bool IsAIConfigured()
+    {
+        var config = AIConfigProvider.Current();
+        return config.Provider == AIProvider.Ollama || config.ApiKey.Trim().Length > 0;
     }
 
     /// <summary>One or two sentences describing a GitHub project for interview use.</summary>

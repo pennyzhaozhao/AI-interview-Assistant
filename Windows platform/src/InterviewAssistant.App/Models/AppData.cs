@@ -40,6 +40,20 @@ public sealed class AppPreferences
     public string SpeechResourceId { get; set; } = "volc.seedasr.sauc.duration";
     /// <summary>0…1, higher is stricter when deciding whether a speaker is the candidate (macOS default 0.5).</summary>
     public double SpeakerRecognitionSensitivity { get; set; } = 0.5;
+    /// <summary>Resume upload: "ask" each time, always "ai" (Markdown + summary + skills + projects) or "raw" (original text only).</summary>
+    public string ResumeAIProcessing { get; set; } = ResumeAIModes.Ask;
+}
+
+public static class ResumeAIModes
+{
+    public const string Ask = "ask";
+    public const string AI = "ai";
+    public const string Raw = "raw";
+
+    /// <summary>Raised when the choice changes (from the upload dialog or Settings).</summary>
+    public static event Action? Changed;
+
+    public static void NotifyChanged() => Changed?.Invoke();
 }
 
 public sealed class ProviderSettings
