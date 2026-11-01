@@ -16,6 +16,7 @@
 		AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000107 /* KnowledgeContextBuilder.swift */; };
 		AA0000000000000000000008 /* PDFImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000108 /* PDFImporter.swift */; };
 		AA0000000000000000000009 /* URLFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000109 /* URLFetcher.swift */; };
+		AA00000000000000000007A1 /* KnowledgeAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000007A2 /* KnowledgeAssistant.swift */; };
 		AA000000000000000000000A /* TCPConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010A /* TCPConnection.swift */; };
 		AA000000000000000000000B /* SpeechEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010B /* SpeechEngine.swift */; };
 		AA000000000000000000000C /* SystemAudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000010C /* SystemAudioCapture.swift */; };
@@ -67,6 +68,7 @@
 		AA0000000000000000000107 /* KnowledgeContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeContextBuilder.swift; sourceTree = "<group>"; };
 		AA0000000000000000000108 /* PDFImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFImporter.swift; sourceTree = "<group>"; };
 		AA0000000000000000000109 /* URLFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLFetcher.swift; sourceTree = "<group>"; };
+		AA00000000000000000007A2 /* KnowledgeAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeAssistant.swift; sourceTree = "<group>"; };
 		AA000000000000000000010A /* TCPConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TCPConnection.swift; sourceTree = "<group>"; };
 		AA000000000000000000010B /* SpeechEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngine.swift; sourceTree = "<group>"; };
 		AA000000000000000000010C /* SystemAudioCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioCapture.swift; sourceTree = "<group>"; };
@@ -160,6 +162,7 @@
 				AA0000000000000000000107 /* KnowledgeContextBuilder.swift */,
 				AA0000000000000000000108 /* PDFImporter.swift */,
 				AA0000000000000000000109 /* URLFetcher.swift */,
+				AA00000000000000000007A2 /* KnowledgeAssistant.swift */,
 				AA0000000000000000000125 /* DocumentTextImporter.swift */,
 				AA0000000000000000000126 /* WebsiteResearchService.swift */,
 				AA000000000000000000010A /* TCPConnection.swift */,
@@ -395,6 +398,7 @@
 				AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */,
 				AA0000000000000000000008 /* PDFImporter.swift in Sources */,
 				AA0000000000000000000009 /* URLFetcher.swift in Sources */,
+				AA00000000000000000007A1 /* KnowledgeAssistant.swift in Sources */,
 				AA0000000000000000000027 /* DocumentTextImporter.swift in Sources */,
 				AA0000000000000000000028 /* WebsiteResearchService.swift in Sources */,
 				AA000000000000000000000A /* TCPConnection.swift in Sources */,

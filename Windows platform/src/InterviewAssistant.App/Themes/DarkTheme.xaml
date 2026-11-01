@@ -340,4 +340,69 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- ───────── Menus (context menus and "Copy to…" submenus) in the app's card style ───────── -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Margin="10,4,10,14" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="5" MinWidth="190">
+                        <Border.Effect><DropShadowEffect Color="#0B1020" BlurRadius="22" ShadowDepth="6" Direction="270" Opacity="0.18"/></Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="10,5" Background="{DynamicResource BorderBrush}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Root" Background="Transparent" CornerRadius="9" Padding="12,0,10,0" MinHeight="36">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            <TextBlock x:Name="Arrow" Grid.Column="1" Text="&#xE76C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" Visibility="Collapsed"/>
+                            <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="4" VerticalOffset="-10" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"
+                                   IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
+                                <Border Margin="6,4,10,14" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="5" MinWidth="190">
+                                    <Border.Effect><DropShadowEffect Color="#0B1020" BlurRadius="22" ShadowDepth="6" Direction="270" Opacity="0.18"/></Border.Effect>
+                                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" Focusable="False">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Role" Value="SubmenuHeader"><Setter TargetName="Arrow" Property="Visibility" Value="Visible"/></Trigger>
+                        <Trigger Property="Role" Value="TopLevelHeader"><Setter TargetName="Arrow" Property="Visibility" Value="Visible"/></Trigger>
+                        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger>
+                        <Trigger Property="IsSubmenuOpen" Value="True"><Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Root" Property="Opacity" Value="0.45"/><Setter Property="Cursor" Value="Arrow"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

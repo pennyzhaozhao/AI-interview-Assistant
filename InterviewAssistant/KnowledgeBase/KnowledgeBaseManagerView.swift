@@ -33,6 +33,39 @@ struct KnowledgeBaseManagerView: View {
     @State private var showBulkBaseDeleteConfirm = false
     @State private var pendingDeleteSource: KnowledgeEntry?
     @State private var showSourceDeleteConfirm = false
+    // Structured sections (resume / skills / projects / materials / instructions).
+    @State private var importTarget: ImportTarget = .material
+    @State private var resumeStatus = ""
+    @State private var isResumeBusy = false
+    @State private var isSkillsBusy = false
+    @State private var skillDraft = ""
+    @State private var projectURL = ""
+    @State private var projectStatus = ""
+    @State private var isProjectBusy = false
+    @State private var resumeExpanded = true
+    @State private var skillsExpanded = true
+    @State private var projectsExpanded = true
+    @State private var materialsExpanded = true
+    @State private var instructionsExpanded = false
+    @State private var pendingResumeCandidate: ResumeCandidate?
+    @State private var pendingResumeReplaceURL: URL?
+    @State private var pendingCopy: PendingCopy?
+    @State private var pendingResumeDelete = false
+
+    private enum ImportTarget { case material, resume }
+
+    private struct ResumeCandidate: Identifiable {
+        let id = UUID()
+        let tempURL: URL
+        let fileName: String
+        let text: String
+    }
+
+    private struct PendingCopy: Identifiable {
+        let id = UUID()
+        let entry: KnowledgeEntry
+        let target: KnowledgeBase
+    }
 
     var body: some View {
         Group {
@@ -54,13 +87,65 @@ struct KnowledgeBaseManagerView: View {
         .fileImporter(isPresented: $importingDocument, allowedContentTypes: importableDocumentTypes) { result in
             switch result {
             case .success(let url):
-                importDocument(from: url)
+                if importTarget == .resume {
+                    beginResumeImport(from: url)
+                } else {
+                    importDocument(from: url)
+                }
             case .failure(let error):
                 status = "\(L.t("Import failed")): \(error.localizedDescription)"
             }
         }
         .sheet(item: $editingSource) { entry in
             sourceEditor(entry)
+        }
+        .onChange(of: name) { _, _ in autosaveMetadata() }
+        .onChange(of: desc) { _, _ in autosaveMetadata() }
+        .confirmationDialog(L.t("Use as resume?"), isPresented: Binding(
+            get: { pendingResumeCandidate != nil },
+            set: { if !$0 { pendingResumeCandidate = nil } }
+        ), titleVisibility: .visible, presenting: pendingResumeCandidate) { candidate in
+            Button(L.t("Set as resume")) {
+                pendingResumeCandidate = nil
+                processResume(text: candidate.text, fileName: candidate.fileName)
+                try? FileManager.default.removeItem(at: candidate.tempURL)
+            }
+            Button(L.t("Keep as material")) {
+                pendingResumeCandidate = nil
+                addMaterial(tempURL: candidate.tempURL, fileName: candidate.fileName, text: candidate.text)
+            }
+        } message: { candidate in
+            Text(String(format: L.t("“%@” looks like a resume. Set it as this knowledge base's resume? AI will clean up the original and extract skills."), candidate.fileName))
+        }
+        .confirmationDialog(L.t("Replace resume?"), isPresented: Binding(
+            get: { pendingResumeReplaceURL != nil },
+            set: { if !$0 { pendingResumeReplaceURL = nil } }
+        ), titleVisibility: .visible) {
+            Button(L.t("Replace"), role: .destructive) {
+                if let url = pendingResumeReplaceURL { importResume(from: url) }
+                pendingResumeReplaceURL = nil
+            }
+            Button(L.t("Cancel"), role: .cancel) { pendingResumeReplaceURL = nil }
+        } message: {
+            Text(L.t("This knowledge base already has a resume. Uploading replaces its original and AI summary."))
+        }
+        .confirmationDialog(L.t("Replace resume?"), isPresented: Binding(
+            get: { pendingCopy != nil },
+            set: { if !$0 { pendingCopy = nil } }
+        ), titleVisibility: .visible, presenting: pendingCopy) { copy in
+            Button(L.t("Replace"), role: .destructive) {
+                performCopy(copy.entry, to: copy.target)
+                pendingCopy = nil
+            }
+            Button(L.t("Cancel"), role: .cancel) { pendingCopy = nil }
+        } message: { copy in
+            Text(String(format: L.t("“%@” already has a resume. Copying will replace it."), copy.target.name))
+        }
+        .confirmationDialog(L.t("Delete resume?"), isPresented: $pendingResumeDelete, titleVisibility: .visible) {
+            Button(L.t("Delete"), role: .destructive) { deleteResume() }
+            Button(L.t("Cancel"), role: .cancel) {}
+        } message: {
+            Text(L.t("The resume original and AI summary will be removed from this knowledge base. Skills are kept."))
         }
         .confirmationDialog(L.t("Confirm Delete"), isPresented: $showBaseDeleteConfirm, titleVisibility: .visible) {
             Button(L.t("Delete"), role: .destructive) {
@@ -223,13 +308,12 @@ struct KnowledgeBaseManagerView: View {
 
     private func mobileAssetRow(_ kb: KnowledgeBase) -> some View {
         let isEnabled = activeIDs.contains(kb.id)
-        let fileCount = visibleEntries(for: kb).count
         return VStack(alignment: .leading, spacing: 6) {
             Text(kb.name)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.appText)
                 .lineLimit(1)
-            Text(fileCountText(fileCount))
+            Text(cardSummary(kb))
                 .font(.system(size: 13))
                 .foregroundStyle(Color.appMuted)
             HStack(spacing: 5) {
@@ -291,7 +375,7 @@ struct KnowledgeBaseManagerView: View {
                 Button {
                     addKB()
                 } label: {
-                    Label(L.t("New Asset"), systemImage: "plus")
+                    Label(L.t("New Knowledge Base"), systemImage: "plus")
                 }
                 .buttonStyle(AppButtonStyle(prominent: true))
             }
@@ -335,7 +419,7 @@ struct KnowledgeBaseManagerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L.t("Knowledge Base"))
                 .font(isCompact ? .appTitleCompact : .appTitle)
-            Text(L.t("Manage reusable context as enabled assets for interview sessions."))
+            Text(L.t("One knowledge base per target role: resume, skills, projects and materials live here."))
                 .font(.appBody)
                 .foregroundStyle(Color.appMuted)
         }
@@ -371,6 +455,18 @@ struct KnowledgeBaseManagerView: View {
                     .help(activeIDs.contains(kb.id) ? L.t("Disable this knowledge base") : L.t("Enable this knowledge base"))
                     if !isSelectingBases {
                         Button {
+                            duplicateKnowledgeBase(kb)
+                        } label: {
+                            Image(systemName: "plus.square.on.square")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.appText)
+                                .frame(width: 32, height: 32)
+                                .background(Color.appField)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .help(L.t("Duplicate"))
+                        Button {
                             confirmDelete(kb)
                         } label: {
                             Image(systemName: "trash")
@@ -386,7 +482,7 @@ struct KnowledgeBaseManagerView: View {
             }
 
             HStack(spacing: 10) {
-                metadataPill(fileCountText(visibleEntries(for: kb).count), icon: "doc.fill")
+                metadataPill(cardSummary(kb), icon: "square.stack.3d.up.fill")
                 metadataPill(kb.updatedAt.formatted(date: .abbreviated, time: .omitted), icon: "calendar")
             }
         }
@@ -439,85 +535,66 @@ struct KnowledgeBaseManagerView: View {
 
     private var detailContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(selected?.name ?? L.t("Asset Details"))
                             .font(.appSection)
+                            .lineLimit(1)
                         Text(L.t("Edit metadata, import sources, and decide whether this asset is available to interviews."))
                             .font(.appCaption)
                             .foregroundStyle(Color.appMuted)
                     }
+                    Spacer()
+                    Label(L.t("Saved automatically"), systemImage: "checkmark")
+                        .font(.appSmall.weight(.semibold))
+                        .foregroundStyle(Color.appMuted)
+                        .padding(.top, 6)
                 }
 
                 if let selected {
-                    Toggle(isOn: Binding(
-                        get: { activeIDs.contains(selected.id) },
-                        set: { isOn in
-                            if isOn {
-                                activeIDs.insert(selected.id)
-                            } else {
-                                activeIDs.remove(selected.id)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Toggle(isOn: Binding(
+                            get: { activeIDs.contains(selected.id) },
+                            set: { isOn in
+                                if isOn { activeIDs.insert(selected.id) } else { activeIDs.remove(selected.id) }
+                            }
+                        )) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(L.t("Enabled for interviews"))
+                                    .font(.appBodyMedium)
+                                Text(L.t("AI will prioritize this asset when answering."))
+                                    .font(.appCaption)
+                                    .foregroundStyle(Color.appMuted)
                             }
                         }
-                    )) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(L.t("Enabled for interviews"))
-                                .font(.appBodyMedium)
-                            Text(L.t("AI will prioritize this asset when answering."))
-                                .font(.appCaption)
-                                .foregroundStyle(Color.appMuted)
-                        }
-                    }
-                    .toggleStyle(.switch)
-                    .premiumCard(padding: 16)
-                }
+                        .toggleStyle(.switch)
 
-                VStack(alignment: .leading, spacing: 14) {
-                    labeledField(L.t("Title")) {
-                        TextField(L.t("Knowledge base title"), text: $name)
-                            .textFieldStyle(.plain)
-                            .darkField()
-                    }
-                    labeledField(L.t("Description")) {
-                        TextField(L.t("Short description"), text: $desc)
-                            .textFieldStyle(.plain)
-                            .darkField()
-                    }
-                    labeledField(L.t("Import source")) {
-                        HStack(spacing: 10) {
-                            TextField("Google Drive / GitHub / PDF URL", text: $url)
-                                .textFieldStyle(.plain)
-                                .darkField()
-                            if !isCompact {
-                                Button(L.t("Import")) { importURL() }
-                                    .buttonStyle(AppButtonStyle())
-                                Button(L.t("Upload File")) { importingDocument = true }
-                                    .buttonStyle(AppButtonStyle())
+                        let fields = Group {
+                            labeledField(L.t("Title")) {
+                                TextField(L.t("Knowledge base title"), text: $name)
+                                    .textFieldStyle(.plain)
+                                    .darkField()
+                            }
+                            labeledField(L.t("Description")) {
+                                TextField(L.t("Short description"), text: $desc)
+                                    .textFieldStyle(.plain)
+                                    .darkField()
                             }
                         }
-                    }
-                    if isCompact {
-                        HStack {
-                            Button(L.t("Import Link")) { importURL() }
-                                .buttonStyle(AppButtonStyle())
-                            Button(L.t("Upload File")) { importingDocument = true }
-                                .buttonStyle(AppButtonStyle())
+                        if isCompact {
+                            VStack(alignment: .leading, spacing: 14) { fields }
+                        } else {
+                            HStack(alignment: .top, spacing: 14) { fields }
                         }
                     }
-                }
-                .premiumCard()
+                    .premiumCard()
 
-                sourceList
-
-                HStack {
-                    Text(status)
-                        .foregroundStyle(Color.appMuted)
-                        .font(.appCaption)
-                    Spacer()
-                    Button(L.t("Save Asset")) { save() }
-                        .buttonStyle(AppButtonStyle(prominent: true))
-                        .disabled(selected == nil)
+                    resumeSection(selected)
+                    skillsSection(selected)
+                    projectsSection(selected)
+                    materialsSection(selected)
+                    instructionsSection(selected)
                 }
             }
             .padding(isCompact ? 0 : 32)
@@ -525,67 +602,369 @@ struct KnowledgeBaseManagerView: View {
         }
     }
 
-    private var sourceList: some View {
+    // MARK: - Sections
+
+    private func sectionCard<Content: View>(
+        _ title: String,
+        badge: String? = nil,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L.t("Sources"))
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { isExpanded.wrappedValue.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(title)
                         .font(.appBodyMedium)
-                    Text(L.t("Choose which materials AI can use during interviews."))
+                        .foregroundStyle(Color.appText)
+                    if let badge {
+                        Text(badge)
+                            .font(.appSmall.weight(.semibold))
+                            .foregroundStyle(Color.appMuted)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
+                            .background(Color.appField)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.appMuted)
+                        .rotationEffect(.degrees(isExpanded.wrappedValue ? 0 : -90))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded.wrappedValue {
+                content()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .premiumCard()
+    }
+
+    private func statusLine(_ text: String, busy: Bool) -> some View {
+        HStack(spacing: 8) {
+            if busy { ProgressView().controlSize(.small) }
+            Text(text)
+                .font(.appCaption)
+                .foregroundStyle(Color.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func smallButton(_ title: String, systemImage: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            Label(title, systemImage: systemImage)
+        }
+        .buttonStyle(AppButtonStyle())
+    }
+
+    // 1. Resume
+    private func resumeSection(_ kb: KnowledgeBase) -> some View {
+        sectionCard(L.t("Resume"), badge: kb.resumeEntry == nil ? L.t("Not uploaded") : L.t("Uploaded"), isExpanded: $resumeExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let resume = kb.resumeEntry {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label(resume.title, systemImage: "person.text.rectangle")
+                                .font(.appBodyMedium)
+                                .foregroundStyle(Color.appText)
+                                .lineLimit(1)
+                            Spacer()
+                            if !resume.summary.isEmpty {
+                                StatusPill(text: L.t("AI summary"), tint: .appPrimary)
+                            }
+                        }
+                        Text(resume.summary.isEmpty ? String(resume.content.prefix(420)) : resume.summary)
+                            .font(.appCaption)
+                            .foregroundStyle(Color.appMuted)
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.appField)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    FlowLayout(spacing: 8) {
+                        smallButton(L.t("Edit original"), systemImage: "pencil") { beginEditingSource(resume) }
+                        smallButton(L.t("Regenerate summary"), systemImage: "arrow.clockwise") { regenerateResumeSummary(kb) }
+                            .disabled(isResumeBusy)
+                        smallButton(L.t("Replace"), systemImage: "arrow.up.doc") { chooseResumeFile() }
+                            .disabled(isResumeBusy)
+                        copyToMenu(resume)
+                        smallButton(L.t("Delete"), systemImage: "trash", role: .destructive) { pendingResumeDelete = true }
+                    }
+                } else {
+                    Button { chooseResumeFile() } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: "arrow.up.doc")
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(Color.appPrimary)
+                            Text(L.t("Upload resume (PDF / Word)"))
+                                .font(.appBodyMedium)
+                                .foregroundStyle(Color.appText)
+                            Text(L.t("Click to choose a file. AI turns it into an editable Markdown original plus a summary and skill tags."))
+                                .font(.appCaption)
+                                .foregroundStyle(Color.appMuted)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 130)
+                        .padding(16)
+                        .background(Color.appField)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.appBorder, style: StrokeStyle(lineWidth: 1.4, dash: [5, 4]))
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isResumeBusy)
+                }
+                if !resumeStatus.isEmpty {
+                    statusLine(resumeStatus, busy: isResumeBusy)
+                }
+            }
+        }
+    }
+
+    // 2. Skills
+    private func skillsSection(_ kb: KnowledgeBase) -> some View {
+        sectionCard(L.t("Skills"), badge: "\(kb.skills.count)", isExpanded: $skillsExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                if kb.skills.isEmpty {
+                    Text(L.t("No skills yet. They are extracted when you upload a resume, or add them yourself (comma-separated)."))
                         .font(.appCaption)
                         .foregroundStyle(Color.appMuted)
+                } else {
+                    FlowLayout(spacing: 8) {
+                        ForEach(kb.skills, id: \.self) { skill in
+                            HStack(spacing: 6) {
+                                Text(skill)
+                                    .font(.appSmall.weight(.semibold))
+                                    .foregroundStyle(Color.appPrimary)
+                                Button {
+                                    removeSkill(skill, from: kb)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(Color.appPrimary.opacity(0.8))
+                                }
+                                .buttonStyle(.plain)
+                                .help(L.t("Remove"))
+                            }
+                            .padding(.leading, 12)
+                            .padding(.trailing, 9)
+                            .padding(.vertical, 6)
+                            .background(Color.appPrimary.opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                    }
                 }
-                Spacer()
-                if let selected {
-                    let entries = visibleEntries(for: selected)
-                    let enabledCount = entries.filter(\.isEnabled).count
-                    StatusPill(text: enabledSourceCountText(enabledCount, total: entries.count), tint: .appPrimary)
+                HStack(spacing: 10) {
+                    TextField(L.t("Add a skill"), text: $skillDraft)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                        .onSubmit { addSkillsFromDraft(to: kb) }
+                    smallButton(L.t("Add"), systemImage: "plus") { addSkillsFromDraft(to: kb) }
+                    Button {
+                        extractSkills(kb)
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isSkillsBusy { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
+                            Text(L.t("From resume"))
+                        }
+                    }
+                    .buttonStyle(AppButtonStyle())
+                    .disabled(kb.resumeEntry == nil || isSkillsBusy)
+                    .help(L.t("Extract skills from the resume"))
                 }
             }
+        }
+    }
 
-            if let selected, !visibleEntries(for: selected).isEmpty, !hasManualSource(selected) {
-                Button {
-                    addManualSource(to: selected)
-                } label: {
-                    Label(L.t("Add Main Content"), systemImage: "plus")
-                        .frame(maxWidth: isCompact ? .infinity : nil)
+    // 3. Projects (GitHub)
+    private func projectsSection(_ kb: KnowledgeBase) -> some View {
+        sectionCard(L.t("Projects"), badge: "\(kb.projectEntries.count)", isExpanded: $projectsExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    TextField("https://github.com/…", text: $projectURL)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                        .onSubmit { importProjects(projectURL, into: kb) }
+                    Button {
+                        importProjects(projectURL, into: kb)
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isProjectBusy { ProgressView().controlSize(.small) }
+                            Text(L.t("Add project"))
+                        }
+                    }
+                    .buttonStyle(AppButtonStyle())
+                    .disabled(isProjectBusy)
                 }
-                .buttonStyle(AppButtonStyle())
+                Text(L.t("Paste a GitHub repository link, or a profile link to import the 6 most recently updated repositories."))
+                    .font(.appSmall)
+                    .foregroundStyle(Color.appMuted)
+                if !projectStatus.isEmpty {
+                    statusLine(projectStatus, busy: isProjectBusy)
+                }
+                ForEach(kb.projectEntries) { project in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.appPrimary)
+                            .frame(width: 34, height: 34)
+                            .background(Color.appPrimary.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(project.title)
+                                    .font(.appCaptionMedium)
+                                    .foregroundStyle(Color.appText)
+                                    .lineLimit(1)
+                                if !project.meta.isEmpty {
+                                    Text(project.meta)
+                                        .font(.appSmall)
+                                        .foregroundStyle(Color.appMuted)
+                                }
+                            }
+                            Text(project.summary.isEmpty ? String(project.content.prefix(240)) : project.summary)
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
+                                .lineLimit(3)
+                        }
+                        Spacer()
+                        Toggle("", isOn: sourceEnabledBinding(for: project))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                        entryMenu(project)
+                    }
+                    .padding(14)
+                    .background(Color.appField)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
             }
+        }
+    }
 
-            if let selected, !visibleEntries(for: selected).isEmpty {
+    // 4. Materials
+    private func materialsSection(_ kb: KnowledgeBase) -> some View {
+        sectionCard(L.t("Materials"), badge: "\(kb.materialEntries.count)", isExpanded: $materialsExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(L.t("Notes, study documents, web pages and more. Pasting a GitHub link adds it to Projects automatically."))
+                    .font(.appCaption)
+                    .foregroundStyle(Color.appMuted)
+                HStack(spacing: 10) {
+                    smallButton(L.t("Upload File"), systemImage: "arrow.up.doc") {
+                        importTarget = .material
+                        importingDocument = true
+                    }
+                    smallButton(L.t("New note"), systemImage: "square.and.pencil") { addManualSource(to: kb) }
+                }
+                HStack(spacing: 10) {
+                    TextField(L.t("Paste a web page, PDF or Google Drive link"), text: $url)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                        .onSubmit { importURL() }
+                    smallButton(L.t("Import link"), systemImage: "link") { importURL() }
+                }
+                if !status.isEmpty {
+                    statusLine(status, busy: false)
+                }
                 LazyVStack(spacing: 10) {
-                    ForEach(sourceEntries(for: selected)) { entry in
+                    ForEach(kb.materialEntries) { entry in
                         sourceRow(entry)
                     }
                 }
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(Color.appMuted)
-                    Text(L.t("No sources yet"))
-                        .font(.appBodyMedium)
-                    Text(L.t("Import a PDF or public GitHub link to turn it into interview-ready context."))
-                        .font(.appCaption)
-                        .foregroundStyle(Color.appMuted)
-                        .multilineTextAlignment(.center)
-                    if let selected {
-                        Button {
-                            addManualSource(to: selected)
-                        } label: {
-                            Label(L.t("Add Main Content"), systemImage: "plus")
-                        }
-                        .buttonStyle(AppButtonStyle())
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 160)
-                .padding(18)
-                .background(Color.appField)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
         }
-        .premiumCard()
+    }
+
+    // 5. Custom instructions
+    private func instructionsSection(_ kb: KnowledgeBase) -> some View {
+        sectionCard(L.t("Custom instructions"), isExpanded: $instructionsExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L.t("Answer preferences for the AI, for this knowledge base only. For example: keep answers under 3 sentences; use the STAR structure; use simple English."))
+                    .font(.appCaption)
+                    .foregroundStyle(Color.appMuted)
+                TextEditor(text: Binding(
+                    get: { kb.customInstructions },
+                    set: { value in
+                        let limited = String(value.prefix(Self.instructionsLimit))
+                        guard limited != kb.customInstructions else { return }
+                        kb.customInstructions = limited
+                        kb.updatedAt = .now
+                        try? modelContext.save()
+                    }
+                ))
+                .scrollContentBackground(.hidden)
+                .font(.appBody)
+                .frame(minHeight: 120, maxHeight: 240)
+                .darkField()
+                HStack {
+                    Spacer()
+                    Text("\(kb.customInstructions.count) / \(Self.instructionsLimit)")
+                        .font(.appSmall)
+                        .foregroundStyle(Color.appMuted)
+                }
+            }
+        }
+    }
+
+    private static let instructionsLimit = 2000
+
+    // MARK: - "⋯" menu: copy to another knowledge base, open, delete
+
+    private func copyToMenu(_ entry: KnowledgeEntry) -> some View {
+        Menu {
+            let targets = bases.filter { $0.id != entry.knowledgeBase?.id }
+            if targets.isEmpty {
+                Text(L.t("No other knowledge bases"))
+            }
+            ForEach(targets) { target in
+                Button(target.name) { requestCopy(entry, to: target) }
+            }
+        } label: {
+            Label(L.t("Copy to…"), systemImage: "plus.square.on.square")
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(AppButtonStyle())
+        .fixedSize()
+    }
+
+    private func entryMenu(_ entry: KnowledgeEntry) -> some View {
+        Menu {
+            Menu(L.t("Copy to…")) {
+                let targets = bases.filter { $0.id != entry.knowledgeBase?.id }
+                if targets.isEmpty {
+                    Text(L.t("No other knowledge bases"))
+                }
+                ForEach(targets) { target in
+                    Button(target.name) { requestCopy(entry, to: target) }
+                }
+            }
+            if let link = URL(string: entry.source), link.scheme?.hasPrefix("http") == true {
+                Link(entry.kind == KnowledgeEntryKind.project ? L.t("Open on GitHub") : L.t("Open link"), destination: link)
+            }
+            Divider()
+            Button(L.t("Delete"), role: .destructive) { confirmDeleteSource(entry) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.appMuted)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .fixedSize()
     }
 
     private func sourceRow(_ entry: KnowledgeEntry) -> some View {
@@ -627,17 +1006,7 @@ struct KnowledgeBaseManagerView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    confirmDeleteSource(entry)
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.appDanger)
-                        .frame(width: 34, height: 34)
-                        .background(Color.appDanger.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                }
-                .buttonStyle(.plain)
+                entryMenu(entry)
             }
 
             if !entry.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -691,9 +1060,14 @@ struct KnowledgeBaseManagerView: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(L.t("Content"))
+                        Text(entry.kind == KnowledgeEntryKind.resume ? L.t("Resume original (Markdown)") : L.t("Content"))
                             .font(.appCaptionMedium)
                             .foregroundStyle(Color.appMuted)
+                        if entry.kind == KnowledgeEntryKind.resume {
+                            Text(L.t("The AI summary is regenerated after you save the original."))
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
+                        }
                         TextEditor(text: $sourceContentDraft)
                             .scrollContentBackground(.hidden)
                             .font(.appBody)
@@ -878,13 +1252,22 @@ struct KnowledgeBaseManagerView: View {
     private func importURL() {
         guard let selected else { return }
         let input = url
+        if GitHubProjectImporter.isGitHubURL(input) {
+            // GitHub links belong in the Projects section.
+            url = ""
+            status = L.t("GitHub link detected — added to Projects.")
+            importProjects(input, into: selected)
+            return
+        }
         status = L.t("Importing...")
         Task {
             do {
                 let text = try await URLFetcher.fetchText(from: input)
                 await MainActor.run {
                     let title = sourceTitle(from: input)
-                    selected.entries.append(KnowledgeEntry(title: title, content: text, source: input, isEnabled: true, knowledgeBase: selected))
+                    let entry = KnowledgeEntry(title: title, content: text, source: input, isEnabled: true, knowledgeBase: selected)
+                    entry.kindRaw = KnowledgeEntryKind.material
+                    selected.entries.append(entry)
                     selected.updatedAt = .now
                     try? modelContext.save()
                     url = ""
@@ -938,14 +1321,11 @@ struct KnowledgeBaseManagerView: View {
                             status = L.t("File imported, but no readable text was found")
                             return
                         }
-                        let entryID = UUID()
-                        let storedURL = try? storeImportedPDF(from: tempURL, id: entryID, originalName: safeName)
-                        let source = storedURL.map { "file:\($0.path)" } ?? "file:\(safeName)"
-                        selected.entries.append(KnowledgeEntry(id: entryID, title: safeName, content: trimmed, source: source, isEnabled: true, knowledgeBase: selected))
-                        selected.updatedAt = .now
-                        try? modelContext.save()
-                        status = L.t("File imported")
-                        try? FileManager.default.removeItem(at: tempURL)
+                        if selected.resumeEntry == nil, KnowledgeAssistant.looksLikeResume(fileName: safeName, text: trimmed) {
+                            pendingResumeCandidate = ResumeCandidate(tempURL: tempURL, fileName: safeName, text: trimmed)
+                            return
+                        }
+                        addMaterial(tempURL: tempURL, fileName: safeName, text: trimmed)
                     }
                 } catch {
                     await MainActor.run {
@@ -975,7 +1355,8 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func addManualSource(to kb: KnowledgeBase) {
-        let entry = KnowledgeEntry(title: L.t("Main Content"), content: "", source: "manual", isEnabled: true, knowledgeBase: kb)
+        let entry = KnowledgeEntry(title: L.t("Note"), content: "", source: "manual", isEnabled: true, knowledgeBase: kb)
+        entry.kindRaw = KnowledgeEntryKind.material
         kb.entries.append(entry)
         kb.updatedAt = .now
         do {
@@ -1009,6 +1390,14 @@ struct KnowledgeBaseManagerView: View {
             try modelContext.save()
             status = L.t("Source saved")
             editingSource = nil
+            if entry.kind == KnowledgeEntryKind.resume, let kb = entry.knowledgeBase, !isResumeBusy {
+                isResumeBusy = true
+                let config = AIService.config(from: modelContext)
+                Task { @MainActor in
+                    await digestResume(entry, in: kb, mergeSkills: false, config: config)
+                    isResumeBusy = false
+                }
+            }
         } catch {
             status = "\(L.t("Save source failed")): \(error.localizedDescription)"
         }
@@ -1041,6 +1430,291 @@ struct KnowledgeBaseManagerView: View {
         } catch {
             status = "\(L.t("Delete source failed")): \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Structured knowledge base actions
+
+    private func cardSummary(_ kb: KnowledgeBase) -> String {
+        let chinese = currentLanguage == .chinese
+        var parts: [String] = []
+        if kb.resumeEntry != nil { parts.append(chinese ? "简历 ✓" : "Resume ✓") }
+        let projects = kb.projectEntries.count
+        let materials = kb.materialEntries.count
+        let skills = kb.skills.count
+        if projects > 0 { parts.append(chinese ? "\(projects) 个项目" : "\(projects) project\(projects == 1 ? "" : "s")") }
+        if materials > 0 { parts.append(chinese ? "\(materials) 份资料" : "\(materials) material\(materials == 1 ? "" : "s")") }
+        if skills > 0 { parts.append(chinese ? "\(skills) 项技能" : "\(skills) skill\(skills == 1 ? "" : "s")") }
+        return parts.isEmpty ? (chinese ? "空知识库" : "Empty") : parts.joined(separator: " · ")
+    }
+
+    /// Title / description save as you type (no Save button).
+    private func autosaveMetadata() {
+        guard let selected else { return }
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = trimmedName.isEmpty ? selected.name : name
+        guard newName != selected.name || desc != selected.desc else { return }
+        selected.name = newName
+        selected.desc = desc
+        selected.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func duplicateKnowledgeBase(_ source: KnowledgeBase) {
+        let suffix = currentLanguage == .chinese ? " 副本" : " copy"
+        let copy = KnowledgeBase(name: source.name + suffix, desc: source.desc)
+        copy.skillsData = source.skillsData
+        copy.customInstructions = source.customInstructions
+        modelContext.insert(copy)
+        for entry in source.entries {
+            let duplicate = entry.duplicate(into: copy)
+            copy.entries.append(duplicate)
+        }
+        try? modelContext.save()
+        selected = copy
+        status = String(format: L.t("Duplicated as “%@”"), copy.name)
+    }
+
+    private func requestCopy(_ entry: KnowledgeEntry, to target: KnowledgeBase) {
+        if entry.kind == KnowledgeEntryKind.resume, target.resumeEntry != nil {
+            pendingCopy = PendingCopy(entry: entry, target: target)
+        } else {
+            performCopy(entry, to: target)
+        }
+    }
+
+    /// Independent copy of one resume / project / material into another knowledge base.
+    private func performCopy(_ entry: KnowledgeEntry, to target: KnowledgeBase) {
+        if entry.kind == KnowledgeEntryKind.resume {
+            for old in target.entries where old.kind == KnowledgeEntryKind.resume { modelContext.delete(old) }
+            target.entries.removeAll { $0.kind == KnowledgeEntryKind.resume }
+            if let source = entry.knowledgeBase { target.skills = mergedSkills(target.skills, source.skills) }
+        }
+        let copy = entry.duplicate(into: target)
+        target.entries.append(copy)
+        target.updatedAt = .now
+        try? modelContext.save()
+        status = String(format: L.t("Copied to “%@”"), target.name)
+    }
+
+    // Resume
+
+    private func chooseResumeFile() {
+        importTarget = .resume
+        importingDocument = true
+    }
+
+    private func beginResumeImport(from url: URL) {
+        if selected?.resumeEntry != nil {
+            pendingResumeReplaceURL = url
+        } else {
+            importResume(from: url)
+        }
+    }
+
+    /// Upload flow: extract text → AI Markdown (original) → AI summary + skills.
+    private func importResume(from sourceURL: URL) {
+        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
+        do {
+            let fileName = sourceURL.lastPathComponent
+            let tempURL = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString)-\(fileName)")
+            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            let text = try DocumentTextImporter.extractText(from: tempURL, maxCharacters: 40_000)
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                resumeStatus = L.t("No readable text was found in this file.")
+                return
+            }
+            processResume(text: text, fileName: fileName)
+        } catch {
+            resumeStatus = "\(L.t("Import failed")): \(error.localizedDescription)"
+        }
+    }
+
+    private func processResume(text: String, fileName: String) {
+        guard let kb = selected, !isResumeBusy else { return }
+        isResumeBusy = true
+        resumeStatus = L.t("Converting resume to Markdown…")
+        let config = AIService.config(from: modelContext)
+        Task { @MainActor in
+            var markdown = text
+            if let converted = try? await KnowledgeAssistant.resumeToMarkdown(text, config: config),
+               converted.trimmingCharacters(in: .whitespacesAndNewlines).count >= 40 {
+                markdown = converted
+            }
+            for old in kb.entries where old.kind == KnowledgeEntryKind.resume { modelContext.delete(old) }
+            kb.entries.removeAll { $0.kind == KnowledgeEntryKind.resume }
+            let entry = KnowledgeEntry(
+                title: (fileName as NSString).deletingPathExtension,
+                content: markdown,
+                source: "resume:\(fileName)",
+                isEnabled: true,
+                knowledgeBase: kb
+            )
+            entry.kindRaw = KnowledgeEntryKind.resume
+            kb.entries.append(entry)
+            kb.updatedAt = .now
+            try? modelContext.save()
+            await digestResume(entry, in: kb, mergeSkills: true, config: config)
+            isResumeBusy = false
+        }
+    }
+
+    @MainActor
+    private func digestResume(_ entry: KnowledgeEntry, in kb: KnowledgeBase, mergeSkills: Bool, config: APIConfig) async {
+        resumeStatus = L.t("Generating AI summary…")
+        do {
+            let digest = try await KnowledgeAssistant.digestResume(entry.content, config: config)
+            entry.summary = digest.summary
+            entry.updatedAt = .now
+            var added = 0
+            if mergeSkills {
+                let before = kb.skills.count
+                kb.skills = mergedSkills(kb.skills, digest.skills)
+                added = kb.skills.count - before
+            }
+            kb.updatedAt = .now
+            try? modelContext.save()
+            resumeStatus = mergeSkills && added > 0
+                ? String(format: L.t("Resume processed. %d skills extracted."), added)
+                : L.t("AI summary updated.")
+        } catch {
+            resumeStatus = "\(L.t("AI summary failed (the original is saved; regenerate later):")) \(error.localizedDescription)"
+        }
+    }
+
+    private func regenerateResumeSummary(_ kb: KnowledgeBase) {
+        guard let resume = kb.resumeEntry, !isResumeBusy else { return }
+        isResumeBusy = true
+        let config = AIService.config(from: modelContext)
+        Task { @MainActor in
+            await digestResume(resume, in: kb, mergeSkills: false, config: config)
+            isResumeBusy = false
+        }
+    }
+
+    private func deleteResume() {
+        guard let kb = selected else { return }
+        for entry in kb.entries where entry.kind == KnowledgeEntryKind.resume { modelContext.delete(entry) }
+        kb.entries.removeAll { $0.kind == KnowledgeEntryKind.resume }
+        kb.updatedAt = .now
+        try? modelContext.save()
+        resumeStatus = ""
+    }
+
+    // Skills
+
+    private func mergedSkills(_ existing: [String], _ incoming: [String]) -> [String] {
+        var result = existing
+        for skill in KnowledgeAssistant.normalizeSkills(incoming)
+        where !result.contains(where: { $0.caseInsensitiveCompare(skill) == .orderedSame }) {
+            result.append(skill)
+        }
+        return result
+    }
+
+    private func addSkillsFromDraft(to kb: KnowledgeBase) {
+        let parts = skillDraft.components(separatedBy: CharacterSet(charactersIn: ",，、;；\n"))
+        let merged = mergedSkills(kb.skills, parts)
+        skillDraft = ""
+        guard merged != kb.skills else { return }
+        kb.skills = merged
+        kb.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    private func removeSkill(_ skill: String, from kb: KnowledgeBase) {
+        kb.skills = kb.skills.filter { $0 != skill }
+        kb.updatedAt = .now
+        try? modelContext.save()
+    }
+
+    /// "From resume": adds skills that are not already listed.
+    private func extractSkills(_ kb: KnowledgeBase) {
+        guard let resume = kb.resumeEntry, !isSkillsBusy else { return }
+        isSkillsBusy = true
+        resumeStatus = L.t("Extracting skills from the resume…")
+        let config = AIService.config(from: modelContext)
+        Task { @MainActor in
+            do {
+                let digest = try await KnowledgeAssistant.digestResume(resume.content, config: config)
+                let before = kb.skills.count
+                kb.skills = mergedSkills(kb.skills, digest.skills)
+                kb.updatedAt = .now
+                try? modelContext.save()
+                resumeStatus = String(format: L.t("%d new skills added."), kb.skills.count - before)
+            } catch {
+                resumeStatus = "\(L.t("Skill extraction failed:")) \(error.localizedDescription)"
+            }
+            isSkillsBusy = false
+        }
+    }
+
+    // Projects
+
+    /// Adds a repository (or a profile's recent repositories) with an AI one-line summary each.
+    private func importProjects(_ input: String, into kb: KnowledgeBase) {
+        let link = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !link.isEmpty, !isProjectBusy else { return }
+        guard GitHubProjectImporter.isGitHubURL(link) else {
+            projectStatus = L.t("Enter a valid GitHub link.")
+            return
+        }
+        isProjectBusy = true
+        projectsExpanded = true
+        projectStatus = L.t("Reading the repository from GitHub…")
+        let config = AIService.config(from: modelContext)
+        Task { @MainActor in
+            defer { isProjectBusy = false }
+            do {
+                let projects = try await GitHubProjectImporter.fetch(link)
+                var added: [KnowledgeEntry] = []
+                for project in projects {
+                    let normalized = project.url.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased()
+                    if kb.entries.contains(where: { $0.source.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased() == normalized }) { continue }
+                    let entry = KnowledgeEntry(title: project.name, content: GitHubProjectImporter.buildContent(project), source: project.url, isEnabled: true, knowledgeBase: kb)
+                    entry.kindRaw = KnowledgeEntryKind.project
+                    entry.meta = GitHubProjectImporter.buildMeta(project)
+                    entry.summary = project.description
+                            kb.entries.append(entry)
+                    added.append(entry)
+                }
+                projectURL = ""
+                kb.updatedAt = .now
+                try? modelContext.save()
+                guard !added.isEmpty else {
+                    projectStatus = L.t("These projects are already in this knowledge base.")
+                    return
+                }
+                projectStatus = L.t("Generating project summaries…")
+                for entry in added {
+                    if let summary = try? await KnowledgeAssistant.summarizeProject(name: entry.title, readme: entry.content, description: entry.summary, config: config),
+                       !summary.isEmpty {
+                        entry.summary = summary
+                    }
+                }
+                try? modelContext.save()
+                projectStatus = String(format: L.t("%d projects added."), added.count)
+            } catch {
+                projectStatus = "\(L.t("Project import failed:")) \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // Materials
+
+    private func addMaterial(tempURL: URL, fileName: String, text: String) {
+        guard let kb = selected else { return }
+        let entryID = UUID()
+        let storedURL = try? storeImportedPDF(from: tempURL, id: entryID, originalName: fileName)
+        let source = storedURL.map { "file:\($0.path)" } ?? "file:\(fileName)"
+        let entry = KnowledgeEntry(id: entryID, title: fileName, content: text, source: source, isEnabled: true, knowledgeBase: kb)
+        entry.kindRaw = KnowledgeEntryKind.material
+        kb.entries.append(entry)
+        kb.updatedAt = .now
+        try? modelContext.save()
+        status = L.t("File imported")
+        try? FileManager.default.removeItem(at: tempURL)
     }
 
     private func sourceTitle(from input: String) -> String {
@@ -1191,6 +1865,49 @@ private struct PDFPagesPreview: View {
             #else
             return Image(uiImage: thumbnail)
             #endif
+        }
+    }
+}
+
+/// Wrapping row layout for skill chips and action buttons.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widest: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            widest = max(widest, x - spacing)
+        }
+        let width = proposal.width.map { $0.isFinite ? $0 : widest } ?? widest
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

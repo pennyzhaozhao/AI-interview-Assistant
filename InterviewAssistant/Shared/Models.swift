@@ -56,6 +56,19 @@ final class KnowledgeBase {
     var updatedAt: Date = Date.now
     @Relationship(deleteRule: .cascade, inverse: \KnowledgeEntry.knowledgeBase)
     var entries: [KnowledgeEntry]
+    /// JSON array of skills for this role (extracted from the resume by AI, editable by the user).
+    var skillsData: String = ""
+    /// The user's own answer preferences for this role, appended to the system prompt.
+    var customInstructions: String = ""
+
+    var skills: [String] {
+        get { (try? JSONDecoder().decode([String].self, from: Data(skillsData.utf8))) ?? [] }
+        set { skillsData = (try? String(data: JSONEncoder().encode(newValue), encoding: .utf8)) ?? "" }
+    }
+
+    var resumeEntry: KnowledgeEntry? { entries.first { $0.kind == KnowledgeEntryKind.resume } }
+    var projectEntries: [KnowledgeEntry] { entries.filter { $0.kind == KnowledgeEntryKind.project }.sorted { $0.createdAt < $1.createdAt } }
+    var materialEntries: [KnowledgeEntry] { entries.filter { $0.kind == KnowledgeEntryKind.material }.sorted { $0.createdAt > $1.createdAt } }
 
     init(id: UUID = UUID(), name: String, desc: String = "", createdAt: Date = .now, updatedAt: Date = .now, entries: [KnowledgeEntry] = []) {
         self.id = id
@@ -77,6 +90,27 @@ final class KnowledgeEntry {
     var updatedAt: Date = Date.now
     var isEnabled: Bool = true
     var knowledgeBase: KnowledgeBase?
+    /// "resume", "project" (GitHub repository) or "material". Empty for data saved by older versions.
+    var kindRaw: String = ""
+    /// AI summary (resume / project). `content` keeps the full original (Markdown for resumes).
+    var summary: String = ""
+    /// Short metadata line, e.g. "Python · ★ 12" for a GitHub project.
+    var meta: String = ""
+
+    /// Kind of the entry, inferred for entries saved before kinds existed.
+    var kind: String {
+        if !kindRaw.isEmpty { return kindRaw }
+        return source.lowercased().contains("github.com/") ? KnowledgeEntryKind.project : KnowledgeEntryKind.material
+    }
+
+    /// Independent copy for "Duplicate knowledge base" / "Copy to…".
+    func duplicate(into base: KnowledgeBase) -> KnowledgeEntry {
+        let copy = KnowledgeEntry(title: title, content: content, source: source, isEnabled: isEnabled, knowledgeBase: base)
+        copy.kindRaw = kind
+        copy.summary = summary
+        copy.meta = meta
+        return copy
+    }
 
     init(id: UUID = UUID(), title: String, content: String, source: String = "manual", createdAt: Date = .now, updatedAt: Date = .now, isEnabled: Bool = true, knowledgeBase: KnowledgeBase? = nil) {
         self.id = id
@@ -206,4 +240,10 @@ extension ModelContext {
         try? save()
     }
 
+}
+
+enum KnowledgeEntryKind {
+    static let resume = "resume"
+    static let project = "project"
+    static let material = "material"
 }
