@@ -5,5 +5,18 @@
     <link>https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml</link>
     <description>Signed macOS updates for Interview AI.</description>
     <language>en</language>
+    <item>
+      <title>Interview AI 1.1.1</title>
+      <pubDate>Sun, 01 Nov 2026 13:48:04 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/tag/v1.1.1</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/download/v1.1.1/InterviewAssistant-1.1.1-macOS.dmg"
+        length="30476948"
+        type="application/octet-stream"
+        sparkle:edSignature="6UMKsP4z+d4VBZQ2mjwOgkn7Do9bAByhDqQqnjlqaaPPyzkcm5hRUG/qa4X+6Fp657wUOFDD7Wy3vCIGKv1YAA==" />
+    </item>
   </channel>
 </rss>

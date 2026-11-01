@@ -72,6 +72,11 @@ if [[ -d "${ONNX_FRAMEWORK}/Versions/A" ]]; then
   ln -s Versions/Current/Resources "${ONNX_FRAMEWORK}/Resources"
 fi
 
+# Finder metadata and quarantine attributes can be introduced while copying
+# the archived app. They are not part of the signed payload and codesign
+# rejects them on Sparkle's nested XPC services.
+xattr -cr "${APP_PATH}"
+
 SPARKLE_FRAMEWORK="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
 sign_sparkle_components() {
   local identity="$1"
