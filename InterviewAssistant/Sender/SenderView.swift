@@ -30,6 +30,7 @@ struct SenderView: View {
     @State private var showReceiver = false
     @State private var hostSession: InterviewSession?
     @State private var hostBoardActive = false
+    @State private var contentWidth: CGFloat = 1000
     #if os(macOS)
     @State private var floatingReceiver: NSWindowController?
     #endif
@@ -38,15 +39,25 @@ struct SenderView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
-                ViewThatFits(in: .horizontal) {
+                if usesTwoColumns {
                     HStack(alignment: .top, spacing: 18) { ipCard; qrCard }
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
                     VStack(alignment: .leading, spacing: 18) { ipCard; qrCard }
                 }
                 questionPanel
                 answerPanel
             }
             .padding(isCompact ? 16 : 32)
-            .frame(maxWidth: 1120)
+            .frame(maxWidth: 1120, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { contentWidth = proxy.size.width }
+                        .onChange(of: proxy.size.width) { _, width in contentWidth = width }
+                }
+            )
         }
         .background(directorBackground.ignoresSafeArea())
         .foregroundStyle(directorText)
@@ -119,7 +130,9 @@ struct SenderView: View {
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(2)
             }
-        }.directorCard(background: directorPanel).frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .directorCard(background: directorPanel)
     }
 
     private var qrCard: some View {
@@ -129,10 +142,13 @@ struct SenderView: View {
                 QRCodeView(text: controllerURL).padding(7).background(Color.white).frame(width: 136, height: 136)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L.t("Scan to send without the app")).font(.system(size: 19, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(controllerURL).font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(directorMuted).textSelection(.enabled)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                     Text(L.t("The Host prompt board must be running on the same Wi-Fi."))
                         .font(.system(size: 12)).foregroundStyle(directorMuted)
+                        .fixedSize(horizontal: false, vertical: true)
                     Label(
                         landingServer.isRunning ? L.t("Web controller ready") : L.t("Starting web controller…"),
                         systemImage: landingServer.isRunning ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
@@ -147,7 +163,9 @@ struct SenderView: View {
                     }
                 }
             }
-        }.directorCard(background: directorPanel).frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .directorCard(background: directorPanel)
     }
 
     private var questionPanel: some View {
@@ -229,6 +247,8 @@ struct SenderView: View {
     }
     private var controllerURL: String { "http://\(localIP):9999" }
     private var isCompact: Bool { horizontalSizeClass == .compact }
+    /// IP card and web-controller card side by side unless the content area is too narrow.
+    private var usesTwoColumns: Bool { !isCompact && contentWidth >= 720 }
     private var currentTheme: AppThemeMode { AppThemeMode(rawValue: themeMode) ?? .dark }
     private var currentLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
     private var isDark: Bool { currentTheme == .dark }
