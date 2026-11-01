@@ -8,6 +8,7 @@ struct KnowledgeBaseManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(AppPreferenceKey.language) private var language = AppLanguage.english.rawValue
+    @AppStorage(AppPreferenceKey.resumeAIProcessing) private var resumeAIProcessing = ResumeAIMode.ask.rawValue
     @Query(sort: \KnowledgeBase.updatedAt,
            order: .reverse)
     private var bases: [KnowledgeBase]
@@ -48,6 +49,8 @@ struct KnowledgeBaseManagerView: View {
     @State private var materialsExpanded = true
     @State private var instructionsExpanded = false
     @State private var pendingResumeCandidate: ResumeCandidate?
+    @State private var pendingResumeChoice: ResumeChoice?
+    @State private var rememberResumeChoice = false
     @State private var pendingResumeReplaceURL: URL?
     @State private var pendingCopy: PendingCopy?
     @State private var pendingResumeDelete = false
@@ -59,6 +62,13 @@ struct KnowledgeBaseManagerView: View {
         let tempURL: URL
         let fileName: String
         let text: String
+    }
+
+    /// Extracted resume text waiting for "Organize with AI" / "Save original only".
+    private struct ResumeChoice: Identifiable {
+        let id = UUID()
+        let text: String
+        let fileName: String
     }
 
     private struct PendingCopy: Identifiable {
@@ -99,6 +109,9 @@ struct KnowledgeBaseManagerView: View {
         .sheet(item: $editingSource) { entry in
             sourceEditor(entry)
         }
+        .sheet(item: $pendingResumeChoice) { choice in
+            resumeChoiceSheet(choice)
+        }
         .onChange(of: name) { _, _ in autosaveMetadata() }
         .onChange(of: desc) { _, _ in autosaveMetadata() }
         .confirmationDialog(L.t("Use as resume?"), isPresented: Binding(
@@ -107,8 +120,8 @@ struct KnowledgeBaseManagerView: View {
         ), titleVisibility: .visible, presenting: pendingResumeCandidate) { candidate in
             Button(L.t("Set as resume")) {
                 pendingResumeCandidate = nil
-                processResume(text: candidate.text, fileName: candidate.fileName)
                 try? FileManager.default.removeItem(at: candidate.tempURL)
+                requestResumeProcessing(text: candidate.text, fileName: candidate.fileName)
             }
             Button(L.t("Keep as material")) {
                 pendingResumeCandidate = nil
@@ -691,7 +704,8 @@ struct KnowledgeBaseManagerView: View {
 
                     FlowLayout(spacing: 8) {
                         smallButton(L.t("Edit original"), systemImage: "pencil") { beginEditingSource(resume) }
-                        smallButton(L.t("Regenerate summary"), systemImage: "arrow.clockwise") { regenerateResumeSummary(kb) }
+                        smallButton(resume.summary.isEmpty ? L.t("Generate AI summary") : L.t("Regenerate summary"),
+                                    systemImage: resume.summary.isEmpty ? "sparkles" : "arrow.clockwise") { regenerateResumeSummary(kb) }
                             .disabled(isResumeBusy)
                         smallButton(L.t("Replace"), systemImage: "arrow.up.doc") { chooseResumeFile() }
                             .disabled(isResumeBusy)
@@ -707,7 +721,7 @@ struct KnowledgeBaseManagerView: View {
                             Text(L.t("Upload resume (PDF / Word)"))
                                 .font(.appBodyMedium)
                                 .foregroundStyle(Color.appText)
-                            Text(L.t("Click to choose a file. AI turns it into an editable Markdown original plus a summary and skill tags."))
+                            Text(L.t("Click to choose a file. You can let AI turn it into an editable Markdown original with a summary, skill tags and linked projects."))
                                 .font(.appCaption)
                                 .foregroundStyle(Color.appMuted)
                                 .multilineTextAlignment(.center)
@@ -950,7 +964,7 @@ struct KnowledgeBaseManagerView: View {
                 }
             }
             if let link = URL(string: entry.source), link.scheme?.hasPrefix("http") == true {
-                Link(entry.kind == KnowledgeEntryKind.project ? L.t("Open on GitHub") : L.t("Open link"), destination: link)
+                Link(GitHubProjectImporter.isGitHubURL(entry.source) ? L.t("Open on GitHub") : L.t("Open link"), destination: link)
             }
             Divider()
             Button(L.t("Delete"), role: .destructive) { confirmDeleteSource(entry) }
@@ -1390,11 +1404,12 @@ struct KnowledgeBaseManagerView: View {
             try modelContext.save()
             status = L.t("Source saved")
             editingSource = nil
-            if entry.kind == KnowledgeEntryKind.resume, let kb = entry.knowledgeBase, !isResumeBusy {
+            // Only refresh a summary the user already chose to generate; never call AI unasked.
+            if entry.kind == KnowledgeEntryKind.resume, !entry.summary.isEmpty, let kb = entry.knowledgeBase, !isResumeBusy {
                 isResumeBusy = true
                 let config = AIService.config(from: modelContext)
                 Task { @MainActor in
-                    await digestResume(entry, in: kb, mergeSkills: false, config: config)
+                    await digestResume(entry, in: kb, firstRun: false, config: config)
                     isResumeBusy = false
                 }
             }
@@ -1511,7 +1526,7 @@ struct KnowledgeBaseManagerView: View {
         }
     }
 
-    /// Upload flow: extract text → AI Markdown (original) → AI summary + skills.
+    /// Upload flow: extract text, then "Organize with AI" or "Save original only".
     private func importResume(from sourceURL: URL) {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
@@ -1525,22 +1540,107 @@ struct KnowledgeBaseManagerView: View {
                 resumeStatus = L.t("No readable text was found in this file.")
                 return
             }
-            processResume(text: text, fileName: fileName)
+            requestResumeProcessing(text: text, fileName: fileName)
         } catch {
             resumeStatus = "\(L.t("Import failed")): \(error.localizedDescription)"
         }
     }
 
-    private func processResume(text: String, fileName: String) {
+    /// Asks "Organize with AI" / "Save original only" unless the user chose to remember it.
+    /// Without an AI provider the original is saved directly.
+    private func requestResumeProcessing(text: String, fileName: String) {
+        guard KnowledgeAssistant.isAIConfigured(AIService.config(from: modelContext)) else {
+            processResume(text: text, fileName: fileName, useAI: false)
+            return
+        }
+        switch ResumeAIMode(rawValue: resumeAIProcessing) ?? .ask {
+        case .ai: processResume(text: text, fileName: fileName, useAI: true)
+        case .raw: processResume(text: text, fileName: fileName, useAI: false)
+        case .ask:
+            rememberResumeChoice = false
+            // Let a confirmation dialog that led here finish dismissing before the sheet opens.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                pendingResumeChoice = ResumeChoice(text: text, fileName: fileName)
+            }
+        }
+    }
+
+    private func resolveResumeChoice(_ choice: ResumeChoice, useAI: Bool) {
+        if rememberResumeChoice { resumeAIProcessing = (useAI ? ResumeAIMode.ai : ResumeAIMode.raw).rawValue }
+        pendingResumeChoice = nil
+        processResume(text: choice.text, fileName: choice.fileName, useAI: useAI)
+    }
+
+    private func resumeChoiceSheet(_ choice: ResumeChoice) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Color.appPrimary)
+                .frame(width: 46, height: 46)
+                .background(Color.appField)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Text(L.t("Organize this resume with AI?"))
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(Color.appText)
+            VStack(alignment: .leading, spacing: 10) {
+                choiceLine(title: L.t("Organize with AI"),
+                           detail: L.t("Creates an editable Markdown original, a summary and skill tags, and adds the projects linked in the resume to Projects."))
+                choiceLine(title: L.t("Save original only"),
+                           detail: L.t("Saves the resume text as it is. Click “Generate AI summary” any time later."))
+            }
+            rememberChoiceToggle
+                .font(.appCaption)
+                .foregroundStyle(Color.appMuted)
+            HStack(spacing: 10) {
+                Spacer()
+                Button(L.t("Save original only")) { resolveResumeChoice(choice, useAI: false) }
+                    .buttonStyle(AppButtonStyle())
+                Button(L.t("Organize with AI")) { resolveResumeChoice(choice, useAI: true) }
+                    .buttonStyle(AppButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(26)
+        .frame(width: 440)
+        .background(Color.appBG)
+    }
+
+    @ViewBuilder
+    private var rememberChoiceToggle: some View {
+        #if os(macOS)
+        Toggle(L.t("Remember my choice (change it in Settings)"), isOn: $rememberResumeChoice)
+            .toggleStyle(.checkbox)
+        #else
+        Toggle(L.t("Remember my choice (change it in Settings)"), isOn: $rememberResumeChoice)
+        #endif
+    }
+
+    private func choiceLine(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.appBodyMedium)
+                .foregroundStyle(Color.appText)
+            Text(detail)
+                .font(.appCaption)
+                .foregroundStyle(Color.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// With AI: Markdown original → summary + skills + linked projects. Without: tidied text only.
+    private func processResume(text: String, fileName: String, useAI: Bool) {
         guard let kb = selected, !isResumeBusy else { return }
         isResumeBusy = true
-        resumeStatus = L.t("Converting resume to Markdown…")
         let config = AIService.config(from: modelContext)
         Task { @MainActor in
-            var markdown = text
-            if let converted = try? await KnowledgeAssistant.resumeToMarkdown(text, config: config),
-               converted.trimmingCharacters(in: .whitespacesAndNewlines).count >= 40 {
-                markdown = converted
+            var markdown = KnowledgeAssistant.cleanResumeText(text)
+            if useAI {
+                resumeStatus = L.t("Converting resume to Markdown…")
+                if let converted = try? await KnowledgeAssistant.resumeToMarkdown(text, config: config),
+                   converted.trimmingCharacters(in: .whitespacesAndNewlines).count >= 40 {
+                    markdown = converted
+                }
             }
             for old in kb.entries where old.kind == KnowledgeEntryKind.resume { modelContext.delete(old) }
             kb.entries.removeAll { $0.kind == KnowledgeEntryKind.resume }
@@ -1555,29 +1655,39 @@ struct KnowledgeBaseManagerView: View {
             kb.entries.append(entry)
             kb.updatedAt = .now
             try? modelContext.save()
-            await digestResume(entry, in: kb, mergeSkills: true, config: config)
+            if useAI {
+                await digestResume(entry, in: kb, firstRun: true, config: config)
+            } else {
+                resumeStatus = KnowledgeAssistant.isAIConfigured(config)
+                    ? L.t("Original saved. Click “Generate AI summary” whenever you want the summary, skills and projects.")
+                    : L.t("Original saved. Set up an AI provider in Settings, then click “Generate AI summary”.")
+            }
             isResumeBusy = false
         }
     }
 
+    /// Summary; on the first run also skills and the projects the resume links to.
     @MainActor
-    private func digestResume(_ entry: KnowledgeEntry, in kb: KnowledgeBase, mergeSkills: Bool, config: APIConfig) async {
+    private func digestResume(_ entry: KnowledgeEntry, in kb: KnowledgeBase, firstRun: Bool, config: APIConfig) async {
         resumeStatus = L.t("Generating AI summary…")
         do {
             let digest = try await KnowledgeAssistant.digestResume(entry.content, config: config)
             entry.summary = digest.summary
             entry.updatedAt = .now
             var added = 0
-            if mergeSkills {
+            if firstRun {
                 let before = kb.skills.count
                 kb.skills = mergedSkills(kb.skills, digest.skills)
                 added = kb.skills.count - before
             }
             kb.updatedAt = .now
             try? modelContext.save()
-            resumeStatus = mergeSkills && added > 0
+            resumeStatus = firstRun && added > 0
                 ? String(format: L.t("Resume processed. %d skills extracted."), added)
                 : L.t("AI summary updated.")
+            if firstRun, !digest.projects.isEmpty {
+                await addResumeProjects(digest.projects, to: kb, config: config)
+            }
         } catch {
             resumeStatus = "\(L.t("AI summary failed (the original is saved; regenerate later):")) \(error.localizedDescription)"
         }
@@ -1587,10 +1697,57 @@ struct KnowledgeBaseManagerView: View {
         guard let resume = kb.resumeEntry, !isResumeBusy else { return }
         isResumeBusy = true
         let config = AIService.config(from: modelContext)
+        // First time ("Generate AI summary"): also skills and linked projects.
+        let firstRun = resume.summary.isEmpty
         Task { @MainActor in
-            await digestResume(resume, in: kb, mergeSkills: false, config: config)
+            await digestResume(resume, in: kb, firstRun: firstRun, config: config)
             isResumeBusy = false
         }
+    }
+
+    /// Adds the projects linked from the resume: GitHub repositories with README + summary, other links as-is.
+    @MainActor
+    private func addResumeProjects(_ projects: [KnowledgeAssistant.ResumeProject], to kb: KnowledgeBase, config: APIConfig) async {
+        guard !isProjectBusy else { return }
+        isProjectBusy = true
+        projectsExpanded = true
+        projectStatus = L.t("Adding the projects linked in the resume…")
+        defer { isProjectBusy = false }
+        var added = 0
+        for project in projects {
+            if kb.entries.contains(where: { KnowledgeAssistant.sameURL($0.source, project.url) }) { continue }
+            if GitHubProjectImporter.isGitHubURL(project.url),
+               let info = try? await GitHubProjectImporter.fetch(project.url).first {
+                if kb.entries.contains(where: { KnowledgeAssistant.sameURL($0.source, info.url) }) { continue }
+                let entry = KnowledgeEntry(title: info.name, content: GitHubProjectImporter.buildContent(info), source: info.url, isEnabled: true, knowledgeBase: kb)
+                entry.kindRaw = KnowledgeEntryKind.project
+                entry.meta = GitHubProjectImporter.buildMeta(info)
+                entry.summary = project.description.isEmpty ? info.description : project.description
+                kb.entries.append(entry)
+                added += 1
+                try? modelContext.save()
+                if let summary = try? await KnowledgeAssistant.summarizeProject(name: entry.title, readme: entry.content, description: info.description, config: config),
+                   !summary.isEmpty {
+                    entry.summary = summary
+                }
+                continue
+            }
+            // Other links, or a private / missing repository: keep the resume's description.
+            let url = URL(string: project.url)
+            let host = (url?.host ?? project.url).replacingOccurrences(of: "www.", with: "")
+            let lastPath = url?.path.split(separator: "/").last.map(String.init) ?? ""
+            let title = !project.name.isEmpty ? project.name : (!lastPath.isEmpty ? lastPath : host)
+            let content = project.description.isEmpty ? project.url : "\(project.description)\n\n\(project.url)"
+            let entry = KnowledgeEntry(title: title, content: content, source: project.url, isEnabled: true, knowledgeBase: kb)
+            entry.kindRaw = KnowledgeEntryKind.project
+            entry.meta = host
+            entry.summary = project.description
+            kb.entries.append(entry)
+            added += 1
+        }
+        kb.updatedAt = .now
+        try? modelContext.save()
+        projectStatus = added > 0 ? String(format: L.t("%d projects added from the resume."), added) : ""
     }
 
     private func deleteResume() {
