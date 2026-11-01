@@ -56,6 +56,10 @@ public sealed class KnowledgeBaseModel
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public List<KnowledgeEntryModel> Entries { get; set; } = [];
+    /// <summary>Skills for this role; extracted from the resume by AI and editable by the user.</summary>
+    public List<string> Skills { get; set; } = [];
+    /// <summary>The user's own answer preferences for this role, appended to the system prompt.</summary>
+    public string CustomInstructions { get; set; } = "";
 }
 
 public sealed class KnowledgeEntryModel
@@ -64,6 +68,12 @@ public sealed class KnowledgeEntryModel
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public string Source { get; set; } = "manual";
+    /// <summary>"resume", "project" (GitHub repository) or "material". Empty for data saved by older versions.</summary>
+    public string Kind { get; set; } = "";
+    /// <summary>AI summary (resume / project). Content keeps the full original text (Markdown for resumes).</summary>
+    public string Summary { get; set; } = "";
+    /// <summary>Short metadata line, e.g. "Python · ★ 12" for a GitHub project.</summary>
+    public string Meta { get; set; } = "";
     public bool IsEnabled { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
@@ -139,3 +149,28 @@ public static class ProviderCatalog
 }
 
 public sealed record AIConfig(AIProvider Provider, string ApiUrl, string ApiKey, string Model);
+
+public static class KnowledgeEntryKinds
+{
+    public const string Resume = "resume";
+    public const string Project = "project";
+    public const string Material = "material";
+
+    /// <summary>Kind of an entry, inferring it for entries saved before kinds existed.</summary>
+    public static string Of(KnowledgeEntryModel entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.Kind)) return entry.Kind;
+        return entry.Source.Contains("github.com/", StringComparison.OrdinalIgnoreCase) ? Project : Material;
+    }
+
+    public static KnowledgeEntryModel Clone(KnowledgeEntryModel entry) => new()
+    {
+        Title = entry.Title,
+        Content = entry.Content,
+        Source = entry.Source,
+        Kind = Of(entry),
+        Summary = entry.Summary,
+        Meta = entry.Meta,
+        IsEnabled = entry.IsEnabled
+    };
+}

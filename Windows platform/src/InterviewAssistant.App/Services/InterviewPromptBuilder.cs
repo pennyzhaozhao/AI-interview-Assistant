@@ -341,23 +341,17 @@ public static class InterviewPromptBuilder
 
     // ───────────────────────── helpers ─────────────────────────
 
-    private static string KnowledgeText(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, int? entryLimit, int? contentLimit)
+    private static string KnowledgeText(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, int? entryLimit, int? contentLimit) =>
+        // Structured knowledge bases: resume summary + full text, skills, projects, then other materials.
+        KnowledgeContextFormatter.Build(knowledgeBases, activeIds);
+
+    /// <summary>Per-knowledge-base custom instructions, appended to the system prompt.</summary>
+    public static string AppendCustomInstructions(string systemPrompt, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds)
     {
-        var text = string.Join("\n\n", knowledgeBases
-            .Where(kb => activeIds.Contains(kb.Id))
-            .Select(kb =>
-            {
-                var entries = kb.Entries
-                    .Where(entry => entry.IsEnabled && !string.IsNullOrWhiteSpace(entry.Content))
-                    .OrderBy(entry => entry.CreatedAt)
-                    .Take(entryLimit ?? int.MaxValue)
-                    .Select(entry => $"{entry.Title}:\n{(contentLimit is int limit ? Truncate(entry.Content, limit) : entry.Content)}");
-                var joined = string.Join("\n\n", entries);
-                return joined.Length == 0 ? "" : $"[{kb.Name}]\n{joined}";
-            })
-            .Where(block => block.Length > 0));
-        // Keep requests within typical context limits.
-        return Truncate(text, 24000);
+        var instructions = KnowledgeContextFormatter.Instructions(knowledgeBases, activeIds);
+        return instructions.Length == 0
+            ? systemPrompt
+            : $"{systemPrompt}\n\nCANDIDATE'S OWN ANSWER PREFERENCES (follow them unless they conflict with the rules above):\n{instructions}";
     }
 
     private static string FirstNonEmpty(params string?[] values) => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "";

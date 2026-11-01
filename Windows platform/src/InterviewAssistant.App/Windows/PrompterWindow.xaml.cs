@@ -351,6 +351,7 @@ public partial class PrompterWindow : Window
             user = question;
             maxTokens = 900;
         }
+        system = InterviewPromptBuilder.AppendCustomInstructions(system, data.KnowledgeBases, activeIds);
         system += InterviewPromptBuilder.OutputLanguageMandate(language);
         if (!fromScreenshot) system = InterviewPromptBuilder.AppendCommonReference(system, question);
         return (system, user, maxTokens);

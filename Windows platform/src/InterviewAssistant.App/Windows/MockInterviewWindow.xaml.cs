@@ -324,11 +324,12 @@ public partial class MockInterviewWindow : UserControl
 
     private string BuildContext()
     {
-        var kb = _store.Data.KnowledgeBases
-            .Where(item => _config.ActiveKnowledgeBaseIds.Contains(item.Id))
-            .SelectMany(item => item.Entries.Where(entry => entry.IsEnabled))
-            .Select(entry => $"【{entry.Title}】\n{entry.Content}");
-        var text = $"Target role: {_config.Role}\n\nJob description:\n{_config.JobDescription}\n\nCandidate knowledge base:\n{string.Join("\n\n", kb)}";
+        var ids = _config.ActiveKnowledgeBaseIds.ToHashSet();
+        var knowledge = KnowledgeContextFormatter.Build(_store.Data.KnowledgeBases, ids, 14_000);
+        var skills = KnowledgeContextFormatter.Skills(_store.Data.KnowledgeBases, ids);
+        var text = $"Target role: {_config.Role}\n\nJob description:\n{_config.JobDescription}\n\n"
+            + (skills.Count > 0 ? $"Candidate skills (ask about these where relevant): {string.Join(", ", skills)}\n\n" : "")
+            + $"Candidate knowledge base:\n{knowledge}";
         return text.Length > 16000 ? text[..16000] : text;
     }
 

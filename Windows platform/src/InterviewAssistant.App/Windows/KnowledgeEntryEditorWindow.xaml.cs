@@ -6,9 +6,10 @@ namespace InterviewAssistant.Windows;
 
 public partial class KnowledgeEntryEditorWindow : Window
 {
-    public KnowledgeEntryEditorWindow(string title, string content, bool isNew, string? pdfPath = null)
+    public KnowledgeEntryEditorWindow(string title, string content, bool isNew, string? pdfPath = null, string? hint = null)
     {
         InitializeComponent();
+        if (!string.IsNullOrWhiteSpace(hint)) DialogHint.Text = hint;
         DialogTitle.Text = LocalizationManager.Text(isNew ? "Add Main Content" : "Edit Source");
         TitleBox.Text = title;
         ContentBox.Text = content;
