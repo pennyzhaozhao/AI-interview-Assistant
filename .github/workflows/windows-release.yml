@@ -101,6 +101,16 @@ jobs:
               gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --draft --target $env:GITHUB_SHA --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes "Windows build."
             }
           }
+          # Publishing a draft made by "Run workflow" fires this workflow again. The files are already
+          # attached then: keep them. Re-uploading with --clobber deletes them first, and downloads
+          # (browser or in-app update) fail until the new upload finishes.
+          if ("${{ github.event_name }}" -eq "release") {
+            $existing = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json assets -q ".assets[].name"
+            if (($existing -contains $env:SETUP) -and ($existing -contains $env:ASSET)) {
+              Write-Host "Windows files are already attached to $env:TAG; leaving them unchanged."
+              exit 0
+            }
+          }
           gh release upload $env:TAG $env:SETUP $env:ASSET --repo $env:GITHUB_REPOSITORY --clobber
 
       - uses: actions/upload-artifact@v4
