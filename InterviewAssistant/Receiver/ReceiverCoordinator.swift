@@ -716,6 +716,8 @@ final class ReceiverCoordinator {
         lastUpdatedAt = .now
         do {
             var prompt = systemPromptOverride ?? enrichedSystemPrompt(for: session)
+            // Per-knowledge-base custom instructions (the user's own answer preferences).
+            prompt += KnowledgeFormatter.instructionsBlock(knowledgeBases, activeIDs: session.activeKBIds)
             let answerLanguageCode = configuredAnswerLanguageCode
             prompt += answerLanguageCode == "zh-CN"
                 ? "\n\nOUTPUT LANGUAGE (MANDATORY): Use Simplified Chinese for the entire answer. The captured question may be in English, but the answer must still be Chinese."

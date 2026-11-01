@@ -86,6 +86,8 @@ enum DataStorageManager {
                 createdAt: sourceBase.createdAt,
                 updatedAt: sourceBase.updatedAt
             )
+            targetBase.skillsData = sourceBase.skillsData
+            targetBase.customInstructions = sourceBase.customInstructions
             targetContext.insert(targetBase)
             for sourceEntry in sourceBase.entries {
                 let targetEntry = KnowledgeEntry(
@@ -98,6 +100,9 @@ enum DataStorageManager {
                     isEnabled: sourceEntry.isEnabled,
                     knowledgeBase: targetBase
                 )
+                targetEntry.kindRaw = sourceEntry.kindRaw
+                targetEntry.summary = sourceEntry.summary
+                targetEntry.meta = sourceEntry.meta
                 targetContext.insert(targetEntry)
             }
         }

@@ -575,19 +575,17 @@ struct MockInterviewView: View {
     }
 
     private func buildContext(role: String, jobDescription: String) -> String {
-        let kbText = knowledgeBases
-            .filter { selectedKBIds.contains($0.id) }
-            .flatMap(\.entries)
-            .filter(\.isEnabled)
-            .map { "【\($0.title)】\n\($0.content)" }
-            .joined(separator: "\n\n")
+        let ids = Array(selectedKBIds)
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: ids, limit: 14_000)
+        let skills = KnowledgeFormatter.skills(knowledgeBases, activeIDs: ids)
+        let skillsLine = skills.isEmpty ? "" : "Candidate skills (ask about these where relevant): \(skills.joined(separator: ", "))\n\n"
         return """
         Target role: \(role)
 
         Job description:
         \(jobDescription)
 
-        Candidate knowledge base:
+        \(skillsLine)Candidate knowledge base:
         \(kbText)
         """
     }

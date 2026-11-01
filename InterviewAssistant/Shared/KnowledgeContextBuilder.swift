@@ -77,16 +77,8 @@ enum KnowledgeContextBuilder {
         if !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append("\n--- Candidate Background ---\n\(context)")
         }
-        let selected = knowledgeBases.filter { activeIDs.contains($0.id) }
-        let kbText = selected.compactMap { kb -> String? in
-            let entries = kb.entries
-                .filter { $0.isEnabled }
-                .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .prefix(3)
-                .map { "- \($0.title): \($0.content.prefix(800))" }
-                .joined(separator: "\n")
-            return entries.isEmpty ? nil : "Knowledge Base: \(kb.name)\n\(entries)"
-        }.joined(separator: "\n\n")
+        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
         if !kbText.isEmpty {
             parts.append("\n--- Useful Knowledge ---\n\(kbText)")
         }
@@ -199,15 +191,8 @@ enum KnowledgeContextBuilder {
         if !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append("\n--- Candidate Background ---\n\(context)")
         }
-        let selected = knowledgeBases.filter { activeIDs.contains($0.id) }
-        let kbText = selected.compactMap { kb -> String? in
-            let entries = kb.entries
-                .filter { $0.isEnabled }
-                .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .map { "\($0.title):\n\($0.content)" }
-                .joined(separator: "\n\n")
-            return entries.isEmpty ? nil : "[\(kb.name)]\n\(entries)"
-        }.joined(separator: "\n\n")
+        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
         if !kbText.isEmpty {
             parts.append("\n--- Knowledge Bases ---\n\(kbText)")
         }
@@ -261,16 +246,8 @@ enum KnowledgeContextBuilder {
         if !historyText.isEmpty {
             parts.append("\n--- Recent Interview Conversation ---\n\(historyText)\n---\nUse this only as context. Do not repeat it verbatim unless the current question asks for it.")
         }
-        let selected = knowledgeBases.filter { activeIDs.contains($0.id) }
-        let kbText = selected.compactMap { kb -> String? in
-            let entries = kb.entries
-                .filter { $0.isEnabled }
-                .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                .sorted { $0.createdAt < $1.createdAt }
-                .map { "\($0.title):\n\($0.content)" }
-                .joined(separator: "\n\n")
-            return entries.isEmpty ? nil : "[\(kb.name)]\n\(entries)"
-        }.joined(separator: "\n\n")
+        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
         if !kbText.isEmpty {
             parts.append("\n--- Selected Knowledge Bases ---\n\(kbText)\n---\nUse these knowledge bases when they are relevant to the question. If the knowledge base includes multiple projects, choose the project that best matches the current question instead of defaulting to the first one.")
         }
