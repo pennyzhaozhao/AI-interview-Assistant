@@ -346,6 +346,7 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
             if (!SetProperty(ref _resume, value)) return;
             OnPropertyChanged(nameof(HasResume));
             OnPropertyChanged(nameof(ResumeBadge));
+            OnPropertyChanged(nameof(ResumeSummaryAction));
             RefreshCounts();
         }
     }
@@ -358,6 +359,8 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
 
     // Section badges and the list-card summary.
     public string ResumeBadge => LocalizationManager.Text(HasResume ? "Uploaded" : "Not uploaded");
+    /// <summary>"Generate AI summary" until a summary exists, then "Regenerate summary".</summary>
+    public string ResumeSummaryAction => LocalizationManager.Text(Resume?.HasSummary == true ? "Regenerate summary" : "Generate AI summary");
     public string SkillsBadge => Skills.Count.ToString();
     public string ProjectsBadge => Projects.Count.ToString();
     public string MaterialsBadge => Materials.Count.ToString();
@@ -429,6 +432,7 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ActiveStateText));
         OnPropertyChanged(nameof(ResumeBadge));
+        OnPropertyChanged(nameof(ResumeSummaryAction));
         RefreshCounts();
         foreach (var entry in Projects.Concat(Materials)) entry.RefreshLanguage();
         Resume?.RefreshLanguage();
@@ -436,8 +440,12 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
 
     // ───────────── resume ─────────────
 
-    /// <summary>Upload flow: extract text → AI Markdown (original) → AI summary + skills.</summary>
-    public async Task ImportResumeAsync(string path)
+    /// <summary>
+    /// Upload flow. With AI: extract text → AI Markdown (original) → AI summary + skills, and the
+    /// projects the resume links to are added to Projects. Without AI: the extracted text is tidied
+    /// locally and saved as the original; "Generate AI summary" can run later.
+    /// </summary>
+    public async Task ImportResumeAsync(string path, bool useAI)
     {
         if (IsResumeBusy) return;
         IsResumeBusy = true;
@@ -446,11 +454,17 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
         {
             var raw = await DocumentTextImporter.ExtractTextAsync(path, 40_000);
             if (string.IsNullOrWhiteSpace(raw)) throw new InvalidOperationException(LocalizationManager.Text("No readable text was found in this file."));
-            string markdown;
-            ResumeStatus = LocalizationManager.Text("Converting resume to Markdown…");
-            try { markdown = await KnowledgeAssistant.ResumeToMarkdownAsync(raw); }
-            catch { markdown = raw; }
-            if (markdown.Trim().Length < 40) markdown = raw;
+            var markdown = KnowledgeAssistant.CleanResumeText(raw);
+            if (useAI)
+            {
+                ResumeStatus = LocalizationManager.Text("Converting resume to Markdown…");
+                try
+                {
+                    var converted = await KnowledgeAssistant.ResumeToMarkdownAsync(raw);
+                    if (converted.Trim().Length >= 40) markdown = converted;
+                }
+                catch { /* keep the locally tidied text */ }
+            }
 
             var entry = new KnowledgeEntryModel
             {
@@ -460,7 +474,10 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
                 Kind = KnowledgeEntryKinds.Resume
             };
             SetResume(entry);
-            await DigestResumeCoreAsync(mergeSkills: true);
+            if (useAI) await DigestResumeCoreAsync(firstRun: true);
+            else ResumeStatus = LocalizationManager.Text(KnowledgeAssistant.IsAIConfigured()
+                ? "Original saved. Click “Generate AI summary” whenever you want the summary, skills and projects."
+                : "Original saved. Set up an AI provider in Settings, then click “Generate AI summary”.");
         }
         catch (Exception exception)
         {
@@ -478,17 +495,22 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
         if (Resume is null) return;
         Resume.Title = string.IsNullOrWhiteSpace(title) ? Resume.Title : title.Trim();
         Resume.Content = markdown;
-        if (IsResumeBusy) return;
+        Touch();
+        // Only refresh a summary the user already chose to generate; never spend tokens unasked.
+        if (IsResumeBusy || !Resume.HasSummary) return;
         IsResumeBusy = true;
-        try { await DigestResumeCoreAsync(mergeSkills: false); }
+        try { await DigestResumeCoreAsync(firstRun: false); }
         finally { IsResumeBusy = false; }
     }
 
+    /// <summary>
+    /// "Generate AI summary" (first time: also skills and linked projects) or "Regenerate summary".
+    /// </summary>
     public async Task RegenerateResumeSummaryAsync()
     {
         if (Resume is null || IsResumeBusy) return;
         IsResumeBusy = true;
-        try { await DigestResumeCoreAsync(mergeSkills: false); }
+        try { await DigestResumeCoreAsync(firstRun: !Resume.HasSummary); }
         finally { IsResumeBusy = false; }
     }
 
@@ -514,7 +536,8 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
         }
     }
 
-    private async Task DigestResumeCoreAsync(bool mergeSkills)
+    /// <summary>Summary; on the first run also skills and the projects the resume links to.</summary>
+    private async Task DigestResumeCoreAsync(bool firstRun)
     {
         if (Resume is null) return;
         ResumeStatus = LocalizationManager.Text("Generating AI summary…");
@@ -522,14 +545,82 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
         {
             var digest = await KnowledgeAssistant.DigestResumeAsync(Resume.Content);
             Resume.Summary = digest.Summary;
-            var added = mergeSkills ? MergeSkills(digest.Skills) : 0;
-            ResumeStatus = mergeSkills && added > 0
+            OnPropertyChanged(nameof(ResumeSummaryAction));
+            Touch();
+            var added = firstRun ? MergeSkills(digest.Skills) : 0;
+            ResumeStatus = firstRun && added > 0
                 ? string.Format(LocalizationManager.Text("Resume processed. {0} skills extracted."), added)
                 : LocalizationManager.Text("AI summary updated.");
+            if (firstRun && digest.Projects.Count > 0) await AddResumeProjectsAsync(digest.Projects);
         }
         catch (Exception exception)
         {
             ResumeStatus = (LocalizationManager.Instance.IsChinese ? "AI 摘要生成失败（原文已保存，可稍后重新生成）：" : "AI summary failed (the original is saved; regenerate later): ") + exception.Message;
+        }
+    }
+
+    /// <summary>Adds the projects linked from the resume: GitHub repositories with README + summary, other links as-is.</summary>
+    private async Task AddResumeProjectsAsync(IReadOnlyList<KnowledgeAssistant.ResumeProject> projects)
+    {
+        if (IsProjectBusy) return;
+        IsProjectBusy = true;
+        ProjectStatus = LocalizationManager.Text("Adding the projects linked in the resume…");
+        var added = 0;
+        try
+        {
+            foreach (var project in projects)
+            {
+                if (Model.Entries.Any(entry => KnowledgeAssistant.SameUrl(entry.Source, project.Url))) continue;
+                if (GitHubProjectImporter.IsGitHubUrl(project.Url))
+                {
+                    try
+                    {
+                        var info = (await GitHubProjectImporter.FetchAsync(project.Url)).FirstOrDefault();
+                        if (info is not null)
+                        {
+                            if (Model.Entries.Any(entry => KnowledgeAssistant.SameUrl(entry.Source, info.Url))) continue;
+                            var repo = AddEntryModel(new KnowledgeEntryModel
+                            {
+                                Title = info.Name,
+                                Source = info.Url,
+                                Kind = KnowledgeEntryKinds.Project,
+                                Content = GitHubProjectImporter.BuildContent(info),
+                                Meta = GitHubProjectImporter.BuildMeta(info),
+                                Summary = project.Description.Length > 0 ? project.Description : info.Description
+                            });
+                            added++;
+                            try
+                            {
+                                var summary = await KnowledgeAssistant.SummarizeProjectAsync(repo.Title, repo.Content, info.Description);
+                                if (summary.Length > 0) repo.Summary = summary;
+                            }
+                            catch { /* keep the resume / GitHub description */ }
+                            continue;
+                        }
+                    }
+                    catch { /* private or missing repository: keep it as a plain link below */ }
+                }
+
+                var host = Uri.TryCreate(project.Url, UriKind.Absolute, out var uri) ? uri.Host.Replace("www.", "") : project.Url;
+                var title = project.Name.Length > 0 ? project.Name : uri is not null ? uri.AbsolutePath.Trim('/').Split('/').LastOrDefault() is { Length: > 0 } last ? last : host : project.Url;
+                AddEntryModel(new KnowledgeEntryModel
+                {
+                    Title = title,
+                    Source = project.Url,
+                    Kind = KnowledgeEntryKinds.Project,
+                    Content = project.Description.Length > 0 ? $"{project.Description}\n\n{project.Url}" : project.Url,
+                    Meta = host,
+                    Summary = project.Description
+                });
+                added++;
+            }
+            ProjectStatus = added > 0
+                ? string.Format(LocalizationManager.Text("{0} projects added from the resume."), added)
+                : "";
+        }
+        finally
+        {
+            IsProjectBusy = false;
         }
     }
 
@@ -703,6 +794,7 @@ public sealed class KnowledgeBaseItemViewModel : ObservableObject
         OnPropertyChanged(nameof(MaterialsBadge));
         OnPropertyChanged(nameof(CardSummaryText));
         OnPropertyChanged(nameof(ResumeBadge));
+        OnPropertyChanged(nameof(ResumeSummaryAction));
     }
 
     private void Touch()

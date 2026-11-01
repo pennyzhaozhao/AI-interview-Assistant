@@ -61,7 +61,34 @@ public partial class KnowledgeView : UserControl
                 LocalizationManager.Text("ReplaceResumeMessage"), Windows.DialogTone.Warning,
                 LocalizationManager.Text("Replace"), LocalizationManager.Text("Cancel")))
             return;
-        await kb.ImportResumeAsync(path);
+        if (ChooseResumeProcessing() is not { } useAI) return;
+        await kb.ImportResumeAsync(path, useAI);
+    }
+
+    /// <summary>
+    /// AI or original-only for an uploaded resume: asks unless the user chose "remember".
+    /// Without an AI provider the original is saved directly. Returns null when the dialog is dismissed.
+    /// </summary>
+    private bool? ChooseResumeProcessing()
+    {
+        if (!KnowledgeAssistant.IsAIConfigured()) return false;
+        var preferences = AppServices.Current.DataStore.Data.Preferences;
+        if (preferences.ResumeAIProcessing == ResumeAIModes.AI) return true;
+        if (preferences.ResumeAIProcessing == ResumeAIModes.Raw) return false;
+        var choice = Windows.AppDialog.Choose(Owner,
+            LocalizationManager.Text("Organize this resume with AI?"),
+            LocalizationManager.Text("ResumeAIChoiceMessage"),
+            LocalizationManager.Text("Organize with AI"),
+            LocalizationManager.Text("Save original only"),
+            LocalizationManager.Text("Remember my choice (change it in Settings)"),
+            out var remember);
+        if (choice is { } useAI && remember)
+        {
+            preferences.ResumeAIProcessing = useAI ? ResumeAIModes.AI : ResumeAIModes.Raw;
+            AppServices.Current.DataStore.ScheduleSave();
+            ResumeAIModes.NotifyChanged();
+        }
+        return choice;
     }
 
     private async void EditResume_Click(object sender, RoutedEventArgs e)
@@ -152,7 +179,7 @@ public partial class KnowledgeView : UserControl
                     Windows.AppDialog.Show(Owner, LocalizationManager.Text("Use as resume?"), string.Format(LocalizationManager.Text("UseAsResumeMessage"), Path.GetFileName(file)),
                         Windows.DialogTone.Info, LocalizationManager.Text("Set as resume"), LocalizationManager.Text("Keep as material")))
                 {
-                    await kb.ImportResumeAsync(file);
+                    if (ChooseResumeProcessing() is { } useAI) await kb.ImportResumeAsync(file, useAI);
                     continue;
                 }
                 var source = $"file:{file}";
@@ -210,7 +237,7 @@ public partial class KnowledgeView : UserControl
 
         if (includeOpen && entry.Url is { } url)
         {
-            var open = new MenuItem { Header = LocalizationManager.Text(entry.Kind == KnowledgeEntryKinds.Project ? "Open on GitHub" : "Open link") };
+            var open = new MenuItem { Header = LocalizationManager.Text(GitHubProjectImporter.IsGitHubUrl(url) ? "Open on GitHub" : "Open link") };
             open.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { } };
             menu.Items.Add(open);
         }

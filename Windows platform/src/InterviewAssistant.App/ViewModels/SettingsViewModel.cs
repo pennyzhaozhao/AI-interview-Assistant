@@ -73,6 +73,7 @@ public sealed class SettingsViewModel : PageViewModel
             RefreshSpeechRecognitionEngines(engine);
             RefreshSpeechLanguages();
         };
+        ResumeAIModes.Changed += () => OnPropertyChanged(nameof(ResumeAIMode));
     }
 
     public ObservableCollection<ProviderDefinition> Providers { get; }
@@ -86,6 +87,26 @@ public sealed class SettingsViewModel : PageViewModel
     /// <summary>Display names, localized like the macOS MockInterviewLanguage titles. Order matches SpeechLanguageCodes.</summary>
     public ObservableCollection<string> SpeechLanguages { get; } = [];
     private static readonly string[] SpeechLanguageCodes = ["followApp", "zh-Hans", "en"];
+    /// <summary>Resume upload: ask / always AI / original only. Order matches ResumeAIModeCodes.</summary>
+    public ObservableCollection<string> ResumeAIModeNames { get; } = [];
+    private static readonly string[] ResumeAIModeCodes = [ResumeAIModes.Ask, ResumeAIModes.AI, ResumeAIModes.Raw];
+
+    public string ResumeAIMode
+    {
+        get
+        {
+            var index = Array.IndexOf(ResumeAIModeCodes, _store.Data.Preferences.ResumeAIProcessing);
+            return ResumeAIModeNames.Count == 0 ? "" : ResumeAIModeNames[Math.Max(0, index) % ResumeAIModeNames.Count];
+        }
+        set
+        {
+            if (_refreshingSpeechLanguages) return;
+            var index = ResumeAIModeNames.IndexOf(value);
+            if (index < 0 || ResumeAIModeCodes[index] == _store.Data.Preferences.ResumeAIProcessing) return;
+            SavePreference(p => p.ResumeAIProcessing = ResumeAIModeCodes[index]);
+            OnPropertyChanged();
+        }
+    }
     public IReadOnlyList<string> ScreenshotModes { get; } = ["Preset region", "Select region each time"];
     public ObservableCollection<string> SpeechRecognitionEngines { get; }
     public IReadOnlyList<string> SpeechResourceIds { get; } =
@@ -163,9 +184,16 @@ public sealed class SettingsViewModel : PageViewModel
             SpeechLanguages.Clear();
             foreach (var name in names) SpeechLanguages.Add(name);
         }
+        string[] modes = chinese ? ["每次询问", "总是用 AI 整理", "只保存原文"] : ["Ask each time", "Always organize with AI", "Save original only"];
+        if (!ResumeAIModeNames.SequenceEqual(modes))
+        {
+            ResumeAIModeNames.Clear();
+            foreach (var mode in modes) ResumeAIModeNames.Add(mode);
+        }
         _refreshingSpeechLanguages = false;
         OnPropertyChanged(nameof(MockInterviewLanguage));
         OnPropertyChanged(nameof(InterviewerLanguage));
+        OnPropertyChanged(nameof(ResumeAIMode));
     }
 
     private string SpeechLanguageName(string code)
