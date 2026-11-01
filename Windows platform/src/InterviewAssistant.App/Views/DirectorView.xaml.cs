@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Controls;
 using InterviewAssistant.Services;
 namespace InterviewAssistant.Views;
@@ -20,16 +21,23 @@ public partial class DirectorView : UserControl
 
     private void OpenHostBoard()
     {
-        _prompterWindow?.Close();
-        _prompterWindow = new Windows.PrompterWindow(directorMode: true);
-        _prompterWindow.DirectorQuestionCaptured += OnDirectorQuestionCaptured;
-        _prompterWindow.DirectorModeChanged += OnDirectorModeChanged;
-        _prompterWindow.Closed += (_, _) =>
+        var main = Application.Current.MainWindow as MainWindow;
+        var previous = _prompterWindow;
+        var prompter = new Windows.PrompterWindow(directorMode: true);
+        _prompterWindow = prompter;
+        prompter.DirectorQuestionCaptured += OnDirectorQuestionCaptured;
+        prompter.DirectorModeChanged += OnDirectorModeChanged;
+        // The main window steps aside while the host board is open (same as an interview).
+        main?.BeginInterviewWindow();
+        prompter.Closed += (_, _) =>
         {
+            if (!ReferenceEquals(_prompterWindow, prompter)) { main?.EndInterviewWindow(); return; }
             if (_subscribedViewModel is not null) _subscribedViewModel.PublishHostState(false, "director");
             _prompterWindow = null;
+            main?.EndInterviewWindow();
         };
-        _prompterWindow.Show();
+        previous?.Close();
+        prompter.Show();
         _subscribedViewModel?.PublishHostState(true, "director");
     }
 

@@ -490,7 +490,8 @@ public partial class PrompterWindow : Window
         Rect region;
         if (_store.Data.Preferences.ScreenshotMode is "selectRegion" or "manualSelect")
         {
-            var selector = new RegionSelectionWindow { Owner = Application.Current.MainWindow };
+            // Owned by the prompt board: the main window is minimized or hidden during interviews.
+            var selector = new RegionSelectionWindow { Owner = this };
             if (selector.ShowDialog() != true) return null;
             region = selector.SelectedRegion;
         }
@@ -825,7 +826,7 @@ public partial class PrompterWindow : Window
         manage.Click += (_, _) =>
         {
             if (Application.Current.MainWindow?.DataContext is MainViewModel mainViewModel) mainViewModel.NavigateTo("Knowledge Base");
-            Application.Current.MainWindow?.Show(); Application.Current.MainWindow?.Activate();
+            (Application.Current.MainWindow as MainWindow)?.RevealDuringInterview();
         };
         menu.Items.Add(manage);
         menu.IsOpen = true;
@@ -847,7 +848,7 @@ public partial class PrompterWindow : Window
         var copy = new MenuItem { Header = Localized("Copy current answer", "复制当前回答"), IsEnabled = _turnIndex >= 0 && _turnIndex < _session.Turns.Count };
         copy.Click += (_, _) => { if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count) Clipboard.SetText(_session.Turns[_turnIndex].Answer ?? ""); };
         var history = new MenuItem { Header = Localized("Open history", "打开历史记录") };
-        history.Click += (_, _) => { if (Application.Current.MainWindow?.DataContext is MainViewModel vm) vm.NavigateTo("History"); Application.Current.MainWindow?.Show(); Application.Current.MainWindow?.Activate(); };
+        history.Click += (_, _) => { if (Application.Current.MainWindow?.DataContext is MainViewModel vm) vm.NavigateTo("History"); (Application.Current.MainWindow as MainWindow)?.RevealDuringInterview(); };
         menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy); menu.Items.Add(history);
         menu.IsOpen = true;
     }
