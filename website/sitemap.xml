@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://pennyzhaozhao.github.io/AI-interview-Assistant/</loc>
+    <lastmod>2026-11-01</lastmod>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+  </url>
+  <url>
+    <loc>https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=en</loc>
+    <lastmod>2026-11-01</lastmod>
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+    <xhtml:link rel="alternate" hreflang="en" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=en" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+  </url>
+</urlset>
