@@ -96,6 +96,23 @@ enum AppPreferenceKey {
     static let speakerRecognitionEnabled = "speaker_recognition_enabled"
     static let speakerRecognitionSensitivity = "speaker_recognition_sensitivity"
     static let speakerRecognitionDebugLogging = "speaker_recognition_debug_logging"
+    /// Resume upload: "ask" each time, always "ai", or "raw" (original text only). See ResumeAIMode.
+    static let resumeAIProcessing = "resume_ai_processing"
+}
+
+/// How an uploaded resume is processed. Same values as Windows `ResumeAIModes`.
+enum ResumeAIMode: String, CaseIterable, Identifiable {
+    case ask, ai, raw
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ask: return L.t("Ask each time")
+        case .ai: return L.t("Always organize with AI")
+        case .raw: return L.t("Save original only")
+        }
+    }
 }
 
 enum L {
@@ -727,6 +744,21 @@ enum L {
         "Use as resume?": "设为简历？",
         "“%@” already has a resume. Copying will replace it.": "「%@」已有简历，复制将替换它。",
         "“%@” looks like a resume. Set it as this knowledge base's resume? AI will clean up the original and extract skills.": "「%@」看起来是一份简历。要设为此知识库的简历吗？AI 会整理原文并提取技能。",
+        "Ask each time": "每次询问",
+        "Always organize with AI": "总是用 AI 整理",
+        "Save original only": "只保存原文",
+        "Organize uploaded resumes with AI": "上传简历时用 AI 整理",
+        "Organize this resume with AI?": "用 AI 整理这份简历吗？",
+        "Organize with AI": "用 AI 整理",
+        "Creates an editable Markdown original, a summary and skill tags, and adds the projects linked in the resume to Projects.": "生成可编辑的 Markdown 原文、摘要和技能标签，并把简历中带链接的项目自动加入“项目”。",
+        "Saves the resume text as it is. Click “Generate AI summary” any time later.": "直接保存简历文字，之后可以随时点“AI 生成摘要”。",
+        "Remember my choice (change it in Settings)": "记住我的选择（可在设置中更改）",
+        "Generate AI summary": "AI 生成摘要",
+        "Original saved. Click “Generate AI summary” whenever you want the summary, skills and projects.": "原文已保存。需要摘要、技能和项目时，点“AI 生成摘要”即可。",
+        "Original saved. Set up an AI provider in Settings, then click “Generate AI summary”.": "原文已保存。在设置中配置 AI 服务后，可以点“AI 生成摘要”。",
+        "Adding the projects linked in the resume…": "正在添加简历中的项目…",
+        "%d projects added from the resume.": "已从简历中添加 %d 个项目。",
+        "Click to choose a file. You can let AI turn it into an editable Markdown original with a summary, skill tags and linked projects.": "点击选择文件。可以选择让 AI 整理成可编辑的 Markdown 原文，并生成摘要、技能标签和项目。",
     ]
 }
 

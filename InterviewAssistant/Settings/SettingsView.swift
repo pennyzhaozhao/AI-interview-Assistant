@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.language) private var language = AppLanguage.english.rawValue
     @AppStorage(AppPreferenceKey.mockInterviewLanguage) private var mockInterviewLanguageRaw = MockInterviewLanguage.followApp.rawValue
     @AppStorage(AppPreferenceKey.interviewerLanguage) private var interviewerLanguageRaw = MockInterviewLanguage.followApp.rawValue
+    @AppStorage(AppPreferenceKey.resumeAIProcessing) private var resumeAIProcessingRaw = ResumeAIMode.ask.rawValue
     @State private var showingStoragePicker = false
     @State private var showingClearDataConfirmation = false
     @State private var showingStorageMessage = false
@@ -104,6 +105,14 @@ struct SettingsView: View {
                         PremiumMenuPicker(
                             selection: $interviewerLanguageRaw,
                             options: MockInterviewLanguage.allCases.map { ($0.rawValue, $0.title) },
+                            minWidth: preferencePickerWidth
+                        )
+                    }
+
+                    preferenceCardRow(title: L.t("Organize uploaded resumes with AI"), icon: "person.text.rectangle", tint: Color.appPrimary) {
+                        PremiumMenuPicker(
+                            selection: $resumeAIProcessingRaw,
+                            options: ResumeAIMode.allCases.map { ($0.rawValue, $0.title) },
                             minWidth: preferencePickerWidth
                         )
                     }
