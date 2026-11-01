@@ -15,7 +15,11 @@ public sealed record UpdateCheckResult(
     string? ReleaseNotes = null,
     string? DownloadUrl = null,
     string Title = "",
-    string Message = "");
+    string Message = "",
+    UpdateAsset? Asset = null);
+
+/// <summary>The Windows .exe attached to a release (downloaded and installed in-app).</summary>
+public sealed record UpdateAsset(string Name, string Url, long Size, string? Sha256);
 
 public static class UpdateChecker
 {
@@ -56,7 +60,8 @@ public static class UpdateChecker
                 ? html.GetString()
                 : null;
             var notes = root.TryGetProperty("body", out var body) ? body.GetString() : null;
-            var downloadUrl = FindWindowsAsset(root) ?? releaseUrl;
+            var asset = FindWindowsAsset(root);
+            var downloadUrl = asset?.Url ?? releaseUrl;
             var updateAvailable = CompareVersions(latest, current) > 0;
             // Same wording as the macOS UpdateChecker alert.
             var title = updateAvailable
@@ -67,7 +72,7 @@ public static class UpdateChecker
                 ? (trimmedNotes.Length == 0 ? LocalizationManager.Text("A newer version is ready to download.") : trimmedNotes.Length > 1600 ? trimmedNotes[..1600] : trimmedNotes)
                 : string.Format(LocalizationManager.Text("InterviewAssistant {0} is the latest version."), current);
             var status = updateAvailable ? title : message;
-            return new UpdateCheckResult(true, updateAvailable, current, latest, status, notes, downloadUrl, title, message);
+            return new UpdateCheckResult(true, updateAvailable, current, latest, status, notes, downloadUrl, title, message, asset);
         }
         catch (Exception exception)
         {
@@ -100,18 +105,22 @@ public static class UpdateChecker
         return client;
     }
 
-    private static string? FindWindowsAsset(JsonElement release)
+    private static UpdateAsset? FindWindowsAsset(JsonElement release)
     {
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
             return null;
         foreach (var asset in assets.EnumerateArray())
         {
-            var name = asset.TryGetProperty("name", out var nameValue)
-                ? nameValue.GetString()?.ToLowerInvariant()
-                : null;
-            if (name is null || !(name.EndsWith(".msix") || name.EndsWith(".msi") || name.EndsWith(".exe")))
-                continue;
-            if (asset.TryGetProperty("browser_download_url", out var url)) return url.GetString();
+            var name = asset.TryGetProperty("name", out var nameValue) ? nameValue.GetString() : null;
+            if (name is null || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!asset.TryGetProperty("browser_download_url", out var url) || url.GetString() is not { } link) continue;
+            var size = asset.TryGetProperty("size", out var sizeValue) && sizeValue.TryGetInt64(out var bytes) ? bytes : 0;
+            // GitHub publishes "digest": "sha256:<hex>" for release assets.
+            string? sha256 = null;
+            if (asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } value
+                && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                sha256 = value["sha256:".Length..].Trim().ToLowerInvariant();
+            return new UpdateAsset(name, link, size, sha256);
         }
         return null;
     }

@@ -44,7 +44,7 @@ public partial class App : Application
                 window.Focus();
                 window.Topmost = false;
                 WriteLog($"Main window rendered at {window.Left:0},{window.Top:0} ({window.ActualWidth:0}x{window.ActualHeight:0}).");
-                await CheckForUpdatesAtLaunchAsync(window);
+                await AfterLaunchAsync(window, e.Args);
             };
 
             window.Show();
@@ -57,17 +57,21 @@ public partial class App : Application
         }
     }
 
-    private static async Task CheckForUpdatesAtLaunchAsync(Window owner)
+    private static async Task AfterLaunchAsync(Window owner, string[] args)
     {
+        _ = UpdateInstaller.CleanupAsync();
+        if (UpdateInstaller.UpdatedFrom(args) is { } previous)
+        {
+            // Launched by the in-app updater: confirm instead of checking again.
+            InterviewAssistant.Windows.AppDialog.Show(owner,
+                LocalizationManager.Text("Update successful"),
+                string.Format(LocalizationManager.Text("Interview AI was updated from {0} to {1}."), previous, UpdateChecker.CurrentVersion),
+                InterviewAssistant.Windows.DialogTone.Success);
+            return;
+        }
         var result = await UpdateChecker.CheckAsync();
         if (!result.Succeeded || !result.UpdateAvailable) return;
-        var answer = MessageBox.Show(
-            owner,
-            $"{result.Status}\n\n{LocalizationManager.Text("Would you like to open the download now?")}",
-            LocalizationManager.Text("Update Available"),
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Information);
-        if (answer == MessageBoxResult.Yes) UpdateChecker.OpenDownload(result);
+        InterviewAssistant.Windows.UpdateWindow.ShowFor(owner, result);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

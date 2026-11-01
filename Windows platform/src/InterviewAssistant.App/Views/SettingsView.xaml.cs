@@ -481,9 +481,7 @@ public partial class SettingsView : UserControl
         var owner = Window.GetWindow(this);
         if (result.UpdateAvailable)
         {
-            var download = Windows.AppDialog.Show(owner, result.Title, result.Message, Windows.DialogTone.Update,
-                LocalizationManager.Text("Download Update"), LocalizationManager.Text("Later"));
-            if (download) UpdateChecker.OpenDownload(result);
+            Windows.UpdateWindow.ShowFor(owner, result);
         }
         else
         {
