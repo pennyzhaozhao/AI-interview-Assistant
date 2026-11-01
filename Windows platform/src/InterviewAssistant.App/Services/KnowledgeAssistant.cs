@@ -41,16 +41,18 @@ public static class KnowledgeAssistant
     /// <summary>Short profile summary plus a skills list, generated from the resume Markdown.</summary>
     public static async Task<ResumeDigest> DigestResumeAsync(string markdown, CancellationToken cancellationToken = default)
     {
-        var chinese = LocalizationManager.Instance.IsChinese;
-        var language = chinese ? "Simplified Chinese" : "English";
+        // Summary and skills follow the resume's own language, not the app language:
+        // an English resume gets an English summary, a Chinese resume a Chinese one.
+        var language = DetectLanguage(markdown);
         var system = $$"""
             You prepare interview context from a candidate's resume. Return valid JSON only:
             {"summary":"...","skills":["...","..."]}
-            - summary: 120-220 words in {{language}} (keep technical terms, company and school names in their original language).
+            - summary: 120-220 words, written in {{language}} — the same language as the resume (keep technical terms, company and school names as written).
               Cover role focus, strongest achievements with their real numbers, education, work history, core technologies, certifications.
               Use only facts from the resume; never invent.
             - skills: 8-20 concise skill names actually supported by the resume (languages, frameworks, tools, methods, domains),
-              most relevant first, no duplicates, each at most 4 words.
+              most relevant first, no duplicates, each at most 4 words. Write each skill the way the resume writes it
+              (technical terms keep their usual English form); do not translate skills into another language.
             """;
         var raw = await AppServices.Current.AI.CompleteAsync(AIConfigProvider.Current(), system, Truncate(markdown, 24_000), 1500, cancellationToken);
         using var document = JsonDocument.Parse(ExtractJson(raw));
@@ -66,14 +68,33 @@ public static class KnowledgeAssistant
     /// <summary>One or two sentences describing a GitHub project for interview use.</summary>
     public static async Task<string> SummarizeProjectAsync(string name, string readme, string description, CancellationToken cancellationToken = default)
     {
-        var language = LocalizationManager.Instance.IsChinese ? "Simplified Chinese" : "English";
+        // Follow the README's language, like resume summaries follow the resume.
+        var language = DetectLanguage($"{description}\n{readme}");
         var system = $"""
             You summarize a candidate's GitHub project for interview preparation.
-            Write 1-2 sentences in {language}: what it does, the main technical approach or stack, and any concrete result or scale mentioned.
+            Write 1-2 sentences in {language} (the language of the README): what it does, the main technical approach or stack, and any concrete result or scale mentioned.
             Use only the supplied text. Output plain text only.
             """;
         var question = $"Repository: {name}\nDescription: {description}\n\nREADME:\n{Truncate(readme, 12_000)}";
         return (await AppServices.Current.AI.CompleteAsync(AIConfigProvider.Current(), system, question, 400, cancellationToken)).Trim();
+    }
+
+    /// <summary>
+    /// "Simplified Chinese" when CJK characters make up a meaningful share of the text, otherwise "English".
+    /// Falls back to the app language when the text has too few letters to tell.
+    /// </summary>
+    public static string DetectLanguage(string text)
+    {
+        var sample = text.Length > 20_000 ? text[..20_000] : text;
+        int cjk = 0, latin = 0;
+        foreach (var character in sample)
+        {
+            if (character is >= '\u4E00' and <= '\u9FFF' or >= '\u3400' and <= '\u4DBF') cjk++;
+            else if (character is >= 'A' and <= 'Z' or >= 'a' and <= 'z') latin++;
+        }
+        if (cjk + latin < 40) return LocalizationManager.Instance.IsChinese ? "Simplified Chinese" : "English";
+        // One Chinese character carries roughly as much as a short English word (~4 letters).
+        return cjk * 4 >= latin * 0.6 ? "Simplified Chinese" : "English";
     }
 
     public static List<string> NormalizeSkills(IEnumerable<string> skills)
