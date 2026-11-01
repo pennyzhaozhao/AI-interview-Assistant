@@ -133,6 +133,8 @@ enum L {
         "Later": "稍后",
         "You're up to date": "已是最新版本",
         "Unable to Check for Updates": "无法检查更新",
+        "Update Successful": "更新成功",
+        "Interview AI was updated from %@ to %@.": "Interview AI 已从 %@ 更新到 %@。",
         "Check your internet connection and try again.": "请检查网络连接后重试。",
         "A newer version is ready to download.": "已有新版本可供下载。",
         "Version %@ is available": "发现新版本 %@",

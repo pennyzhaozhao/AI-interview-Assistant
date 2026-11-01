@@ -1,5 +1,5 @@
 {
-  "originHash" : "8d397f7a7077f1abc0d4a3cf56d0427fd8ca111d3895398a65221596b37631ac",
+  "originHash" : "32be34a9d9fc2a05ac6cddf8d4fe800a1288d7cedb90c599d607c1617f7a67b4",
   "pins" : [
     {
       "identity" : "onnxruntime-libs",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "1cb484af5e69d3c7803c1eb0b3b5ab8041e0e911",
         "version" : "1.13.6"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+        "version" : "2.10.0"
       }
     }
   ],

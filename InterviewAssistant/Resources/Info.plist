@@ -45,6 +45,16 @@
 	<string>Used to capture screen regions for OCR recognition of interview questions</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Used to transcribe interview questions</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

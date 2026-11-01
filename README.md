@@ -583,6 +583,12 @@ macOS 实现使用固定版本 `sherpa-onnx 1.13.6`（Apache-2.0）及其 `onnxr
 
 ## 构建 macOS DMG
 
+macOS 版使用 Sparkle 2 提供应用内更新。首次准备发布前，需要完成一次密钥配置：
+
+1. 从 Sparkle 2.10.0 官方发布包的 `bin/` 目录运行 `generate_keys`。私钥默认保存在当前开发者账户的钥匙串中，不要导出或提交到仓库；
+2. 把 `generate_keys` 输出的公钥替换到 `InterviewAssistant/Resources/Info.plist` 的 `SUPublicEDKey`（当前占位符为 `REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY`）；
+3. 确认 Pages 已部署 `website/appcast.xml`，公开地址为 `https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml`。
+
 本地预览构建：
 
 ```bash
@@ -604,6 +610,27 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 3. 公证票据已成功 staple 和 validate；
 4. 在没有开发环境的 Mac 上测试安装和首次授权；
 5. 确认产物中没有 API Key、个人证书或本地数据库。
+
+### 发布 macOS 更新
+
+每次发布按以下顺序操作：
+
+1. 将 Xcode 工程里的 `MARKETING_VERSION` 改为与 GitHub tag 一致的版本号（例如 `1.2.0`），并将 `CURRENT_PROJECT_VERSION` **至少加 1**。Sparkle 使用 `CFBundleVersion`（即 `CURRENT_PROJECT_VERSION`）判断新旧，因此 build 号绝不能复用或降低；
+2. 使用 Xcode Archive，或运行上面的签名构建命令，完成 Developer ID 签名与 Apple 公证，再生成 DMG。Sparkle 自带的 `Installer.xpc`、`Downloader.xpc`、`Autoupdate` 和 `Updater.app` 必须按由内到外的顺序签名；不要使用 `--deep` 重签 Sparkle；
+3. 使用 Sparkle 的 `sign_update` 签名 DMG 并生成 appcast 条目：
+
+   ```bash
+   SIGN_UPDATE=/path/to/Sparkle/bin/sign_update \
+   ./scripts/release-mac-appcast.sh \
+     dist/InterviewAssistant-1.2.0-macOS.dmg 1.2.0 4
+   ```
+
+   `sign_update` 只会从钥匙串使用 `generate_keys` 保存的私钥；脚本不会读取或打印私钥。若 Xcode 的 SPM 产物位于 `build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update`，脚本会自动找到它；
+4. 创建或更新 GitHub Release `v1.2.0`，上传文件名完全一致的 DMG。Windows 的 Setup.exe/exe 继续放在同一个 Release；
+5. 提交并推送更新后的 `website/appcast.xml`，等待 GitHub Pages 部署；
+6. 用较低 build 的已安装版本验证完整流程：发现更新、应用内下载进度、安装并重新启动，以及启动后的“更新成功”提示。
+
+Sparkle 会每天自动检查一次。菜单栏和“关于”页的“检查更新”按钮也会立即启动标准 Sparkle 更新界面，用户不需要打开浏览器或 GitHub。
 
 ## 发布 Windows 版
 

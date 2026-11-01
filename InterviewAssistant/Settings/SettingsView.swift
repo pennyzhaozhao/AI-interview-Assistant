@@ -541,7 +541,11 @@ func cardBackground(radius: CGFloat) -> some View {
 // MARK: - About View
 
 struct AboutView: View {
+    #if os(macOS)
+    @ObservedObject private var updateChecker = UpdateChecker.shared
+    #else
     @State private var updateChecker = UpdateChecker.shared
+    #endif
 
     var body: some View {
         ScrollView {
@@ -574,22 +578,43 @@ struct AboutView: View {
                 .background(cardBackground(radius: 20))
 
                 Button {
+                    #if os(macOS)
+                    updateChecker.checkForUpdates()
+                    #else
                     Task { await updateChecker.check(manual: true) }
+                    #endif
                 } label: {
                     HStack(spacing: 12) {
                         iconTile("arrow.triangle.2.circlepath", tint: Color.appPrimary)
                         VStack(alignment: .leading, spacing: 3) {
+                            #if os(macOS)
+                            Text(L.t("Check for Updates..."))
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.appText)
+                            #else
                             Text(updateChecker.isChecking ? L.t("Checking for Updates...") : L.t("Check for Updates..."))
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Color.appText)
+                            #endif
+                            #if !os(macOS)
                             if !updateChecker.statusText.isEmpty {
                                 Text(updateChecker.statusText)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.appMuted)
                                     .lineLimit(2)
                             }
+                            #endif
                         }
                         Spacer()
+                        #if os(macOS)
+                        if !updateChecker.canCheckForUpdates {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.appMuted)
+                        }
+                        #else
                         if updateChecker.isChecking {
                             ProgressView().controlSize(.small)
                         } else {
@@ -597,13 +622,18 @@ struct AboutView: View {
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Color.appMuted)
                         }
+                        #endif
                     }
                     .frame(minHeight: 52)
                     .padding(18)
                     .background(cardBackground(radius: 20))
                 }
                 .buttonStyle(.plain)
+                #if os(macOS)
+                .disabled(!updateChecker.canCheckForUpdates)
+                #else
                 .disabled(updateChecker.isChecking)
+                #endif
 
                 VStack(spacing: 12) {
                     NavigationLink {

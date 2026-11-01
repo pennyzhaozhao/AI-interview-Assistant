@@ -45,6 +45,8 @@
 		AA000000000000000000002C /* sherpa-onnx-shared in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000A01 /* sherpa-onnx-shared */; };
 		AA000000000000000000002D /* SpeakerVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012C /* SpeakerVerifier.swift */; };
 		AA000000000000000000002E /* SpeakerEnrollmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012D /* SpeakerEnrollmentView.swift */; };
+		AA000000000000000000002F /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012E /* UpdateChecker.swift */; };
+		AA0000000000000000000030 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = AA0000000000000000000A03 /* Sparkle */; };
 		BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000101 /* SpeechProtectionTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -98,6 +100,7 @@
 		AA000000000000000000012B /* SpeechUtterancePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechUtterancePolicy.swift; sourceTree = "<group>"; };
 		AA000000000000000000012C /* SpeakerVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerVerifier.swift; sourceTree = "<group>"; };
 		AA000000000000000000012D /* SpeakerEnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerEnrollmentView.swift; sourceTree = "<group>"; };
+		AA000000000000000000012E /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000100 /* InterviewAssistantTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InterviewAssistantTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000101 /* SpeechProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechProtectionTests.swift; sourceTree = "<group>"; };
@@ -109,6 +112,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000000000000000000002C /* sherpa-onnx-shared in Frameworks */,
+				AA0000000000000000000030 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -153,6 +157,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000103 /* Theme.swift */,
+				AA000000000000000000012E /* UpdateChecker.swift */,
 				AA0000000000000000000104 /* Models.swift */,
 				AA000000000000000000012A /* DataStorageManager.swift */,
 				AA000000000000000000012B /* SpeechUtterancePolicy.swift */,
@@ -285,6 +290,7 @@
 			name = InterviewAssistant;
 			packageProductDependencies = (
 				AA0000000000000000000A01 /* sherpa-onnx-shared */,
+				AA0000000000000000000A03 /* Sparkle */,
 			);
 			productName = InterviewAssistant;
 			productReference = AA0000000000000000000200 /* InterviewAssistant.app */;
@@ -337,6 +343,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA0000000000000000000A00 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
+				AA0000000000000000000A02 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA0000000000000000000409 /* Products */;
@@ -424,6 +431,7 @@
 				AA000000000000000000002D /* SpeakerVerifier.swift in Sources */,
 				AA0000000000000000000021 /* HotkeyRecorderView.swift in Sources */,
 				AA000000000000000000002E /* SpeakerEnrollmentView.swift in Sources */,
+				AA000000000000000000002F /* UpdateChecker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -685,6 +693,14 @@
 				version = 1.13.6;
 			};
 		};
+		AA0000000000000000000A02 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -692,6 +708,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA0000000000000000000A00 /* XCRemoteSwiftPackageReference "sherpa-onnx" */;
 			productName = "sherpa-onnx-shared";
+		};
+		AA0000000000000000000A03 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA0000000000000000000A02 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

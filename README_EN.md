@@ -583,6 +583,12 @@ The macOS implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxrun
 
 ## Building a macOS DMG
 
+The macOS app uses Sparkle 2 for in-app updates. Complete this one-time key setup before the first release:
+
+1. Run `generate_keys` from the official Sparkle 2.10.0 release's `bin/` directory. The private key is stored in the current developer account's Keychain by default; never export or commit it;
+2. Replace `REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY` in `InterviewAssistant/Resources/Info.plist` (`SUPublicEDKey`) with the public key printed by `generate_keys`;
+3. Confirm that Pages deploys `website/appcast.xml` at `https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml`.
+
 Local preview build:
 
 ```bash
@@ -604,6 +610,27 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 3. The notarization ticket is successfully stapled and validated;
 4. Installation and first-run permissions are tested on a Mac without a development environment;
 5. The artifact contains no API keys, personal certificates, or local databases.
+
+### Releasing a macOS Update
+
+For every release:
+
+1. Set `MARKETING_VERSION` in the Xcode project to the GitHub tag version (for example, `1.2.0`) and increment `CURRENT_PROJECT_VERSION` by **at least 1**. Sparkle compares `CFBundleVersion` (`CURRENT_PROJECT_VERSION`), so a build number must never be reused or decreased;
+2. Use Xcode Archive or the signed build command above to apply the Developer ID signature, notarize the app, and create the DMG. Sparkle's `Installer.xpc`, `Downloader.xpc`, `Autoupdate`, and `Updater.app` must be signed from the inside out. Do not re-sign Sparkle with `--deep`;
+3. Sign the DMG with Sparkle's `sign_update` and add its appcast item:
+
+   ```bash
+   SIGN_UPDATE=/path/to/Sparkle/bin/sign_update \
+   ./scripts/release-mac-appcast.sh \
+     dist/InterviewAssistant-1.2.0-macOS.dmg 1.2.0 4
+   ```
+
+   `sign_update` only uses the private key saved in Keychain by `generate_keys`; the script never reads or prints the private key. The script automatically detects `build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update` when Xcode's SPM artifact is available there;
+4. Create or update GitHub Release `v1.2.0` and upload the DMG with exactly the same filename. Keep the Windows Setup.exe/exe in the same Release;
+5. Commit and push the updated `website/appcast.xml`, then wait for GitHub Pages to deploy it;
+6. Install a lower-build version and verify the complete path: update discovery, in-app download progress, installation and relaunch, and the “Update Successful” alert after launch.
+
+Sparkle checks automatically once per day. The menu bar and About-page “Check for Updates...” actions also open Sparkle's standard update UI immediately, without sending the user to a browser or GitHub.
 
 ## Releasing the Windows App
 

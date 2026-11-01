@@ -72,8 +72,35 @@ if [[ -d "${ONNX_FRAMEWORK}/Versions/A" ]]; then
   ln -s Versions/Current/Resources "${ONNX_FRAMEWORK}/Resources"
 fi
 
+SPARKLE_FRAMEWORK="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
+sign_sparkle_components() {
+  local identity="$1"
+  shift
+  local -a signing_options=("$@")
+  local version_dir="${SPARKLE_FRAMEWORK}/Versions/B"
+
+  [[ -d "${SPARKLE_FRAMEWORK}" ]] || return 0
+  codesign --force --sign "${identity}" "${signing_options[@]}" \
+    "${version_dir}/XPCServices/Installer.xpc"
+  if [[ -d "${version_dir}/XPCServices/Downloader.xpc" ]]; then
+    codesign --force --sign "${identity}" "${signing_options[@]}" \
+      --preserve-metadata=entitlements \
+      "${version_dir}/XPCServices/Downloader.xpc"
+  fi
+  codesign --force --sign "${identity}" "${signing_options[@]}" \
+    "${version_dir}/Autoupdate"
+  codesign --force --sign "${identity}" "${signing_options[@]}" \
+    "${version_dir}/Updater.app"
+  codesign --force --sign "${identity}" "${signing_options[@]}" \
+    "${SPARKLE_FRAMEWORK}"
+}
+
 if [[ "${SIGNED_RELEASE}" == "1" ]]; then
+  sign_sparkle_components "${DEVELOPER_IDENTITY}" --options runtime --timestamp
   for FRAMEWORK in "${APP_PATH}/Contents/Frameworks/"*.framework; do
+    if [[ "${FRAMEWORK}" == "${SPARKLE_FRAMEWORK}" ]]; then
+      continue
+    fi
     codesign \
       --force \
       --sign "${DEVELOPER_IDENTITY}" \
@@ -89,7 +116,11 @@ if [[ "${SIGNED_RELEASE}" == "1" ]]; then
     --entitlements "${ENTITLEMENTS_PATH}" \
     "${APP_PATH}"
 else
+  sign_sparkle_components -
   for FRAMEWORK in "${APP_PATH}/Contents/Frameworks/"*.framework; do
+    if [[ "${FRAMEWORK:t}" == "Sparkle.framework" ]]; then
+      continue
+    fi
     codesign --force --sign - "${FRAMEWORK}"
   done
   codesign \
