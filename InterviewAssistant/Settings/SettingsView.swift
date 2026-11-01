@@ -227,7 +227,7 @@ struct SettingsView: View {
                 .buttonStyle(AppButtonStyle())
             }
 
-            Text(L.t("Changing the location copies your existing data safely. Restart the app once to begin using the new folder; the previous database is removed after the new copy is available."))
+            Text(L.t("The selected folder is used directly. Existing InterviewAssistant data is loaded; otherwise, your current data is copied there. Restart the app after changing folders."))
                 .font(.system(size: 11))
                 .foregroundStyle(Color.appMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -239,9 +239,14 @@ struct SettingsView: View {
     private func handleStorageFolderSelection(_ result: Result<[URL], Error>) {
         do {
             guard let folder = try result.get().first else { return }
-            try DataStorageManager.migrateData(from: modelContext, to: folder)
+            let selectionResult = try DataStorageManager.migrateData(from: modelContext, to: folder)
             storageRefreshID = UUID()
-            storageMessage = L.t("Your data was copied successfully. Quit and reopen InterviewAssistant to use the new storage location.")
+            switch selectionResult {
+            case .copiedCurrentData:
+                storageMessage = L.t("Your data was copied successfully. Quit and reopen InterviewAssistant to use the new storage location.")
+            case .usingExistingData:
+                storageMessage = L.t("Existing InterviewAssistant data was found. Quit and reopen InterviewAssistant to load it.")
+            }
         } catch {
             storageMessage = String(format: L.t("Could not change the storage location: %@"), error.localizedDescription)
         }

@@ -434,10 +434,10 @@ You can view the current directory, select a new folder, open it in Finder / Fil
 
 When selecting a new location:
 
-1. The app creates an `InterviewAssistantData` subdirectory in the selected folder;
-2. Existing history, knowledge-base data, and saved screenshots are copied to the new directory;
-3. Fully quit and reopen the app after the move completes;
-4. The old database files are cleaned up after the new database becomes available.
+1. The selected folder is used directly as the data directory; no additional `InterviewAssistantData` subdirectory is created;
+2. If it already contains a compatible `InterviewAssistant.store` database, the app switches to and loads that data;
+3. If it is a new empty folder, existing history, knowledge-base data, and saved screenshots are copied into it;
+4. Fully quit and reopen the app after changing folders. The old database files are cleaned up after a newly copied database becomes available.
 
 “Erase All Data” removes interview history, knowledge bases, and saved screenshots. It does not remove API keys from Keychain or reset app preferences such as language and theme.
 

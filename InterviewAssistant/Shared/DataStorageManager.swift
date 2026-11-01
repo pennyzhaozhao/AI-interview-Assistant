@@ -5,6 +5,8 @@ enum DataStorageManager {
     private static let selectedFolderBookmarkKey = "data_storage_folder_bookmark_v1"
     private static let cleanupStorePathKey = "data_storage_cleanup_store_path_v1"
     private static let cleanupFolderBookmarkKey = "data_storage_cleanup_folder_bookmark_v1"
+    private static let selectedFolderLayoutVersionKey = "data_storage_folder_layout_version"
+    private static let directFolderLayoutVersion = 2
     private static let customDataFolderName = "InterviewAssistantData"
     private static let customStoreName = "InterviewAssistant.store"
 
@@ -34,7 +36,7 @@ enum DataStorageManager {
 
     static var currentStoreURL: URL {
         if let folder = selectedFolderURL() {
-            return customStoreURL(in: folder)
+            return selectedStoreURL(in: folder)
         }
         return defaultStoreURL
     }
@@ -48,7 +50,7 @@ enum DataStorageManager {
     }
 
     @MainActor
-    static func migrateData(from sourceContext: ModelContext, to selectedFolder: URL) throws {
+    static func migrateData(from sourceContext: ModelContext, to selectedFolder: URL) throws -> StorageSelectionResult {
         let grantedAccess = selectedFolder.startAccessingSecurityScopedResource()
         defer {
             if grantedAccess {
@@ -56,15 +58,26 @@ enum DataStorageManager {
             }
         }
 
-        let targetDirectory = selectedFolder.appendingPathComponent(customDataFolderName, isDirectory: true)
-        try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
-        let targetStoreURL = targetDirectory.appendingPathComponent(customStoreName, isDirectory: false)
+        let targetStoreURL = directStoreURL(in: selectedFolder)
 
-        guard targetStoreURL.standardizedFileURL != currentStoreURL.standardizedFileURL else {
-            throw StorageError.sameLocation
+        if targetStoreURL.standardizedFileURL == currentStoreURL.standardizedFileURL {
+            try selectDirectStorageFolder(selectedFolder)
+            clearPendingStoreCleanup()
+            return .usingExistingData
         }
-        guard !FileManager.default.fileExists(atPath: targetStoreURL.path) else {
-            throw StorageError.locationAlreadyContainsData
+
+        if FileManager.default.fileExists(atPath: targetStoreURL.path) {
+            let targetSchema = schema
+            let targetConfiguration = ModelConfiguration(
+                "InterviewAssistant",
+                schema: targetSchema,
+                url: targetStoreURL,
+                cloudKitDatabase: .none
+            )
+            _ = try ModelContainer(for: targetSchema, configurations: [targetConfiguration])
+            try selectDirectStorageFolder(selectedFolder)
+            clearPendingStoreCleanup()
+            return .usingExistingData
         }
 
         try sourceContext.save()
@@ -75,7 +88,13 @@ enum DataStorageManager {
             url: targetStoreURL,
             cloudKitDatabase: .none
         )
-        let targetContainer = try ModelContainer(for: targetSchema, configurations: [targetConfiguration])
+        let targetContainer: ModelContainer
+        do {
+            targetContainer = try ModelContainer(for: targetSchema, configurations: [targetConfiguration])
+        } catch {
+            removeStoreFiles(at: targetStoreURL)
+            throw error
+        }
         let targetContext = ModelContext(targetContainer)
 
         for sourceBase in try sourceContext.fetch(FetchDescriptor<KnowledgeBase>()) {
@@ -144,12 +163,18 @@ enum DataStorageManager {
         for sourceSetting in try sourceContext.fetch(FetchDescriptor<AppSetting>()) {
             targetContext.insert(AppSetting(key: sourceSetting.key, value: sourceSetting.value))
         }
-        try targetContext.save()
+        do {
+            try targetContext.save()
+        } catch {
+            removeStoreFiles(at: targetStoreURL)
+            throw error
+        }
 
         let defaults = UserDefaults.standard
         defaults.set(currentStoreURL.path(percentEncoded: false), forKey: cleanupStorePathKey)
         defaults.set(defaults.data(forKey: selectedFolderBookmarkKey), forKey: cleanupFolderBookmarkKey)
-        defaults.set(try bookmarkData(for: selectedFolder), forKey: selectedFolderBookmarkKey)
+        try selectDirectStorageFolder(selectedFolder)
+        return .copiedCurrentData
     }
 
     @MainActor
@@ -167,9 +192,11 @@ enum DataStorageManager {
         guard let selectedFolder = selectedFolderURL() else {
             return defaultStoreURL
         }
-        let directory = selectedFolder.appendingPathComponent(customDataFolderName, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let storeURL = directory.appendingPathComponent(customStoreName, isDirectory: false)
+        let storeURL = selectedStoreURL(in: selectedFolder)
+        try FileManager.default.createDirectory(
+            at: storeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         cleanupPreviousStoreIfNeeded(replacementStoreURL: storeURL)
         return storeURL
     }
@@ -198,10 +225,29 @@ enum DataStorageManager {
         }
     }
 
-    private static func customStoreURL(in selectedFolder: URL) -> URL {
-        selectedFolder
+    private static func selectedStoreURL(in selectedFolder: URL) -> URL {
+        if UserDefaults.standard.integer(forKey: selectedFolderLayoutVersionKey) >= directFolderLayoutVersion {
+            return directStoreURL(in: selectedFolder)
+        }
+        return selectedFolder
             .appendingPathComponent(customDataFolderName, isDirectory: true)
             .appendingPathComponent(customStoreName, isDirectory: false)
+    }
+
+    private static func directStoreURL(in selectedFolder: URL) -> URL {
+        selectedFolder.appendingPathComponent(customStoreName, isDirectory: false)
+    }
+
+    private static func selectDirectStorageFolder(_ selectedFolder: URL) throws {
+        let defaults = UserDefaults.standard
+        defaults.set(try bookmarkData(for: selectedFolder), forKey: selectedFolderBookmarkKey)
+        defaults.set(directFolderLayoutVersion, forKey: selectedFolderLayoutVersionKey)
+    }
+
+    private static func clearPendingStoreCleanup() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: cleanupStorePathKey)
+        defaults.removeObject(forKey: cleanupFolderBookmarkKey)
     }
 
     private static var defaultStoreURL: URL {
@@ -269,16 +315,7 @@ enum DataStorageManager {
     }
 }
 
-enum StorageError: LocalizedError {
-    case sameLocation
-    case locationAlreadyContainsData
-
-    var errorDescription: String? {
-        switch self {
-        case .sameLocation:
-            return L.t("This is already the current storage location.")
-        case .locationAlreadyContainsData:
-            return L.t("This folder already contains InterviewAssistant data. Choose another folder to avoid overwriting it.")
-        }
-    }
+enum StorageSelectionResult {
+    case copiedCurrentData
+    case usingExistingData
 }
