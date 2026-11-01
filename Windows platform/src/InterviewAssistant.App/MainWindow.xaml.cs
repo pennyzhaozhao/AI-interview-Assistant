@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private nint _windowHandle;
     private string _registeredScreenshotHotkey = "";
     private int _activeInterviewWindows;
+    private WindowState _stateBeforeInterview = WindowState.Normal;
     private Windows.MockInterviewWindow? _mockInterviewView;
 
     public MainWindow()
@@ -79,15 +80,18 @@ public partial class MainWindow : Window
             System.Windows.Threading.DispatcherPriority.Loaded,
             new Action(() =>
             {
-                _prompterWindow?.Close();
-                _prompterWindow = new PrompterWindow(session);
+                // Count the new board before closing the old one, so the main window does not flash back.
+                var previous = _prompterWindow;
+                var prompter = new PrompterWindow(session);
+                _prompterWindow = prompter;
                 BeginInterviewWindow();
-                _prompterWindow.Closed += (_, _) =>
+                prompter.Closed += (_, _) =>
                 {
-                    _prompterWindow = null;
+                    if (ReferenceEquals(_prompterWindow, prompter)) _prompterWindow = null;
                     EndInterviewWindow();
                 };
-                _prompterWindow.Show();
+                previous?.Close();
+                prompter.Show();
             }));
     }
 
@@ -155,23 +159,56 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(new Action(() =>
         {
             RegisterScreenshotHotkey();
-            if (_activeInterviewWindows > 0)
-            {
-                ShowInTaskbar = !Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview;
-            }
+            if (_activeInterviewWindows > 0) MoveToBackground();
         }));
     }
 
-    private void BeginInterviewWindow()
+    /// <summary>
+    /// A prompt board opened (interview or Director Mode host): the main window steps aside.
+    /// With "Hide from the taskbar" it is hidden completely (no taskbar button, no Alt+Tab);
+    /// otherwise it is minimized to the taskbar.
+    /// </summary>
+    public void BeginInterviewWindow()
     {
-        _activeInterviewWindows++;
-        if (Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview) ShowInTaskbar = false;
+        if (_activeInterviewWindows++ == 0)
+        {
+            _stateBeforeInterview = WindowState == WindowState.Minimized ? WindowState.Normal : WindowState;
+        }
+        MoveToBackground();
     }
 
-    private void EndInterviewWindow()
+    /// <summary>The last prompt board closed: bring the main window back.</summary>
+    public void EndInterviewWindow()
     {
         _activeInterviewWindows = Math.Max(0, _activeInterviewWindows - 1);
-        if (_activeInterviewWindows == 0) ShowInTaskbar = true;
+        if (_activeInterviewWindows > 0) return;
+        ShowInTaskbar = true;
+        if (!IsVisible) Show();
+        WindowState = _stateBeforeInterview;
+        Activate();
+    }
+
+    /// <summary>Opened from the prompt board's menu (Knowledge Base / History) while it stays open.</summary>
+    public void RevealDuringInterview()
+    {
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = _stateBeforeInterview;
+        Activate();
+    }
+
+    private void MoveToBackground()
+    {
+        if (Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview)
+        {
+            ShowInTaskbar = false;
+            if (IsVisible) Hide();
+        }
+        else
+        {
+            ShowInTaskbar = true;
+            if (!IsVisible) Show();
+            WindowState = WindowState.Minimized;
+        }
     }
 
     private void ApplyRoundedCorners()
