@@ -513,10 +513,15 @@ private struct SettingsCardLink<Destination: View>: View {
 struct SettingsBackButton: View {
     @Environment(\.dismiss) private var dismiss
     var title = "Settings"
+    var action: (() -> Void)? = nil
 
     var body: some View {
         Button {
-            dismiss()
+            if let action {
+                action()
+            } else {
+                dismiss()
+            }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left")
@@ -560,8 +565,20 @@ struct AboutView: View {
     #else
     @State private var updateChecker = UpdateChecker.shared
     #endif
+    @State private var selectedPolicy: AboutPolicy?
 
+    @ViewBuilder
     var body: some View {
+        if let selectedPolicy {
+            SimplePolicyView(title: selectedPolicy.rawValue) {
+                self.selectedPolicy = nil
+            }
+        } else {
+            aboutContent
+        }
+    }
+
+    private var aboutContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 SettingsBackButton()
@@ -585,7 +602,7 @@ struct AboutView: View {
                 VStack(spacing: 12) {
                     infoRow(L.t("Version"), value: appVersion)
                     infoRow(L.t("Build"), value: buildNumber)
-                    infoRow(L.t("Platform"), value: "iOS · macOS")
+                    infoRow(L.t("Platform"), value: platformName)
                     infoRow(L.t("Storage"), value: L.t("Local only"))
                 }
                 .padding(18)
@@ -650,14 +667,14 @@ struct AboutView: View {
                 #endif
 
                 VStack(spacing: 12) {
-                    NavigationLink {
-                        SimplePolicyView(title: "Privacy Policy")
+                    Button {
+                        selectedPolicy = .privacy
                     } label: {
                         supportRow(L.t("Privacy Policy"), icon: "lock.shield.fill")
                     }
                     .buttonStyle(.plain)
-                    NavigationLink {
-                        SimplePolicyView(title: "Terms of Service")
+                    Button {
+                        selectedPolicy = .terms
                     } label: {
                         supportRow(L.t("Terms of Service"), icon: "doc.text.fill")
                     }
@@ -668,7 +685,7 @@ struct AboutView: View {
             }
             .padding(20)
             .padding(.bottom, 120)
-            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
         .background(Color.appBG.ignoresSafeArea())
@@ -706,15 +723,24 @@ struct AboutView: View {
     private var buildNumber: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     }
+
+    private var platformName: String {
+        #if os(macOS)
+        return "macOS"
+        #else
+        return "iOS"
+        #endif
+    }
 }
 
 struct SimplePolicyView: View {
     let title: String
+    var onBack: (() -> Void)? = nil
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                SettingsBackButton(title: "About")
+                SettingsBackButton(title: "About", action: onBack)
                 Text(L.t(title))
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Color.appText)
@@ -735,7 +761,7 @@ struct SimplePolicyView: View {
                 .background(cardBackground(radius: 22))
             }
             .padding(20)
-            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
         .background(Color.appBG.ignoresSafeArea())
@@ -746,17 +772,22 @@ struct SimplePolicyView: View {
     private var sections: [(heading: String, body: String)] {
         if title == "Privacy Policy" {
             return [
-                ("Local storage", "Interview AI stores interview history, knowledge bases, API configuration, and preferences locally on your device."),
-                ("Credentials", "API keys and speech-service credentials are stored in Apple Keychain. They are used only to connect directly to the provider you configure."),
-                ("Third-party services", "When you use an external AI or speech provider, the question, relevant context, screenshot, or audio required for that request may be sent directly to that provider under its own privacy terms."),
-                ("Your choices", "You can use Ollama and Apple local speech recognition for a more local workflow. You can delete locally stored interview and knowledge content from the app.")
+                (L.t("Local storage"), L.t("Interview AI stores interview history, knowledge bases, API configuration, and preferences locally on your device.")),
+                (L.t("Credentials"), L.t("API keys and speech-service credentials are stored in Apple Keychain. They are used only to connect directly to the provider you configure. Voiceprints are encrypted in Keychain and never uploaded.")),
+                (L.t("Third-party services"), L.t("When you use an external AI or speech provider, the question, relevant context, screenshot, or audio required for that request may be sent directly to that provider under its own privacy terms.")),
+                (L.t("Your choices"), L.t("You can use Ollama and Apple on-device speech recognition for a more local workflow. You can delete locally stored interview and knowledge content from the app."))
             ]
         }
         return [
-            ("Using the app", "Interview AI is a preparation and assistance tool. You are responsible for complying with interview rules, workplace or school policies, and local laws."),
-            ("AI output", "Generated responses can be incomplete or inaccurate. Review suggestions before relying on them."),
-            ("Your content", "Do not send confidential or restricted content to an external model or speech provider unless you have permission."),
-            ("Availability", "External model and speech features depend on the providers you configure. Fully local availability depends on your installed local models and Apple speech resources.")
+            (L.t("Using the app"), L.t("Interview AI is a preparation and assistance tool. You are responsible for complying with interview rules, workplace or school policies, and local laws.")),
+            (L.t("AI output"), L.t("Generated responses can be incomplete or inaccurate. Review suggestions before relying on them.")),
+            (L.t("Your content"), L.t("Do not send confidential or restricted content to an external model or speech provider unless you have permission.")),
+            (L.t("Availability"), L.t("External model and speech features depend on the providers you configure. Fully local availability depends on your installed local models and Apple speech resources."))
         ]
     }
+}
+
+private enum AboutPolicy: String {
+    case privacy = "Privacy Policy"
+    case terms = "Terms of Service"
 }

@@ -16,6 +16,7 @@ ARCHIVE_PATH="${BUILD_DIR}/InterviewAssistant-macOS.xcarchive"
 EXPORT_DIR="${BUILD_DIR}/export"
 STAGING_DIR="${BUILD_DIR}/dmg-root"
 ENTITLEMENTS_PATH="${ROOT_DIR}/InterviewAssistant/Resources/InterviewAssistant.entitlements"
+RESOLVED_ENTITLEMENTS_PATH="${BUILD_DIR}/InterviewAssistant.resolved.entitlements"
 SIGNED_RELEASE="${SIGNED_RELEASE:-0}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 DEVELOPER_IDENTITY="${DEVELOPER_IDENTITY:-Developer ID Application}"
@@ -70,6 +71,18 @@ fi
 APP_PATH="${EXPORT_DIR}/InterviewAssistant.app"
 mkdir -p "${EXPORT_DIR}"
 cp -R "${ARCHIVE_PATH}/Products/Applications/InterviewAssistant.app" "${APP_PATH}"
+
+# codesign does not expand Xcode build-setting placeholders in an entitlements
+# file. Resolve Sparkle's sandbox mach services before the final Developer ID
+# signature so the installed app can communicate with its installer launcher.
+BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_PATH}/Contents/Info.plist")"
+cp "${ENTITLEMENTS_PATH}" "${RESOLVED_ENTITLEMENTS_PATH}"
+/usr/libexec/PlistBuddy -c \
+  "Set :com.apple.security.temporary-exception.mach-lookup.global-name:0 ${BUNDLE_IDENTIFIER}-spks" \
+  "${RESOLVED_ENTITLEMENTS_PATH}"
+/usr/libexec/PlistBuddy -c \
+  "Set :com.apple.security.temporary-exception.mach-lookup.global-name:1 ${BUNDLE_IDENTIFIER}-spki" \
+  "${RESOLVED_ENTITLEMENTS_PATH}"
 
 # onnxruntime-libs 1.27.1 currently ships the macOS framework with copied
 # directories where a versioned framework requires symlinks. Xcode can link
@@ -135,7 +148,7 @@ if [[ "${SIGNED_RELEASE}" == "1" ]]; then
     --sign "${DEVELOPER_IDENTITY}" \
     --options runtime \
     --timestamp \
-    --entitlements "${ENTITLEMENTS_PATH}" \
+    --entitlements "${RESOLVED_ENTITLEMENTS_PATH}" \
     "${APP_PATH}"
 else
   sign_sparkle_components -
@@ -148,8 +161,15 @@ else
   codesign \
     --force \
     --sign - \
-    --entitlements "${ENTITLEMENTS_PATH}" \
+    --entitlements "${RESOLVED_ENTITLEMENTS_PATH}" \
     "${APP_PATH}"
+fi
+
+SIGNED_ENTITLEMENTS="$(codesign -d --entitlements - "${APP_PATH}" 2>&1)"
+if ! printf '%s\n' "${SIGNED_ENTITLEMENTS}" | grep -Fq "${BUNDLE_IDENTIFIER}-spks" || \
+   ! printf '%s\n' "${SIGNED_ENTITLEMENTS}" | grep -Fq "${BUNDLE_IDENTIFIER}-spki"; then
+  echo "Signed app is missing Sparkle sandbox mach service entitlements." >&2
+  exit 1
 fi
 
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
