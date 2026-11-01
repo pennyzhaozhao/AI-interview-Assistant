@@ -11,7 +11,7 @@
         <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <Grid MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <StackPanel><TextBlock x:Name="DialogTitle" Style="{StaticResource SectionTitleStyle}" FontSize="26"/><TextBlock Text="{loc:Loc Key=EditSourceDescription}" Style="{StaticResource CaptionStyle}" Margin="0,5,0,0"/></StackPanel>
+                <StackPanel><TextBlock x:Name="DialogTitle" Style="{StaticResource SectionTitleStyle}" FontSize="26"/><TextBlock x:Name="DialogHint" Text="{loc:Loc Key=EditSourceDescription}" Style="{StaticResource CaptionStyle}" Margin="0,5,0,0" TextWrapping="Wrap"/></StackPanel>
                 <Button Content="×" Width="38" Height="38" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource WindowButtonStyle}" Click="Cancel_Click"/>
             </Grid>
             <StackPanel Grid.Row="1" Margin="0,24,0,16">
