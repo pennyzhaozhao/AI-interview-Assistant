@@ -199,10 +199,81 @@ final class FloatingWindowController<Content: View>: NSWindowController {
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.installNotchProtection(on: screen)
         super.init(window: panel)
+        // Interview prompt board or Director Mode host board: move the main window aside.
+        InterviewWindowPresence.track(panel)
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+}
+
+/// While a prompt board is open the main window steps aside (same as Windows):
+/// minimized to the Dock, or — with "Hide Dock During Interview" — hidden completely
+/// (no Dock icon, not in ⌘Tab). Closing the last board brings it back.
+@MainActor
+enum InterviewWindowPresence {
+    private static var boards: [ObjectIdentifier: NSObjectProtocol] = [:]
+    private static var hiddenWindows: [NSWindow] = []
+    private static var minimizedWindows: [NSWindow] = []
+
+    static func track(_ board: NSWindow) {
+        let id = ObjectIdentifier(board)
+        guard boards[id] == nil else { return }
+        boards[id] = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: board,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { boardClosed(id) }
+        }
+        moveMainWindowsAside()
+    }
+
+    /// Opened from a board while it stays open (e.g. to edit the knowledge base).
+    static func revealMainWindow() {
+        restoreMainWindows()
+    }
+
+    private static func boardClosed(_ id: ObjectIdentifier) {
+        if let observer = boards.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
+        // A board that is being replaced closes just before the new one opens: wait a moment
+        // so the main window does not flash back in between.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            MainActor.assumeIsolated {
+                if boards.isEmpty { restoreMainWindows() }
+            }
+        }
+    }
+
+    private static var mainWindows: [NSWindow] {
+        NSApp.windows.filter { window in
+            !(window is NSPanel) && window.canBecomeMain && window.level == .normal
+        }
+    }
+
+    private static func moveMainWindowsAside() {
+        if UserDefaults.standard.bool(forKey: AppPreferenceKey.hideDockIcon) {
+            for window in mainWindows where window.isVisible || window.isMiniaturized {
+                if !hiddenWindows.contains(where: { $0 === window }) { hiddenWindows.append(window) }
+                window.orderOut(nil)
+            }
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            for window in mainWindows where window.isVisible && !window.isMiniaturized {
+                if !minimizedWindows.contains(where: { $0 === window }) { minimizedWindows.append(window) }
+                window.miniaturize(nil)
+            }
+        }
+    }
+
+    private static func restoreMainWindows() {
+        NSApp.setActivationPolicy(.regular)
+        for window in minimizedWindows where window.isMiniaturized { window.deminiaturize(nil) }
+        for window in hiddenWindows { window.makeKeyAndOrderFront(nil) }
+        minimizedWindows.removeAll()
+        hiddenWindows.removeAll()
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 #endif
