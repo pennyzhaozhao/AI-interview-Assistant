@@ -9,6 +9,8 @@
 
   Speech recognition · Real-time answers · Personal knowledge bases · Screenshot Q&A · Mock interviews · Local review
 
+  🌐 **Website: [pennyzhaozhao.github.io/AI-interview-Assistant](https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=en)** · [Download the latest release](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest)
+
   [Features](#features) · [Quick Start](#quick-start) · [Model Setup](#choosing-an-ai-model) · [User Guide](#user-guide) · [Data & Privacy](#data-storage-and-privacy) · [FAQ](#faq)
 </div>
 

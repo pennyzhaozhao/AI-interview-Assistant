@@ -9,6 +9,8 @@
 
   语音识别 · 实时回答 · 个人知识库 · 截图问答 · 模拟面试 · 本地复盘
 
+  🌐 **官网：[pennyzhaozhao.github.io/AI-interview-Assistant](https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=zh)** · [下载最新版本](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest)
+
   [功能](#功能概览) · [下载安装](#快速开始) · [平台差异](#平台功能差异) · [模型配置](#选择-ai-模型) · [使用说明](#使用指南) · [数据与隐私](#数据存储与隐私) · [常见问题](#常见问题)
 </div>
 
