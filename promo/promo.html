@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Interview AI 1.1.1 Promo</title>
+<style>
+  :root {
+    --bg: #07080B; --panel: #14161C; --panel2: #1B1E26; --line: #2A2E38;
+    --text: #F4F5F7; --muted: #9AA0AB; --faint: #646a75;
+    --blue: #4F7DFF; --blue2: #7FA3FF; --cyan: #3DD6F5; --green: #3CC779; --amber: #FFB547; --pink: #FF6B9A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  body { font-family: "Inter", "Noto Sans CJK SC", sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  .zh { font-family: "Noto Sans CJK SC", "Inter", sans-serif; }
+  .stage { position: absolute; inset: 0; overflow: hidden; }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .abs { position: absolute; }
+  .glow { position: absolute; border-radius: 50%; filter: blur(120px); opacity: .55; }
+  .grid-bg { position: absolute; inset: -200px; background-image:
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 80px 80px; }
+  .sub { font-family: "Inter", sans-serif; color: var(--muted); letter-spacing: .02em; }
+  .grad { background: linear-gradient(90deg, #ffffff 0%, var(--blue2) 45%, var(--cyan) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 28px; box-shadow: 0 40px 120px rgba(0,0,0,.55); }
+  .pill { display: inline-flex; align-items: center; gap: 12px; padding: 12px 24px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-weight: 600; }
+  .caret::after { content: ""; display: inline-block; width: 3px; height: 1em; background: var(--blue2); margin-left: 4px; vertical-align: -0.12em; animation: none; }
+
+  /* Scene 1: chaos */
+  .chip { position: absolute; padding: 18px 34px; border-radius: 999px; font-size: 40px; font-weight: 700; background: var(--panel2); border: 1px solid var(--line); white-space: nowrap; }
+  .hook { font-size: 120px; font-weight: 900; letter-spacing: -0.02em; text-align: center; line-height: 1.15; }
+
+  /* Scene 2: Windows */
+  .logo { width: 200px; height: 200px; border-radius: 46px; box-shadow: 0 30px 90px rgba(79,125,255,.45); }
+  .now { font-size: 64px; font-weight: 800; color: var(--muted); }
+  .win { font-size: 260px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  .platforms { display: flex; gap: 26px; margin-top: 46px; }
+  .platforms .pill { font-size: 34px; padding: 16px 34px; }
+  .tick { color: var(--green); font-weight: 900; }
+
+  /* Mock windows */
+  .titlebar { height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 24px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 20px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #3a3f4b; }
+  .bar { height: 14px; border-radius: 7px; background: var(--panel2); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 100%; border-radius: 7px; background: linear-gradient(90deg, var(--blue), var(--cyan)); transform-origin: 0 50%; }
+  .headline { font-size: 84px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.12; }
+  .headline small { display: block; font-size: 30px; font-weight: 500; color: var(--muted); margin-top: 18px; letter-spacing: .01em; font-family: "Inter", sans-serif; }
+  .feature { display: flex; align-items: center; gap: 18px; font-size: 34px; font-weight: 700; margin-top: 26px; }
+  .feature b { width: 52px; height: 52px; border-radius: 16px; background: rgba(79,125,255,.16); color: var(--blue2); display: grid; place-items: center; font-size: 28px; }
+
+  .search { display: flex; align-items: center; gap: 16px; height: 76px; padding: 0 28px; border-radius: 38px; background: var(--panel2); border: 1px solid var(--line); font-size: 30px; }
+  .result { display: flex; align-items: center; gap: 22px; padding: 20px 24px; border-radius: 20px; background: rgba(79,125,255,.14); border: 1px solid rgba(79,125,255,.35); margin-top: 22px; }
+  .result img { width: 64px; height: 64px; border-radius: 16px; }
+
+  /* Knowledge base */
+  .kb { width: 1020px; padding: 34px; }
+  .sec { background: var(--panel2); border-radius: 22px; padding: 22px 26px; margin-top: 18px; }
+  .sec h4 { font-size: 24px; color: var(--muted); font-weight: 700; letter-spacing: .04em; display: flex; justify-content: space-between; }
+  .sec p { font-size: 25px; line-height: 1.55; margin-top: 10px; color: #dfe3ea; min-height: 78px; }
+  .skills { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+  .skill { padding: 9px 20px; border-radius: 999px; background: rgba(79,125,255,.18); color: var(--blue2); font-size: 23px; font-weight: 700; }
+  .proj { display: flex; align-items: center; gap: 18px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,.04); margin-top: 12px; font-size: 24px; }
+  .proj .ic { width: 46px; height: 46px; border-radius: 12px; background: rgba(61,214,245,.15); color: var(--cyan); display: grid; place-items: center; font-weight: 900; font-size: 22px; }
+  .proj .meta { margin-left: auto; color: var(--muted); font-size: 20px; }
+  .file { display: flex; align-items: center; gap: 18px; padding: 22px 28px; border-radius: 22px; background: var(--panel2); border: 2px dashed #3a4050; font-size: 28px; font-weight: 700; }
+  .file .pdf { width: 58px; height: 70px; border-radius: 10px; background: #E5484D; color: #fff; display: grid; place-items: center; font-size: 18px; font-weight: 900; }
+  .choice { width: 640px; padding: 34px; }
+  .choice h3 { font-size: 34px; }
+  .btns { display: flex; gap: 16px; justify-content: flex-end; margin-top: 28px; }
+  .btn { padding: 16px 28px; border-radius: 16px; font-size: 24px; font-weight: 700; background: var(--panel2); border: 1px solid var(--line); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); }
+  .cursor { width: 40px; height: 40px; }
+
+  /* Interview */
+  .desk { position: absolute; inset: 0; background: radial-gradient(1200px 700px at 30% 80%, #1b2440 0%, transparent 60%), radial-gradient(1000px 600px at 80% 20%, #2a1840 0%, transparent 60%), #0b0d12; }
+  .mainwin { position: absolute; left: 260px; top: 250px; width: 1400px; height: 700px; }
+  .mainwin .side { position: absolute; left: 0; top: 56px; bottom: 0; width: 300px; border-right: 1px solid var(--line); padding: 28px; }
+  .mainwin .side div { height: 22px; border-radius: 11px; background: var(--panel2); margin-bottom: 26px; }
+  .mainwin .content { position: absolute; left: 330px; right: 40px; top: 96px; }
+  .mainwin .content div { height: 26px; border-radius: 13px; background: var(--panel2); margin-bottom: 26px; }
+  .island { position: absolute; left: 50%; top: 110px; width: 1360px; margin-left: -680px; background: #000; border-radius: 40px; padding: 26px 30px 26px; border: 1px solid rgba(255,255,255,.08); box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+  .island .q { display: flex; align-items: center; gap: 16px; font-size: 32px; color: #b8bcc5; font-weight: 600; }
+  .island .live { width: 14px; height: 14px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 18px var(--pink); }
+  .island .a { margin-top: 20px; background: rgba(255,255,255,.05); border-radius: 28px; padding: 30px 34px; font-size: 36px; line-height: 1.6; min-height: 330px; }
+  .island .a b { color: var(--blue2); }
+  .taskbar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); height: 84px; padding: 0 22px; display: flex; gap: 16px; align-items: center; border-radius: 26px; background: rgba(30,33,42,.8); border: 1px solid var(--line); }
+  .taskbar span { width: 52px; height: 52px; border-radius: 14px; background: #2a2f3b; }
+  .taskbar img { width: 52px; height: 52px; border-radius: 14px; }
+  .caption { position: absolute; left: 0; right: 0; bottom: 140px; text-align: center; font-size: 56px; font-weight: 900; text-shadow: 0 6px 40px rgba(0,0,0,.8); }
+  .caption small { display: block; font-size: 26px; color: var(--muted); font-weight: 500; margin-top: 10px; font-family: "Inter", sans-serif; }
+
+  /* Values */
+  .big3 { display: flex; gap: 70px; font-size: 170px; font-weight: 900; letter-spacing: -0.02em; }
+  .providers { display: flex; gap: 20px; margin-top: 70px; }
+  .providers .pill { font-size: 30px; }
+
+  /* CTA */
+  .cta-title { font-size: 120px; font-weight: 900; letter-spacing: -0.03em; margin-top: 40px; }
+  .cta-sub { font-size: 40px; color: var(--muted); margin-top: 14px; font-weight: 600; }
+  .url { margin-top: 60px; font-size: 40px; font-weight: 700; padding: 22px 46px; border-radius: 999px; background: var(--blue); }
+  .gh { margin-top: 26px; font-size: 28px; color: var(--muted); }
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+  <!-- ============ Scene 1: chaos → hook (0 – 5.2s) ============ -->
+  <section class="scene" id="s1">
+    <div class="grid-bg" id="s1grid"></div>
+    <div class="glow" style="width:900px;height:900px;left:510px;top:90px;background:#2a3cff"></div>
+    <div id="chips">
+      <div class="chip zh" style="left:180px;top:140px">简历</div>
+      <div class="chip zh" style="left:1380px;top:120px">项目经历</div>
+      <div class="chip zh" style="left:760px;top:70px">八股文</div>
+      <div class="chip zh" style="left:120px;top:520px">行为面试</div>
+      <div class="chip zh" style="left:1460px;top:470px">系统设计</div>
+      <div class="chip zh" style="left:300px;top:850px">英文面试</div>
+      <div class="chip zh" style="left:1260px;top:830px">自我介绍</div>
+      <div class="chip" style="left:860px;top:900px">STAR</div>
+      <div class="chip zh" style="left:560px;top:330px">算法题</div>
+      <div class="chip zh" style="left:1050px;top:300px">薪资谈判</div>
+      <div class="chip zh" style="left:520px;top:640px">公司调研</div>
+      <div class="chip zh" style="left:1080px;top:640px">追问</div>
+    </div>
+    <div class="abs center" style="inset:0">
+      <div class="hook zh" id="hook1">面试准备，</div>
+      <div class="hook zh grad" id="hook2">一个 App 就够了。</div>
+    </div>
+  </section>
+
+  <!-- ============ Scene 2: Now on Windows (5.2 – 12s) ============ -->
+  <section class="scene" id="s2">
+    <div class="glow" id="s2glow" style="width:1100px;height:800px;left:410px;top:160px;background:#2346ff"></div>
+    <div class="abs center" style="inset:0">
+      <img class="logo" id="logo" src="icon.png" alt="">
+      <div class="now zh" id="now" style="margin-top:46px">Interview AI · 现已登陆</div>
+      <div class="win grad" id="win">Windows</div>
+      <div class="platforms" id="platforms">
+        <div class="pill"><span class="tick">✓</span> macOS</div>
+        <div class="pill"><span class="tick">✓</span> Windows 10 / 11</div>
+        <div class="pill zh">界面 · 功能 两端一致</div>
+      </div>
+    </div>
+    <div class="flash" id="flash1"></div>
+  </section>
+
+  <!-- ============ Scene 3: install + update (12 – 20.5s) ============ -->
+  <section class="scene" id="s3">
+    <div class="grid-bg"></div>
+    <div class="glow" style="width:800px;height:800px;left:1100px;top:200px;background:#1b56ff"></div>
+    <div class="abs" style="left:150px;top:250px;width:760px">
+      <div class="headline zh" id="h3">双击安装，<br>从此一键更新<small>Installer · Start menu · In-app updates</small></div>
+      <div class="feature zh" id="f31"><b>1</b>无需管理员权限</div>
+      <div class="feature zh" id="f32"><b>2</b>开始菜单直接搜到</div>
+      <div class="feature zh" id="f33"><b>3</b>新版本 App 内下载、自动重启</div>
+    </div>
+    <!-- installer -->
+    <div class="card abs" id="installer" style="left:1040px;top:250px;width:740px;padding:0 0 34px">
+      <div class="titlebar">Interview AI 安装</div>
+      <div style="padding:40px 40px 0">
+        <div style="display:flex;align-items:center;gap:24px"><img src="icon.png" style="width:92px;height:92px;border-radius:22px"><div><div style="font-size:36px;font-weight:800">Interview AI 1.1.1</div><div class="sub zh" style="font-size:22px" id="instText">正在安装…</div></div></div>
+        <div class="bar" style="margin-top:36px"><i id="instBar"></i></div>
+      </div>
+    </div>
+    <!-- start menu search -->
+    <div class="card abs" id="startmenu" style="left:1040px;top:250px;width:740px;padding:34px">
+      <div class="search"><span style="color:var(--muted)">⌕</span><span id="searchText" data-text="Interview"></span></div>
+      <div class="result" id="result"><img src="icon.png"><div><div style="font-size:30px;font-weight:800">Interview AI</div><div class="sub zh" style="font-size:20px">应用</div></div></div>
+    </div>
+    <!-- update dialog -->
+    <div class="card abs" id="update" style="left:1040px;top:250px;width:740px;padding:40px">
+      <div style="width:70px;height:70px;border-radius:20px;background:var(--panel2);display:grid;place-items:center;font-size:36px;color:var(--blue2)" id="updIcon">↓</div>
+      <div style="font-size:38px;font-weight:800;margin-top:22px" class="zh" id="updTitle">发现新版本 1.1.2</div>
+      <div class="sub zh" style="font-size:22px;margin-top:6px" id="updSub">正在下载… 64.2 MB / 84.7 MB</div>
+      <div class="bar" style="margin-top:28px"><i id="updBar"></i></div>
+      <div class="zh" id="updDone" style="margin-top:26px;font-size:30px;font-weight:800;color:var(--green)">✓ 更新成功，程序将自动重新打开</div>
+    </div>
+  </section>
+
+  <!-- ============ Scene 4: knowledge base (20.5 – 33s) ============ -->
+  <section class="scene" id="s4">
+    <div class="grid-bg"></div>
+    <div class="glow" style="width:900px;height:900px;left:-200px;top:300px;background:#3b2bff"></div>
+    <div class="abs" style="left:130px;top:150px;width:640px">
+      <div class="headline zh" id="h4">丢一份简历，<br><span class="grad">AI 整理成知识库</span><small>Resume → summary · skills · projects</small></div>
+      <div class="feature zh" id="f41"><b>✦</b>摘要语言跟随简历原文</div>
+      <div class="feature zh" id="f42"><b>✦</b>自动识别简历里的项目链接</div>
+      <div class="feature zh" id="f43"><b>✦</b>也可只保存原文，不调用 AI</div>
+    </div>
+    <div class="abs" style="left:820px;top:90px">
+      <div class="file" id="file"><div class="pdf">PDF</div>Resume_2026.pdf</div>
+      <div class="card kb" id="kb" style="margin-top:0">
+        <div class="sec" style="margin-top:0"><h4 class="zh"><span>简历 · AI 摘要</span><span style="color:var(--green)">已上传</span></h4>
+          <p id="summary" data-text="Full-stack engineer with 4 years at fintech startups. Led a payments rebuild that cut latency 38% and scaled to 2M users. Strong in TypeScript, Go and cloud infrastructure."></p></div>
+        <div class="sec"><h4 class="zh"><span>技能</span><span id="skillCount">8</span></h4>
+          <div class="skills" id="skills">
+            <span class="skill">TypeScript</span><span class="skill">Go</span><span class="skill">React</span><span class="skill">PostgreSQL</span>
+            <span class="skill">AWS</span><span class="skill">Kubernetes</span><span class="skill">System Design</span><span class="skill">CI/CD</span>
+          </div></div>
+        <div class="sec"><h4 class="zh"><span>项目 · 来自简历中的链接</span><span>2</span></h4>
+          <div class="proj" id="p1"><div class="ic">&lt;/&gt;</div><div><b>pay-engine</b><div class="sub" style="font-size:19px">Event-sourced payment service in Go</div></div><span class="meta">Go · ★ 312</span></div>
+          <div class="proj" id="p2"><div class="ic">&lt;/&gt;</div><div><b>budget-lens</b><div class="sub" style="font-size:19px">Personal finance dashboard, 10k MAU</div></div><span class="meta">TypeScript · ★ 88</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card choice abs zh" id="choice" style="left:1010px;top:360px">
+      <h3>用 AI 整理这份简历吗？</h3>
+      <div class="sub" style="font-size:22px;margin-top:12px">生成可编辑原文、摘要、技能标签，并自动添加项目。</div>
+      <div class="btns"><div class="btn">只保存原文</div><div class="btn primary" id="aiBtn">用 AI 整理</div></div>
+    </div>
+    <svg class="cursor abs" id="cursor" viewBox="0 0 24 24" style="left:1500px;top:700px"><path d="M3 2l7.5 19 2.6-7.9L21 10.5z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>
+  </section>
+
+  <!-- ============ Scene 5: interview (33 – 43.5s) ============ -->
+  <section class="scene" id="s5">
+    <div class="desk"></div>
+    <div class="card mainwin" id="mainwin">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:14px">Interview AI</span></div>
+      <div class="side"><div style="width:80%"></div><div style="width:60%"></div><div style="width:70%"></div><div style="width:50%"></div></div>
+      <div class="content"><div style="width:55%;height:44px"></div><div style="width:90%"></div><div style="width:80%"></div><div style="width:85%"></div><div style="width:60%"></div></div>
+    </div>
+    <div class="island" id="island">
+      <div class="q"><span class="live"></span><span id="question" data-text="Tell me about the most challenging project you've led."></span></div>
+      <div class="a" id="answer" data-html="<b>Situation</b> — our payment service hit 2s latency at peak.<br><b>Action</b> — I led a rebuild of pay-engine in Go with event sourcing.<br><b>Result</b> — latency dropped 38% while we scaled to 2M users."></div>
+    </div>
+    <div class="taskbar" id="taskbar"><span></span><span></span><img src="icon.png" id="tbIcon"><span></span><span></span></div>
+    <div class="caption zh" id="cap5a">面试开始，主窗口自动让位<small>The main window steps aside — hidden from the taskbar if you like</small></div>
+    <div class="caption zh" id="cap5b">实时听题，结合你的知识库作答<small>Live questions · answers grounded in your resume &amp; projects</small></div>
+  </section>
+
+  <!-- ============ Scene 6: values (43.5 – 50s) ============ -->
+  <section class="scene" id="s6">
+    <div class="grid-bg"></div>
+    <div class="glow" style="width:1200px;height:700px;left:360px;top:190px;background:#2a3cff"></div>
+    <div class="abs center" style="inset:0">
+      <div class="big3 zh"><span id="v1">免费</span><span id="v2" class="grad">开源</span><span id="v3">自配 API</span></div>
+      <div class="sub" id="vsub" style="font-size:34px;margin-top:30px">Free · Open source · Bring your own model — or run it 100% local</div>
+      <div class="providers" id="providers">
+        <div class="pill">DeepSeek</div><div class="pill">OpenAI</div><div class="pill">Claude</div><div class="pill">Gemini</div><div class="pill zh">豆包</div><div class="pill zh">Ollama 本地</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ Scene 7: CTA (50 – 56s) ============ -->
+  <section class="scene" id="s7">
+    <div class="glow" style="width:1000px;height:800px;left:460px;top:140px;background:#2346ff"></div>
+    <div class="abs center" style="inset:0">
+      <img class="logo" id="logo2" src="icon.png" alt="">
+      <div class="cta-title" id="ctaTitle">Interview AI <span class="grad">1.1.1</span></div>
+      <div class="cta-sub zh" id="ctaSub">macOS · Windows 现已推出 · 免费下载</div>
+      <div class="url" id="url">pennyzhaozhao.github.io/AI-interview-Assistant</div>
+      <div class="gh" id="gh">GitHub · pennyzhaozhao/AI-interview-Assistant</div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* Deterministic timeline: window.seek(seconds) renders one frame. */
+const DURATION = 56;
+const E = {
+  lin: x => x,
+  out: x => 1 - Math.pow(1 - x, 3),
+  in: x => x * x * x,
+  inout: x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+  back: x => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  expo: x => x === 1 ? 1 : 1 - Math.pow(2, -10 * x),
+};
+const tracks = [];
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+function tw(target, a, b, props, ease = 'out') {
+  const els = typeof target === 'string' ? $$(target) : [].concat(target);
+  tracks.push({ els, a, b, props, ease: E[ease] });
+}
+function stagger(sel, a, step, dur, props, ease = 'back') {
+  $$(sel).forEach((el, i) => tw(el, a + i * step, a + i * step + dur, props, ease));
+}
+const typers = [];
+function type(sel, a, b, html = false) { typers.push({ el: $(sel), a, b, html }); }
+const counters = [];
+
+/* ---------- Scene 1 ---------- */
+tw('#s1', 0, 0.01, { o: [1, 1] });
+tw('#s1grid', 0, 5.2, { s: [1, 1.15] }, 'lin');
+stagger('#chips .chip', 0.1, 0.16, 0.5, { o: [0, 1], s: [0.3, 1], r: [-12, 0] });
+// implode to center
+$$('#chips .chip').forEach((el, i) => {
+  const cx = 960 - (el.offsetLeft + el.offsetWidth / 2), cy = 540 - (el.offsetTop + el.offsetHeight / 2);
+  tw(el, 2.45 + i * 0.02, 2.95 + i * 0.02, { x: [0, cx], y: [0, cy], s: [1, 0.1], o: [1, 0] }, 'in');
+});
+tw('#hook1', 3.0, 3.45, { o: [0, 1], y: [60, 0], blur: [16, 0] });
+tw('#hook2', 3.5, 4.0, { o: [0, 1], y: [60, 0], blur: [16, 0], s: [1.1, 1] });
+tw('#s1', 4.85, 5.2, { o: [1, 0], s: [1, 1.08] }, 'in');
+
+/* ---------- Scene 2 ---------- */
+tw('#s2', 5.15, 5.3, { o: [0, 1] });
+tw('#logo', 5.3, 6.0, { o: [0, 1], s: [0.2, 1], r: [-30, 0] }, 'back');
+tw('#now', 6.0, 6.5, { o: [0, 1], y: [30, 0] });
+tw('#win', 6.7, 7.0, { o: [0, 1], s: [2.6, 1] }, 'in');
+tw('#flash1', 7.0, 7.05, { o: [0, 0.55] }, 'lin');
+tw('#flash1', 7.05, 7.45, { o: [0.55, 0] }, 'out');
+// impact shake
+[[7.0, 18], [7.06, -14], [7.12, 9], [7.18, -5], [7.24, 0]].forEach(([t, dx], i, arr) => {
+  if (i === 0) return;
+  tw('#win', arr[i - 1][0], t, { x: [arr[i - 1][1], dx] }, 'lin');
+});
+tw('#s2glow', 7.0, 8.0, { s: [0.6, 1.25], o: [0.2, 0.75] });
+stagger('#platforms .pill', 7.7, 0.18, 0.5, { o: [0, 1], y: [40, 0], s: [0.8, 1] });
+tw('#s2', 11.6, 12.0, { o: [1, 0] }, 'in');
+
+/* ---------- Scene 3 ---------- */
+tw('#s3', 11.9, 12.2, { o: [0, 1] });
+tw('#h3', 12.1, 12.7, { o: [0, 1], x: [-60, 0] });
+tw('#f31', 12.6, 13.0, { o: [0, 1], x: [-40, 0] });
+tw('#f32', 14.9, 15.3, { o: [0, 1], x: [-40, 0] });
+tw('#f33', 16.9, 17.3, { o: [0, 1], x: [-40, 0] });
+tw('#installer', 12.3, 12.9, { o: [0, 1], y: [80, 0], s: [0.92, 1] }, 'back');
+tw('#instBar', 12.8, 14.2, { sx: [0, 1] }, 'inout');
+tw('#installer', 14.5, 14.8, { o: [1, 0], s: [1, 0.94] }, 'in');
+tw('#startmenu', 14.7, 15.2, { o: [0, 1], y: [60, 0] });
+type('#searchText', 15.1, 15.8);
+tw('#result', 15.8, 16.2, { o: [0, 1], y: [20, 0] });
+tw('#startmenu', 16.6, 16.9, { o: [1, 0], s: [1, 0.94] }, 'in');
+tw('#update', 16.8, 17.3, { o: [0, 1], y: [60, 0] });
+tw('#updBar', 17.3, 19.0, { sx: [0, 1] }, 'inout');
+tw('#updSub', 19.0, 19.2, { o: [1, 0] });
+tw('#updDone', 19.1, 19.5, { o: [0, 1], s: [0.8, 1] }, 'back');
+tw('#s3', 20.2, 20.6, { o: [1, 0] }, 'in');
+counters.push({ el: $('#instText'), at: 14.2, text: '安装完成 ✓' });
+counters.push({ el: $('#updIcon'), at: 19.1, text: '✓' });
+
+/* ---------- Scene 4 ---------- */
+tw('#s4', 20.5, 20.8, { o: [0, 1] });
+tw('#h4', 20.7, 21.3, { o: [0, 1], x: [-60, 0] });
+tw('#file', 20.8, 21.5, { o: [0, 1], y: [-260, 0], r: [-8, 0] }, 'back');
+tw('#choice', 21.7, 22.2, { o: [0, 1], s: [0.9, 1] }, 'back');
+tw('#cursor', 21.9, 22.9, { x: [0, 120], y: [0, -205], o: [0, 1] }, 'inout');
+tw('#aiBtn', 23.0, 23.15, { s: [1, 0.9] }, 'lin');
+tw('#aiBtn', 23.15, 23.35, { s: [0.9, 1] }, 'out');
+tw('#choice', 23.4, 23.7, { o: [1, 0], s: [1, 0.92] }, 'in');
+tw('#cursor', 23.4, 23.7, { o: [1, 0] });
+tw('#file', 23.5, 23.9, { o: [1, 0], s: [1, 0.85], y: [0, -40] }, 'in');
+tw('#kb', 23.6, 24.3, { o: [0, 1], y: [60, -110] });
+type('#summary', 24.3, 26.6);
+tw('#f41', 24.6, 25.0, { o: [0, 1], x: [-40, 0] });
+stagger('#skills .skill', 26.4, 0.1, 0.4, { o: [0, 1], s: [0.4, 1] });
+tw('#f42', 28.2, 28.6, { o: [0, 1], x: [-40, 0] });
+tw('#p1', 28.4, 28.9, { o: [0, 1], x: [80, 0] });
+tw('#p2', 28.8, 29.3, { o: [0, 1], x: [80, 0] });
+tw('#f43', 30.2, 30.6, { o: [0, 1], x: [-40, 0] });
+tw('#s4', 32.6, 33.0, { o: [1, 0] }, 'in');
+
+/* ---------- Scene 5 ---------- */
+tw('#s5', 32.9, 33.2, { o: [0, 1] });
+tw('#mainwin', 33.0, 33.5, { o: [0, 1], s: [0.95, 1] });
+tw('#cap5a', 33.4, 33.9, { o: [0, 1], y: [30, 0] });
+// main window minimizes into the taskbar icon, then the prompt board drops in
+tw('#mainwin', 34.0, 34.7, { x: [0, 0], y: [0, 560], s: [1, 0.04], o: [1, 0] }, 'inout');
+tw('#tbIcon', 34.6, 34.8, { s: [1, 1.25] }, 'out');
+tw('#tbIcon', 34.8, 35.0, { s: [1.25, 1] }, 'out');
+tw('#island', 34.9, 35.6, { o: [0, 1], y: [-260, 0], sx2: [0.35, 1] }, 'back');
+tw('#cap5a', 37.0, 37.3, { o: [1, 0] });
+tw('#cap5b', 37.3, 37.8, { o: [0, 1], y: [30, 0] });
+type('#question', 35.6, 36.8);
+type('#answer', 37.0, 42.0, true);
+tw('#s5', 43.1, 43.5, { o: [1, 0] }, 'in');
+
+/* ---------- Scene 6 ---------- */
+tw('#s6', 43.4, 43.6, { o: [0, 1] });
+tw('#v1', 43.6, 43.85, { o: [0, 1], s: [2.2, 1] }, 'in');
+tw('#v2', 44.15, 44.4, { o: [0, 1], s: [2.2, 1] }, 'in');
+tw('#v3', 44.7, 44.95, { o: [0, 1], s: [2.2, 1] }, 'in');
+tw('#vsub', 45.3, 45.8, { o: [0, 1], y: [20, 0] });
+stagger('#providers .pill', 45.9, 0.12, 0.45, { o: [0, 1], y: [40, 0] });
+tw('#s6', 49.6, 50.0, { o: [1, 0] }, 'in');
+
+/* ---------- Scene 7 ---------- */
+tw('#s7', 49.9, 50.2, { o: [0, 1] });
+tw('#logo2', 50.1, 50.8, { o: [0, 1], s: [0.3, 1] }, 'back');
+tw('#ctaTitle', 50.6, 51.2, { o: [0, 1], y: [40, 0] });
+tw('#ctaSub', 51.0, 51.5, { o: [0, 1], y: [30, 0] });
+tw('#url', 51.5, 52.1, { o: [0, 1], s: [0.85, 1] }, 'back');
+tw('#gh', 52.0, 52.5, { o: [0, 1] });
+tw('#stage', 55.2, 56.0, { o: [1, 0] }, 'in');
+
+/* ---------- renderer ---------- */
+typers.forEach(t => { t.full = t.html ? t.el.dataset.html : (t.el.dataset.text ?? t.el.textContent); });
+counters.forEach(c => { c.orig = c.el.textContent; });
+const defaults = { o: 1, x: 0, y: 0, s: 1, r: 0, blur: 0, sx: 1, sx2: 1 };
+
+window.seek = function (t) {
+  const state = new Map();
+  for (const tr of tracks) {
+    for (const el of tr.els) {
+      let st = state.get(el);
+      if (!st) { st = {}; state.set(el, st); }
+      for (const k in tr.props) {
+        const [from, to] = tr.props[k];
+        if (!(k in st)) st[k] = from;           // value before the first track starts
+        if (t >= tr.a) {
+          const p = tr.b <= tr.a ? 1 : Math.min(1, (t - tr.a) / (tr.b - tr.a));
+          st[k] = from + (to - from) * tr.ease(p);
+        }
+      }
+    }
+  }
+  for (const [el, st] of state) {
+    const v = k => (k in st ? st[k] : defaults[k]);
+    el.style.opacity = v('o');
+    const sx = v('s') * v('sx2');
+    let transform = `translate(${v('x')}px, ${v('y')}px) scale(${sx}, ${v('s')}) rotate(${v('r')}deg)`;
+    if ('sx' in st) transform = `scaleX(${Math.max(0.0001, st.sx)})`;
+    el.style.transform = transform;
+    if ('blur' in st) el.style.filter = st.blur > 0.05 ? `blur(${st.blur}px)` : 'none';
+  }
+  for (const ty of typers) {
+    const p = Math.max(0, Math.min(1, (t - ty.a) / (ty.b - ty.a)));
+    if (ty.html) {
+      // reveal HTML by visible characters, keeping tags intact
+      const plain = ty.full.replace(/<[^>]+>/g, '');
+      let n = Math.round(plain.length * p), out = '', i = 0;
+      while (i < ty.full.length && n > 0) {
+        if (ty.full[i] === '<') { const j = ty.full.indexOf('>', i); out += ty.full.slice(i, j + 1); i = j + 1; continue; }
+        out += ty.full[i++]; n--;
+      }
+      // close an open <b>
+      if ((out.match(/<b>/g) || []).length > (out.match(/<\/b>/g) || []).length) out += '</b>';
+      ty.el.innerHTML = out + (p > 0 && p < 1 ? '<span class="caret"></span>' : '');
+    } else {
+      ty.el.textContent = ty.full.slice(0, Math.round(ty.full.length * p));
+      ty.el.classList.toggle('caret', p > 0 && p < 1);
+    }
+  }
+  for (const c of counters) c.el.textContent = t >= c.at ? c.text : c.orig;
+};
+window.DURATION = DURATION;
+window.seek(0);
+</script>
+</body>
+</html>
