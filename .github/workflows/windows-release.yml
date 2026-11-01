@@ -1,8 +1,10 @@
 name: Windows release
 
-# Builds the Windows app as a single self-contained InterviewAssistant.exe and attaches it to a
-# GitHub Release, next to the macOS .dmg. The in-app update checker (UpdateChecker.cs) picks the
-# .exe asset of the latest release.
+# Builds the Windows app and attaches two files to a GitHub Release, next to the macOS .dmg:
+#   InterviewAssistant-<version>-Windows-x64-Setup.exe  installer (recommended; Start menu, uninstall)
+#   InterviewAssistant-<version>-Windows-x64.exe        portable single-file exe
+# The in-app updater (UpdateChecker.cs / UpdateInstaller.cs) picks the Setup for installed copies
+# and the portable exe for portable copies.
 #
 # - Publishing a release (tag like v1.2.0) builds and uploads automatically.
 # - "Run workflow" lets you build for an existing tag (creates the release if it does not exist).
@@ -15,6 +17,10 @@ on:
       tag:
         description: "Release tag to upload to (e.g. v1.1.0). The selected branch is what gets built."
         required: true
+      upload:
+        description: "Upload to the release (off = build only; files are kept as a workflow artifact)."
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -60,20 +66,39 @@ jobs:
             -p:FileVersion=${{ steps.version.outputs.version }}.${{ github.run_number }} `
             -o publish
           $asset = "InterviewAssistant-${{ steps.version.outputs.version }}-Windows-x64.exe"
-          Move-Item publish/InterviewAssistant.exe $asset
+          Copy-Item publish/InterviewAssistant.exe $asset
           Get-Item $asset | Format-List Name, Length
           "ASSET=$asset" >> $env:GITHUB_ENV
 
+      - name: Build installer
+        shell: pwsh
+        run: |
+          # windows-latest ships Inno Setup 6; install it only if missing.
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if (-not (Test-Path $iscc)) { $iscc = (Get-Command ISCC.exe -ErrorAction Stop).Source }
+          }
+          $exe = (Resolve-Path publish/InterviewAssistant.exe).Path
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" "/DSourceExe=$exe" "/O$PWD" "Windows platform/installer/InterviewAssistant.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          $setup = "InterviewAssistant-${{ steps.version.outputs.version }}-Windows-x64-Setup.exe"
+          Get-Item $setup | Format-List Name, Length
+          "SETUP=$setup" >> $env:GITHUB_ENV
+
       - name: Upload to release
+        if: github.event_name == 'release' || inputs.upload
         shell: pwsh
         run: |
           gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes "Windows build."
           }
-          gh release upload $env:TAG $env:ASSET --repo $env:GITHUB_REPOSITORY --clobber
+          gh release upload $env:TAG $env:SETUP $env:ASSET --repo $env:GITHUB_REPOSITORY --clobber
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ASSET }}
-          path: ${{ env.ASSET }}
+          name: InterviewAssistant-Windows-${{ steps.version.outputs.version }}
+          path: |
+            ${{ env.SETUP }}
+            ${{ env.ASSET }}

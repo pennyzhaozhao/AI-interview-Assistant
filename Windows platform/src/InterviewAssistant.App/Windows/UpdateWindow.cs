@@ -253,7 +253,8 @@ public sealed class UpdateWindow : Window
         SetIcon("", "SuccessBrush");
         _progressScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(120)));
         _progressFill.SetResourceReference(Border.BackgroundProperty, "SuccessBrush");
-        _title.Text = LocalizationManager.Text("Update successful");
+        var installer = _result.Asset?.IsInstaller == true;
+        _title.Text = installer ? LocalizationManager.Text("Download complete") : LocalizationManager.Text("Update successful");
         _secondary.Visibility = Visibility.Collapsed;
         _primary.Visibility = Visibility.Visible;
         _primary.Content = LocalizationManager.Text("Restart Now");
@@ -261,7 +262,9 @@ public sealed class UpdateWindow : Window
         var remaining = 3;
         void Tick()
         {
-            _subtitle.Text = string.Format(LocalizationManager.Text("The app will reopen automatically in {0} s."), remaining);
+            _subtitle.Text = installer
+                ? string.Format(LocalizationManager.Text("The app will close in {0} s to install the update, then reopen automatically."), remaining)
+                : string.Format(LocalizationManager.Text("The app will reopen automatically in {0} s."), remaining);
             _progressText.Text = string.Format(LocalizationManager.Text("Updated to version {0}."), _result.LatestVersion);
         }
         Tick();

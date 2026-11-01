@@ -152,7 +152,11 @@ Regular users can download the app from [GitHub Releases](https://github.com/pen
 | Platform | File | Notes |
 | --- | --- | --- |
 | macOS | `InterviewAssistant-<version>-macOS.dmg` | Developer ID signed and Apple-notarized; open the DMG and drag the app to Applications |
-| Windows | `InterviewAssistant-<version>-Windows-x64.exe` | Single portable file; download and double-click to run |
+| Windows (recommended) | `InterviewAssistant-<version>-Windows-x64-Setup.exe` | Installer: no administrator rights, installs to `%LOCALAPPDATA%\Programs\Interview AI`, searchable in the Start menu, optional desktop shortcut, uninstall from Settings → Apps |
+| Windows (portable) | `InterviewAssistant-<version>-Windows-x64.exe` | Single portable file; download and double-click to run |
+
+> [!TIP]
+> Both support in-app updates: when a new version is found, click **Update Now** and the app downloads, installs and reopens itself. Your data and settings are kept.
 
 > [!NOTE]
 > The Windows build is not code-signed yet. If Windows shows “Windows protected your PC” on first launch, select **More info → Run anyway**.
@@ -605,7 +609,7 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 
 The GitHub Actions workflow `.github/workflows/windows-release.yml` packages the Windows app:
 
-- Publishing a new GitHub Release (tag such as `v1.2.0`) automatically builds `InterviewAssistant-<version>-Windows-x64.exe` and uploads it to that release;
+- Publishing a new GitHub Release (tag such as `v1.2.0`) automatically builds the installer `InterviewAssistant-<version>-Windows-x64-Setup.exe` (Inno Setup, script in `Windows platform/installer/`) and the portable `InterviewAssistant-<version>-Windows-x64.exe`, and uploads both to that release;
 - It can also be run manually from **Actions → Windows release → Run workflow** to build and upload for an existing tag;
 - The version comes from the tag, which the in-app update checker uses for comparison.
 

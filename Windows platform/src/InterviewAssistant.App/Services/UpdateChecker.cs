@@ -19,7 +19,10 @@ public sealed record UpdateCheckResult(
     UpdateAsset? Asset = null);
 
 /// <summary>The Windows .exe attached to a release (downloaded and installed in-app).</summary>
-public sealed record UpdateAsset(string Name, string Url, long Size, string? Sha256);
+public sealed record UpdateAsset(string Name, string Url, long Size, string? Sha256)
+{
+    public bool IsInstaller => Name.EndsWith("-Setup.exe", StringComparison.OrdinalIgnoreCase);
+}
 
 public static class UpdateChecker
 {
@@ -105,10 +108,20 @@ public static class UpdateChecker
         return client;
     }
 
+    /// <summary>Installed copies update with the Setup, portable copies with the portable exe.</summary>
     private static UpdateAsset? FindWindowsAsset(JsonElement release)
     {
+        var all = ReadExeAssets(release);
+        var installer = all.FirstOrDefault(asset => asset.IsInstaller);
+        var portable = all.FirstOrDefault(asset => !asset.IsInstaller);
+        return UpdateInstaller.IsInstalled ? installer ?? portable : portable ?? installer;
+    }
+
+    private static List<UpdateAsset> ReadExeAssets(JsonElement release)
+    {
+        var result = new List<UpdateAsset>();
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
-            return null;
+            return result;
         foreach (var asset in assets.EnumerateArray())
         {
             var name = asset.TryGetProperty("name", out var nameValue) ? nameValue.GetString() : null;
@@ -120,9 +133,9 @@ public static class UpdateChecker
             if (asset.TryGetProperty("digest", out var digest) && digest.GetString() is { } value
                 && value.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
                 sha256 = value["sha256:".Length..].Trim().ToLowerInvariant();
-            return new UpdateAsset(name, link, size, sha256);
+            result.Add(new UpdateAsset(name, link, size, sha256));
         }
-        return null;
+        return result;
     }
 
     private static int CompareVersions(string left, string right)
