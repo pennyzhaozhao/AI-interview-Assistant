@@ -5,9 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Interview AI — 免费开源的 AI 面试助手</title>
   <meta name="description" content="Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库、模拟面试。自带 API Key，数据留在本机。" />
+  <meta name="keywords" content="AI 面试助手, 面试准备, 模拟面试, 面试题, 简历, 知识库, 开源, 免费, Windows, macOS, AI interview assistant, interview copilot, mock interview, open source" />
+  <meta name="robots" content="index, follow" />
+  <!-- Search Console ownership: paste the google-site-verification meta tag here -->
+  <link rel="canonical" id="canonical" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+  <link rel="alternate" hreflang="zh-CN" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+  <link rel="alternate" hreflang="en" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=en" />
+  <link rel="alternate" hreflang="x-default" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Interview AI" />
+  <meta property="og:url" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
   <meta property="og:title" content="Interview AI — Free & open-source AI interview copilot" />
   <meta property="og:description" content="Real-time answers, screenshot solving, knowledge bases and mock interviews. Bring your own API key. macOS & Windows." />
-  <meta property="og:image" content="assets/icon-256.png" />
+  <meta property="og:image" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Interview AI — Free & open-source AI interview copilot" />
+  <meta name="twitter:description" content="Real-time answers, screenshot solving, knowledge bases and mock interviews. Bring your own API key. macOS & Windows." />
+  <meta name="twitter:image" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Interview AI",
+    "alternateName": ["InterviewAssistant", "AI 面试助手"],
+    "description": "Free and open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases built from your resume, and mock interviews. Bring your own API key or run local models.",
+    "applicationCategory": "ProductivityApplication",
+    "operatingSystem": "macOS 14+, Windows 10, Windows 11",
+    "softwareVersion": "1.1.1",
+    "url": "https://pennyzhaozhao.github.io/AI-interview-Assistant/",
+    "image": "https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png",
+    "downloadUrl": "https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest",
+    "license": "https://github.com/pennyzhaozhao/AI-interview-Assistant/blob/main/LICENSE",
+    "isAccessibleForFree": true,
+    "inLanguage": ["zh-CN", "en"],
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "pennyzhaozhao", "url": "https://github.com/pennyzhaozhao" }
+  }
+  </script>
   <link rel="icon" href="assets/icon-64.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -626,9 +660,11 @@
       "final.title": "Bring your AI copilot to your next interview", "final.sub": "Free download. Set up in five minutes.", "final.all": "All versions and release notes →",
       "footer.license": "MIT License", "footer.feedback": "Feedback",
       "footer.legal": "For interview preparation and permitted assistance only. Brand icons from Simple Icons (CC0); trademarks belong to their respective owners, with no affiliation implied.",
-      "meta.version": "Latest version {v}", "doc.title": "Interview AI — Free & open-source AI interview copilot"
+      "meta.version": "Latest version {v}", "doc.title": "Interview AI — Free & open-source AI interview copilot",
+      "doc.description": "Interview AI is a free, open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases and mock interviews. Bring your own API key; your data stays on your computer."
     },
-    zh: { "meta.version": "最新版本 {v}", "doc.title": "Interview AI — 免费开源的 AI 面试助手" }
+    zh: { "meta.version": "最新版本 {v}", "doc.title": "Interview AI — 免费开源的 AI 面试助手",
+          "doc.description": "Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库、模拟面试。自带 API Key，数据留在本机。" }
   };
 
   // Marks come from Simple Icons (CC0); brands without one are shown as wordmarks.
@@ -668,6 +704,8 @@
   function initialLang() {
     var query = new URLSearchParams(window.location.search).get("lang");
     if (query === "en" || query === "zh") return query;
+    // Search engine crawlers: the plain URL is the Chinese page (?lang=en is the English one).
+    if (/bot|crawler|spider|crawling|slurp|bingpreview/i.test(navigator.userAgent || "")) return "zh";
     var saved = storage("get");
     if (saved === "en" || saved === "zh") return saved;
     return (navigator.language || "zh").toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
@@ -717,6 +755,10 @@
   function applyLang() {
     document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
     document.title = t("doc.title");
+    var description = document.querySelector('meta[name="description"]');
+    if (description) description.setAttribute("content", t("doc.description"));
+    var canonical = document.getElementById("canonical");
+    if (canonical) canonical.setAttribute("href", "https://pennyzhaozhao.github.io/AI-interview-Assistant/" + (lang === "en" ? "?lang=en" : ""));
     document.querySelectorAll("[data-i18n]").forEach(function (el) { el.textContent = t(el.getAttribute("data-i18n")); });
     document.querySelectorAll("[data-i18n-html]").forEach(function (el) { el.innerHTML = t(el.getAttribute("data-i18n-html")); });
     document.getElementById("langToggle").textContent = lang === "en" ? "中文" : "EN";
