@@ -738,11 +738,16 @@
       .then(function (release) {
         if (!release) return;
         latestVersion = release.tag_name;
+        var winSetup = null, winPortable = null;
         (release.assets || []).forEach(function (asset) {
           var name = (asset.name || "").toLowerCase();
           if (name.endsWith(".dmg")) document.querySelectorAll(".js-dl-mac").forEach(function (a) { a.href = asset.browser_download_url; });
-          if (name.endsWith(".exe") || name.endsWith(".msi")) document.querySelectorAll(".js-dl-win").forEach(function (a) { a.href = asset.browser_download_url; });
+          if (name.endsWith("-setup.exe")) winSetup = asset.browser_download_url;
+          else if (name.endsWith(".exe")) winPortable = asset.browser_download_url;
         });
+        // Prefer the installer (Start menu shortcut, uninstall); fall back to the portable exe.
+        var win = winSetup || winPortable;
+        if (win) document.querySelectorAll(".js-dl-win").forEach(function (a) { a.href = win; });
         applyLang();
       })
       .catch(function () {});

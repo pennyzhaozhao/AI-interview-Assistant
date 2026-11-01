@@ -152,7 +152,11 @@ AI 请求由应用直接发送到用户自己选择的模型服务商。
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
 | macOS | `InterviewAssistant-<版本>-macOS.dmg` | 已使用 Developer ID 签名并通过 Apple 公证，打开 DMG 后拖入“应用程序”即可 |
-| Windows | `InterviewAssistant-<版本>-Windows-x64.exe` | 单文件免安装版，下载后双击运行 |
+| Windows（推荐） | `InterviewAssistant-<版本>-Windows-x64-Setup.exe` | 安装版：无需管理员权限，安装到 `%LOCALAPPDATA%\Programs\Interview AI`，开始菜单可搜索，可选桌面快捷方式，可在“设置 → 应用”中卸载 |
+| Windows（便携） | `InterviewAssistant-<版本>-Windows-x64.exe` | 单文件免安装版，下载后双击运行 |
+
+> [!TIP]
+> 两个版本都支持应用内更新：发现新版本后点击 **立即更新**，应用会在内部下载、安装并自动重新打开，数据和设置都会保留。
 
 > [!NOTE]
 > Windows 版目前没有代码签名证书。首次运行时如果出现“Windows 已保护你的电脑”，点击 **更多信息 → 仍要运行** 即可。
@@ -605,7 +609,7 @@ NOTARY_PROFILE=InterviewAssistant-notary \
 
 仓库中的 GitHub Actions 流程 `.github/workflows/windows-release.yml` 会自动打包 Windows 版：
 
-- 在 GitHub 上发布新的 Release（tag 形如 `v1.2.0`）后，会自动构建 `InterviewAssistant-<版本>-Windows-x64.exe` 并上传到该 Release；
+- 在 GitHub 上发布新的 Release（tag 形如 `v1.2.0`）后，会自动构建安装版 `InterviewAssistant-<版本>-Windows-x64-Setup.exe`（Inno Setup，脚本见 `Windows platform/installer/`）和便携版 `InterviewAssistant-<版本>-Windows-x64.exe`，并上传到该 Release；
 - 也可以在 **Actions → Windows release → Run workflow** 中手动运行，为已有 tag 构建并上传；
 - 版本号取自 tag，应用内“检查更新”会据此比较版本。
 
