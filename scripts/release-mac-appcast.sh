@@ -104,7 +104,24 @@ cat > "${ITEM_FILE}" <<EOF
     </item>
 EOF
 
-awk -v item_file="${ITEM_FILE}" '
+awk -v item_file="${ITEM_FILE}" -v version="${VERSION}" '
+  BEGIN {
+    version_element = "<sparkle:shortVersionString>" version "</sparkle:shortVersionString>"
+  }
+  /<item>/ && !in_item {
+    in_item = 1
+    item = $0 ORS
+    next
+  }
+  in_item {
+    item = item $0 ORS
+    if (/<\/item>/) {
+      if (index(item, version_element) == 0) printf "%s", item
+      item = ""
+      in_item = 0
+    }
+    next
+  }
   /<\/channel>/ && !inserted {
     while ((getline line < item_file) > 0) print line
     close(item_file)
@@ -119,7 +136,7 @@ awk -v item_file="${ITEM_FILE}" '
 
 mv "${UPDATED_APPCAST}" "${APPCAST_PATH}"
 
-echo "Added Interview AI ${VERSION} (build ${BUILD_NUMBER}) to ${APPCAST_PATH}."
+echo "Updated Interview AI ${VERSION} (build ${BUILD_NUMBER}) in ${APPCAST_PATH}."
 echo "Next steps:"
 echo "  1. Upload ${DMG_NAME} to GitHub Release v${VERSION}."
 echo "  2. Commit website/appcast.xml and push it to deploy the feed."

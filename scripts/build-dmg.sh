@@ -5,7 +5,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 if [[ -d "/Applications/Xcode.app/Contents/Developer" ]]; then
   export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 fi
-BUILD_DIR="${ROOT_DIR}/build"
+if [[ -n "${BUILD_DIR:-}" ]]; then
+  CLEAN_BUILD_DIR=0
+else
+  BUILD_DIR="$(mktemp -d /private/tmp/interview-assistant-release.XXXXXX)"
+  CLEAN_BUILD_DIR=1
+fi
 DIST_DIR="${ROOT_DIR}/dist"
 ARCHIVE_PATH="${BUILD_DIR}/InterviewAssistant-macOS.xcarchive"
 EXPORT_DIR="${BUILD_DIR}/export"
@@ -14,6 +19,13 @@ ENTITLEMENTS_PATH="${ROOT_DIR}/InterviewAssistant/Resources/InterviewAssistant.e
 SIGNED_RELEASE="${SIGNED_RELEASE:-0}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 DEVELOPER_IDENTITY="${DEVELOPER_IDENTITY:-Developer ID Application}"
+
+cleanup() {
+  if [[ "${CLEAN_BUILD_DIR}" == "1" && -d "${BUILD_DIR}" ]]; then
+    rm -rf "${BUILD_DIR}"
+  fi
+}
+trap cleanup EXIT
 
 VERSION="$(xcodebuild \
   -project "${ROOT_DIR}/InterviewAssistant.xcodeproj" \
@@ -85,17 +97,22 @@ sign_sparkle_components() {
   local version_dir="${SPARKLE_FRAMEWORK}/Versions/B"
 
   [[ -d "${SPARKLE_FRAMEWORK}" ]] || return 0
+  xattr -cr "${version_dir}/XPCServices/Installer.xpc"
   codesign --force --sign "${identity}" "${signing_options[@]}" \
     "${version_dir}/XPCServices/Installer.xpc"
   if [[ -d "${version_dir}/XPCServices/Downloader.xpc" ]]; then
+    xattr -cr "${version_dir}/XPCServices/Downloader.xpc"
     codesign --force --sign "${identity}" "${signing_options[@]}" \
       --preserve-metadata=entitlements \
       "${version_dir}/XPCServices/Downloader.xpc"
   fi
+  xattr -cr "${version_dir}/Autoupdate"
   codesign --force --sign "${identity}" "${signing_options[@]}" \
     "${version_dir}/Autoupdate"
+  xattr -cr "${version_dir}/Updater.app"
   codesign --force --sign "${identity}" "${signing_options[@]}" \
     "${version_dir}/Updater.app"
+  xattr -cr "${SPARKLE_FRAMEWORK}"
   codesign --force --sign "${identity}" "${signing_options[@]}" \
     "${SPARKLE_FRAMEWORK}"
 }
