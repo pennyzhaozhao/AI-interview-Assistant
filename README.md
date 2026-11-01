@@ -586,7 +586,7 @@ macOS 实现使用固定版本 `sherpa-onnx 1.13.6`（Apache-2.0）及其 `onnxr
 macOS 版使用 Sparkle 2 提供应用内更新。首次准备发布前，需要完成一次密钥配置：
 
 1. 从 Sparkle 2.10.0 官方发布包的 `bin/` 目录运行 `generate_keys`。私钥默认保存在当前开发者账户的钥匙串中，不要导出或提交到仓库；
-2. 把 `generate_keys` 输出的公钥替换到 `InterviewAssistant/Resources/Info.plist` 的 `SUPublicEDKey`（当前占位符为 `REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY`）；
+2. 确认 `InterviewAssistant/Resources/Info.plist` 的 `SUPublicEDKey` 与 `generate_keys -p` 输出的公钥一致；
 3. 确认 Pages 已部署 `website/appcast.xml`，公开地址为 `https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml`。
 
 本地预览构建：

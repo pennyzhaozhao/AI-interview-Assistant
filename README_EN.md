@@ -586,7 +586,7 @@ The macOS implementation pins `sherpa-onnx 1.13.6` (Apache-2.0) and its `onnxrun
 The macOS app uses Sparkle 2 for in-app updates. Complete this one-time key setup before the first release:
 
 1. Run `generate_keys` from the official Sparkle 2.10.0 release's `bin/` directory. The private key is stored in the current developer account's Keychain by default; never export or commit it;
-2. Replace `REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY` in `InterviewAssistant/Resources/Info.plist` (`SUPublicEDKey`) with the public key printed by `generate_keys`;
+2. Confirm that `SUPublicEDKey` in `InterviewAssistant/Resources/Info.plist` matches the public key printed by `generate_keys -p`;
 3. Confirm that Pages deploys `website/appcast.xml` at `https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml`.
 
 Local preview build:
