@@ -687,9 +687,6 @@ struct SetupView: View {
         try? modelContext.save()
         session = newSession
         #if os(macOS)
-        let miniaturizedWindows = NSApp.windows.filter { window in
-            window.isMiniaturized && !(window is PrompterPanel)
-        }
         NSApp.windows.compactMap { $0 as? PrompterPanel }.forEach { $0.close() }
         floatingReceiver = nil
         var controller: NSWindowController!
@@ -698,21 +695,12 @@ struct SetupView: View {
             if floatingReceiver === controller {
                 floatingReceiver = nil
             }
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
+            // InterviewWindowPresence brings the main window back when the board closes.
         })
             .modelContext(modelContext)
         controller = FloatingWindowController(rootView: root)
         floatingReceiver = controller
-        if hideDockIcon {
-            NSApp.setActivationPolicy(.accessory)
-        }
         controller.window?.orderFrontRegardless()
-        DispatchQueue.main.async {
-            for window in miniaturizedWindows where !window.isMiniaturized {
-                window.miniaturize(nil)
-            }
-        }
         #else
         showReceiver = true
         #endif
