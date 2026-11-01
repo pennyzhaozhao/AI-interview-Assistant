@@ -92,7 +92,14 @@ jobs:
         run: |
           gh release view $env:TAG --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes "Windows build."
+            # Created by "Run workflow": start as a draft so the in-app update checks (which read the
+            # latest published release) only see it once the macOS .dmg is attached and it is published.
+            $notes = "${{ github.workspace }}/.github/release-notes/$env:TAG.md"
+            if (Test-Path $notes) {
+              gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --draft --target $env:GITHUB_SHA --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes-file $notes
+            } else {
+              gh release create $env:TAG --repo $env:GITHUB_REPOSITORY --draft --target $env:GITHUB_SHA --title "InterviewAssistant ${{ steps.version.outputs.version }}" --notes "Windows build."
+            }
           }
           gh release upload $env:TAG $env:SETUP $env:ASSET --repo $env:GITHUB_REPOSITORY --clobber
 
