@@ -42,7 +42,7 @@ final class SpeechProtectionTests: XCTestCase {
     @MainActor
     func testDirectorConnectionReportsProgressAndConnects() async {
         let port: UInt16 = 19991
-        let server = TCPLineServer(port: port)
+        let server = TCPLineServer(port: port, advertisesBonjour: false)
         server.start()
         defer { server.stop() }
 
@@ -66,7 +66,7 @@ final class SpeechProtectionTests: XCTestCase {
     @MainActor
     func testDirectorWebControllerServesPage() async throws {
         let port: UInt16 = 19992
-        let server = TCPLineServer(port: port)
+        let server = TCPLineServer(port: port, advertisesBonjour: false)
         server.start()
         defer { server.stop() }
 
@@ -78,7 +78,28 @@ final class SpeechProtectionTests: XCTestCase {
         let url = try XCTUnwrap(URL(string: "http://127.0.0.1:\(port)/"))
         let (data, response) = try await URLSession.shared.data(from: url)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
-        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("Director Mode"))
+        let page = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(page.contains("Director Mode") || page.contains("导演模式"))
+    }
+
+    @MainActor
+    func testDirectorWebControllerServesPageOnLANAddress() async throws {
+        let port: UInt16 = 19993
+        let server = TCPLineServer(port: port, advertisesBonjour: false)
+        server.start()
+        defer { server.stop() }
+
+        for _ in 0..<50 where !server.isRunning {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(server.isRunning, server.statusText)
+
+        let ip = try XCTUnwrap(LocalNetworkInfo.wifiIPAddress())
+        let url = try XCTUnwrap(URL(string: "http://\(ip):\(port)/"))
+        let (data, response) = try await URLSession.shared.data(from: url)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let page = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(page.contains("Director Mode") || page.contains("导演模式"))
     }
 
     @MainActor

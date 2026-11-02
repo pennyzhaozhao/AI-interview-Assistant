@@ -111,7 +111,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["The 2.0 hourly plan is recommended. Create an app in the Volcano console and enable the matching model."] = "推荐选择 2.0 小时版。请在豆包语音控制台创建应用并开通对应模型。",
         ["YOUR IP ADDRESS"] = "你的 IP 地址", ["ENTER HOST IP ADDRESS"] = "输入 HOST IP 地址", ["WEB CONTROLLER"] = "网页控制端", ["Scan to send without the app"] = "扫码即可发送，无需安装 App",
         ["Waiting for host connection"] = "等待 Host 连接",
-        ["The Host prompt board must be running on the same Wi-Fi."] = "Host 提示板需要在同一 Wi-Fi 下运行。", ["Controller address QR"] = "网页控制端已就绪", ["QUESTION"] = "问题", ["ANSWER"] = "回答", ["Host prompt board status"] = "Host 提示板状态",
+        ["The Host prompt board must be running on the same Wi-Fi."] = "Host 提示板需要在同一 Wi-Fi 下运行。", ["Controller address QR"] = "网页控制端已就绪", ["Starting web controller…"] = "正在启动网页控制端…", ["Web controller ready"] = "网页控制端已就绪", ["QUESTION"] = "问题", ["ANSWER"] = "回答", ["Host prompt board status"] = "Host 提示板状态",
         ["Waiting for the Host to hear or capture a question"] = "等待 Host 听到或截取题目", ["SEND MARKDOWN CONTENT"] = "发送 MARKDOWN 内容", ["Supports headings, lists, code blocks and links"] = "支持标题、列表、代码块和链接",
         // Mock interview + About page wording aligned with the macOS app.
         ["End Interview"] = "结束面试", ["Score"] = "得分", ["Start Another Mock Interview"] = "再来一场模拟面试",

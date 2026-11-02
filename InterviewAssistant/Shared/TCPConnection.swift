@@ -201,10 +201,12 @@ final class TCPLineServer {
     private var listener: NWListener?
     private var connections: [NWConnection] = []
     private let port: UInt16
+    private let advertisesBonjour: Bool
     private var restartTask: Task<Void, Never>?
 
-    init(port: UInt16 = 9999) {
+    init(port: UInt16 = 9999, advertisesBonjour: Bool = true) {
         self.port = port
+        self.advertisesBonjour = advertisesBonjour
     }
 
     func start() {
@@ -213,6 +215,15 @@ final class TCPLineServer {
             let parameters = NWParameters.tcp
             parameters.includePeerToPeer = true
             let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            // Advertising the controller makes macOS request Local Network access
+            // consistently. The QR code still connects directly by IP, so Bonjour
+            // discovery is an aid rather than a dependency.
+            if advertisesBonjour {
+                listener.service = NWListener.Service(
+                    name: "Interview Assistant Director",
+                    type: "_interview-director._tcp"
+                )
+            }
             self.listener = listener
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
@@ -223,8 +234,11 @@ final class TCPLineServer {
                         self.statusText = "listening"
                     case .failed(let error):
                         self.isRunning = false
-                        self.statusText = error.localizedDescription
+                        self.statusText = Self.statusDescription(for: error)
                         self.scheduleRestart()
+                    case .waiting(let error):
+                        self.isRunning = false
+                        self.statusText = Self.statusDescription(for: error)
                     case .cancelled:
                         self.isRunning = false
                     default:
@@ -277,6 +291,13 @@ final class TCPLineServer {
         }
     }
 
+    private static func statusDescription(for error: NWError) -> String {
+        if case .posix(let code) = error, code == .EACCES || code == .EPERM {
+            return L.t("Local network access is denied. Allow InterviewAssistant in System Settings → Privacy & Security → Local Network, then reopen the app.")
+        }
+        return error.localizedDescription
+    }
+
     private func accept(_ connection: NWConnection) {
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             Task { @MainActor in
@@ -290,7 +311,7 @@ final class TCPLineServer {
                     self.receiveRequest(on: connection, buffer: Data())
                 }
                 if case .waiting(let error) = state {
-                    self.statusText = error.localizedDescription
+                    self.statusText = Self.statusDescription(for: error)
                 }
                 if case .cancelled = state {
                     self.connections.removeAll { $0 === connection }
@@ -426,7 +447,7 @@ enum LocalNetworkInfo {
     static func wifiIPAddress() -> String? {
         let addresses = allAddresses()
         if let wifi = addresses.first(where: {
-            ($0.interface == "en0" || $0.interface == "en1") && $0.ip.isPrivateIPv4
+            ($0.interface == "en0" || $0.interface == "en1") && $0.ip.isUsableLANIPv4
         }) {
             return wifi.ip
         }
@@ -435,7 +456,7 @@ enum LocalNetworkInfo {
             !$0.interface.hasPrefix("awdl") &&
             !$0.interface.hasPrefix("llw") &&
             !$0.interface.hasPrefix("bridge") &&
-            $0.ip.isPrivateIPv4
+            $0.ip.isUsableLANIPv4
         })?.ip
     }
 
@@ -453,7 +474,9 @@ enum LocalNetworkInfo {
             let interface = pointer.pointee
             let name = String(cString: interface.ifa_name)
             let flags = Int32(interface.ifa_flags)
-            guard (flags & IFF_UP) != 0, (flags & IFF_LOOPBACK) == 0 else { continue }
+            guard (flags & IFF_UP) != 0,
+                  (flags & IFF_RUNNING) != 0,
+                  (flags & IFF_LOOPBACK) == 0 else { continue }
             guard let addr = interface.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else { continue }
             var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             let result = getnameinfo(addr, socklen_t(addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
@@ -474,11 +497,11 @@ extension String {
             .trimmingCharacters(in: CharacterSet(charactersIn: "，,.;； "))
     }
 
-    fileprivate var isPrivateIPv4: Bool {
-        if hasPrefix("10.") || hasPrefix("192.168.") { return true }
-        guard hasPrefix("172."), let second = split(separator: ".").dropFirst().first.flatMap({ Int($0) }) else {
-            return false
-        }
-        return (16...31).contains(second)
+    fileprivate var isUsableLANIPv4: Bool {
+        // Some company and hotspot networks use non-RFC1918 ranges. An address
+        // assigned to an active physical interface is usable unless it is a
+        // loopback, unspecified, multicast, or self-assigned address.
+        guard let first = split(separator: ".").first.flatMap({ Int($0) }) else { return false }
+        return first != 0 && first != 127 && first < 224 && !hasPrefix("169.254.")
     }
 }

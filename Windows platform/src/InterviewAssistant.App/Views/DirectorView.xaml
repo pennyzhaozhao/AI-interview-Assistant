@@ -18,6 +18,14 @@
         <Style x:Key="DirectorField" TargetType="TextBox" BasedOn="{StaticResource InputStyle}">
             <Setter Property="Background" Value="{DynamicResource DirectorFieldBrush}"/><Setter Property="Foreground" Value="{DynamicResource DirectorTextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource DirectorBorderBrush}"/>
         </Style>
+        <Style x:Key="WebControllerStatusText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding WebControllerReady}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
     <ScrollViewer VerticalScrollBarVisibility="Auto" infra:SmoothScrollBehavior.IsEnabled="True">
         <StackPanel Margin="32" HorizontalAlignment="Stretch">
@@ -47,7 +55,7 @@
                                 <TextBlock Text="{loc:Loc Key='Scan to send without the app'}" Foreground="{DynamicResource DirectorTextBrush}" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap"/>
                                 <TextBlock Foreground="{DynamicResource DirectorMutedBrush}" FontFamily="Consolas" FontSize="12" Margin="0,10,0,0"><Run Text="http://"/><Run Text="{Binding LocalIp, Mode=OneWay}"/><Run Text=":9999"/></TextBlock>
                                 <TextBlock Text="{loc:Loc Key='The Host prompt board must be running on the same Wi-Fi.'}" Foreground="{DynamicResource DirectorMutedBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0"><TextBlock Text="&#xE73E;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource SuccessBrush}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="{loc:Loc Key='Controller address QR'}" Foreground="{DynamicResource SuccessBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0"><TextBlock Text="&#xE73E;" Style="{StaticResource WebControllerStatusText}" FontFamily="Segoe Fluent Icons" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="{Binding WebControllerStatus}" Style="{StaticResource WebControllerStatusText}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/></StackPanel>
                             </StackPanel>
                         </Grid>
                     </StackPanel>

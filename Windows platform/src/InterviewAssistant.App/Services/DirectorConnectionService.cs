@@ -80,20 +80,47 @@ public sealed class DirectorConnectionService : IAsyncDisposable
 
     public static string GetLocalIPv4Address()
     {
-        foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces()
-                     .Where(item => item.OperationalStatus == OperationalStatus.Up && item.NetworkInterfaceType != NetworkInterfaceType.Loopback))
-        {
-            foreach (var address in networkInterface.GetIPProperties().UnicastAddresses)
-            {
-                if (address.Address.AddressFamily != AddressFamily.InterNetwork) continue;
-                var bytes = address.Address.GetAddressBytes();
-                if (bytes[0] == 10 || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31))
+        var candidates = NetworkInterface.GetAllNetworkInterfaces()
+            .Where(item => item.OperationalStatus == OperationalStatus.Up && item.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+            .SelectMany(item => item.GetIPProperties().UnicastAddresses
+                .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork && IsPrivateIPv4(address.Address))
+                .Select(address => new
                 {
-                    return address.Address.ToString();
-                }
-            }
-        }
-        return "No private IPv4 address detected";
+                    Address = address.Address.ToString(),
+                    Score = InterfaceScore(item)
+                }))
+            .OrderByDescending(candidate => candidate.Score)
+            .ToList();
+
+        return candidates.FirstOrDefault()?.Address ?? "No private IPv4 address detected";
+    }
+
+    private static bool IsPrivateIPv4(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return bytes[0] == 10 ||
+               (bytes[0] == 192 && bytes[1] == 168) ||
+               (bytes[0] == 172 && bytes[1] is >= 16 and <= 31);
+    }
+
+    private static int InterfaceScore(NetworkInterface item)
+    {
+        var properties = item.GetIPProperties();
+        var score = properties.GatewayAddresses.Any(gateway =>
+            gateway.Address.AddressFamily == AddressFamily.InterNetwork && !gateway.Address.Equals(IPAddress.Any)) ? 100 : 0;
+
+        score += item.NetworkInterfaceType switch
+        {
+            NetworkInterfaceType.Wireless80211 => 30,
+            NetworkInterfaceType.Ethernet or NetworkInterfaceType.GigabitEthernet => 20,
+            NetworkInterfaceType.Tunnel or NetworkInterfaceType.Ppp => -100,
+            _ => 0
+        };
+
+        var description = $"{item.Name} {item.Description}";
+        string[] virtualMarkers = ["virtual", "hyper-v", "vethernet", "vpn", "wsl", "docker", "vmware", "virtualbox"];
+        if (virtualMarkers.Any(marker => description.Contains(marker, StringComparison.OrdinalIgnoreCase))) score -= 80;
+        return score;
     }
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)

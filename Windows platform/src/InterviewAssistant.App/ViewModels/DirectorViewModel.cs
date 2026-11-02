@@ -19,6 +19,8 @@ public sealed class DirectorViewModel : PageViewModel
     private RemoteQuestionViewModel? _selectedQuestion;
     private bool _hostBoardOpen;
     private string _remoteMode = "director";
+    private bool _webControllerReady;
+    private string _webControllerStatus = LocalizationManager.Text("Starting web controller…");
 
     public DirectorViewModel() : base("Director Mode", "Host a prompt board or connect as a controller")
     {
@@ -34,7 +36,11 @@ public sealed class DirectorViewModel : PageViewModel
         _connection.PacketReceived += packet => Application.Current.Dispatcher.Invoke(() => Receive(packet));
         _host.StatusChanged += status => Application.Current.Dispatcher.Invoke(() => Status = LocalizeStatus(status));
         _host.PacketReceived += packet => Application.Current.Dispatcher.Invoke(() => Receive(packet));
-        LocalizationManager.Instance.LanguageChanged += () => OnPropertyChanged(nameof(ModeStatusText));
+        LocalizationManager.Instance.LanguageChanged += () =>
+        {
+            OnPropertyChanged(nameof(ModeStatusText));
+            if (WebControllerReady) WebControllerStatus = LocalizationManager.Text("Web controller ready");
+        };
     }
 
     public string LocalIp { get; }
@@ -48,6 +54,18 @@ public sealed class DirectorViewModel : PageViewModel
     public ICommand OpenHostBoardCommand { get; }
     public event Action? HostBoardRequested;
     public event Action<DirectorPacket>? HostPacketReceived;
+
+    public bool WebControllerReady
+    {
+        get => _webControllerReady;
+        private set => SetProperty(ref _webControllerReady, value);
+    }
+
+    public string WebControllerStatus
+    {
+        get => _webControllerStatus;
+        private set => SetProperty(ref _webControllerStatus, value);
+    }
 
     public string HostIp
     {
@@ -113,7 +131,8 @@ public sealed class DirectorViewModel : PageViewModel
     {
         try
         {
-            await _host.StartAsync();
+            await StartWebControllerAsync();
+            if (!WebControllerReady) return;
             _host.Publish(new DirectorPacket { Kind = "state", HostBoardOpen = true, Mode = "director" });
             HostBoardOpen = true;
             RemoteMode = "director";
@@ -123,6 +142,33 @@ public sealed class DirectorViewModel : PageViewModel
         catch (Exception exception)
         {
             Status = exception.Message;
+        }
+    }
+
+    public async Task StartWebControllerAsync()
+    {
+        if (_host.IsRunning)
+        {
+            WebControllerReady = true;
+            WebControllerStatus = LocalizationManager.Text("Web controller ready");
+            return;
+        }
+
+        WebControllerReady = false;
+        WebControllerStatus = LocalizationManager.Text("Starting web controller…");
+        try
+        {
+            await _host.StartAsync();
+            WebControllerReady = true;
+            WebControllerStatus = LocalizationManager.Text("Web controller ready");
+        }
+        catch (Exception exception)
+        {
+            WebControllerReady = false;
+            WebControllerStatus = LocalizationManager.Instance.IsChinese
+                ? $"网页控制端启动失败：{exception.Message}"
+                : $"Web controller failed to start: {exception.Message}";
+            Status = WebControllerStatus;
         }
     }
 

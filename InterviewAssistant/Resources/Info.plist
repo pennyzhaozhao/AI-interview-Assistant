@@ -39,6 +39,10 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于在局域网内连接 Director 控制端与 Host 提示板</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_interview-director._tcp</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used for real-time speech recognition during interviews</string>
 	<key>NSScreenCaptureUsageDescription</key>

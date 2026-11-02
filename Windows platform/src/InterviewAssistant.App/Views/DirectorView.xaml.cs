@@ -9,14 +9,18 @@ public partial class DirectorView : UserControl
 
     public DirectorView() => InitializeComponent();
 
-    private void DirectorView_Loaded(object sender, System.Windows.RoutedEventArgs e)
+    private async void DirectorView_Loaded(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (DataContext is not ViewModels.DirectorViewModel viewModel || ReferenceEquals(_subscribedViewModel, viewModel)) return;
-        if (_subscribedViewModel is not null) _subscribedViewModel.HostBoardRequested -= OpenHostBoard;
-        if (_subscribedViewModel is not null) _subscribedViewModel.HostPacketReceived -= ApplyHostPacket;
-        _subscribedViewModel = viewModel;
-        viewModel.HostBoardRequested += OpenHostBoard;
-        viewModel.HostPacketReceived += ApplyHostPacket;
+        if (DataContext is not ViewModels.DirectorViewModel viewModel) return;
+        if (!ReferenceEquals(_subscribedViewModel, viewModel))
+        {
+            if (_subscribedViewModel is not null) _subscribedViewModel.HostBoardRequested -= OpenHostBoard;
+            if (_subscribedViewModel is not null) _subscribedViewModel.HostPacketReceived -= ApplyHostPacket;
+            _subscribedViewModel = viewModel;
+            viewModel.HostBoardRequested += OpenHostBoard;
+            viewModel.HostPacketReceived += ApplyHostPacket;
+        }
+        await viewModel.StartWebControllerAsync();
     }
 
     private void OpenHostBoard()

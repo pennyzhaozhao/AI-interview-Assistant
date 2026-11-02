@@ -499,6 +499,7 @@ enum L {
         "The Host prompt board must be running on the same Wi-Fi.": "Host 提示板需要在同一 Wi-Fi 下运行。",
         "Web controller ready": "网页控制端已就绪",
         "Starting web controller…": "正在启动网页控制端…",
+        "Local network access is denied. Allow InterviewAssistant in System Settings → Privacy & Security → Local Network, then reopen the app.": "本地网络访问已被拒绝。请在系统设置 → 隐私与安全性 → 本地网络中允许 InterviewAssistant，然后重新打开应用。",
         "QUESTION": "问题",
         "USER in AI mode": "用户处于 AI 模式",
         "USER in Director mode": "用户处于导演模式",

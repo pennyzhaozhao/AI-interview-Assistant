@@ -7,9 +7,9 @@
     <ApplicationIcon>Assets\InterviewAssistant.ico</ApplicationIcon>
     <AssemblyName>InterviewAssistant</AssemblyName>
     <RootNamespace>InterviewAssistant</RootNamespace>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.3</AssemblyVersion>
-    <FileVersion>1.1.0.3</FileVersion>
+    <Version>1.1.2</Version>
+    <AssemblyVersion>1.1.2.0</AssemblyVersion>
+    <FileVersion>1.1.2.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.8.1" />
