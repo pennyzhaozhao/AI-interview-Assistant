@@ -18,5 +18,18 @@
         type="application/octet-stream"
         sparkle:edSignature="5YDcLAXqV6v4WZMJwmCOKJMLL312zQlZ5A1jAxj1zO69G8iqDmu4ZTR+BmbIdkeVGRrne+NZWV3Ki3kR9N3FDg==" />
     </item>
+    <item>
+      <title>Interview AI 1.1.2</title>
+      <pubDate>Mon, 02 Nov 2026 19:10:08 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/tag/v1.1.2</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/download/v1.1.2/InterviewAssistant-1.1.2-macOS.dmg"
+        length="30428311"
+        type="application/octet-stream"
+        sparkle:edSignature="P1447wDITzrDLIU/FEaIO12Fdh4G+tmIbLYHn//D+ZKE2MGp80jA7aSHNOteUp2ZtxaR5n2wK6RcUmg1SQPECg==" />
+    </item>
   </channel>
 </rss>
