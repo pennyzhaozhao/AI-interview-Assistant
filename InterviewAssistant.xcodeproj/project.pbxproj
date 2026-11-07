@@ -27,6 +27,7 @@
 		AA0000000000000000000011 /* SenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000111 /* SenderView.swift */; };
 		AA0000000000000000000012 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SetupView.swift */; };
 		AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */; };
+		AA00000000000000000009F0 /* MarkdownTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009F1 /* MarkdownTextEditor.swift */; };
 		AA0000000000000000000014 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* HistoryView.swift */; };
 		AA0000000000000000000015 /* APIConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* APIConfigView.swift */; };
 		AA0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000118 /* Assets.xcassets */; };
@@ -81,6 +82,7 @@
 		AA0000000000000000000111 /* SenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SenderView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000112 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseManagerView.swift; sourceTree = "<group>"; };
+		AA00000000000000000009F1 /* MarkdownTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextEditor.swift; sourceTree = "<group>"; };
 		AA0000000000000000000114 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000115 /* APIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfigView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000116 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -213,6 +215,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */,
+				AA00000000000000000009F1 /* MarkdownTextEditor.swift */,
 			);
 			path = KnowledgeBase;
 			sourceTree = "<group>";
@@ -423,6 +426,7 @@
 				AA0000000000000000000011 /* SenderView.swift in Sources */,
 				AA0000000000000000000012 /* SetupView.swift in Sources */,
 				AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */,
+				AA00000000000000000009F0 /* MarkdownTextEditor.swift in Sources */,
 				AA0000000000000000000014 /* HistoryView.swift in Sources */,
 				AA0000000000000000000025 /* MockInterviewView.swift in Sources */,
 				AA0000000000000000000015 /* APIConfigView.swift in Sources */,

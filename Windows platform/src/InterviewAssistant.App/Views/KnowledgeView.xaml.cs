@@ -158,6 +158,21 @@ public partial class KnowledgeView : UserControl
         entry.Content = dialog.EntryContent;
     }
 
+    private void EditProject_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: KnowledgeEntryViewModel entry }) return;
+        var dialog = new Windows.KnowledgeEntryEditorWindow(entry.Title, entry.Content, isNew: false, summary: entry.Summary) { Owner = Owner };
+        if (dialog.ShowDialog() != true) return;
+        entry.Title = dialog.EntryTitle;
+        entry.Summary = dialog.EntrySummary;
+        entry.Content = dialog.EntryContent;
+    }
+
+    private void TogglePreview_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: KnowledgeEntryViewModel entry }) entry.IsPreviewExpanded = !entry.IsPreviewExpanded;
+    }
+
     private async void UploadFile_Click(object sender, RoutedEventArgs e)
     {
         if (Page is not { SelectedKnowledgeBase: { } kb } viewModel) return;

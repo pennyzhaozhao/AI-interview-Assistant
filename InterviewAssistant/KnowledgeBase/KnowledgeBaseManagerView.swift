@@ -2092,6 +2092,7 @@ private struct SourceEditorSheet<PDFPreview: View>: View {
     @State private var title: String
     @State private var summary: String
     @State private var content: String
+    @State private var editorController = MarkdownEditorController()
 
     init(
         entry: KnowledgeEntry,
@@ -2117,53 +2118,61 @@ private struct SourceEditorSheet<PDFPreview: View>: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    field(isProject ? L.t("Project name") : L.t("Source title")) {
-                        TextField(isProject ? L.t("Project name") : L.t("Source title"), text: $title)
-                            .textFieldStyle(.plain)
+            VStack(alignment: .leading, spacing: 16) {
+                field(isProject ? L.t("Project name") : L.t("Source title")) {
+                    TextField(isProject ? L.t("Project name") : L.t("Source title"), text: $title)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                }
+
+                if isProject {
+                    field(L.t("Project description")) {
+                        Text(L.t("Shown on the project card and always sent to the AI. Describe what you built, your role, the stack and the results."))
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appMuted)
+                        TextEditor(text: $summary)
+                            .scrollContentBackground(.hidden)
+                            .font(.appBody)
+                            .frame(height: 110)
                             .darkField()
                     }
+                }
 
-                    if isProject {
-                        field(L.t("Project description")) {
-                            Text(L.t("Shown on the project card and always sent to the AI. Describe what you built, your role, the stack and the results."))
+                if isPDF {
+                    pdfPreview
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(contentLabel)
+                                .font(.appCaptionMedium)
+                                .foregroundStyle(Color.appMuted)
+                            Spacer()
+                            Text(String(format: L.t("%ld characters"), content.count))
                                 .font(.appSmall)
                                 .foregroundStyle(Color.appMuted)
-                            TextEditor(text: $summary)
-                                .scrollContentBackground(.hidden)
-                                .font(.appBody)
-                                .frame(height: 140)
-                                .darkField()
                         }
-                    }
-
-                    if isPDF {
-                        pdfPreview
-                    } else {
-                        field(contentLabel) {
-                            if entry.kind == KnowledgeEntryKind.resume {
-                                Text(L.t("The AI summary is regenerated after you save the original."))
-                                    .font(.appSmall)
-                                    .foregroundStyle(Color.appMuted)
-                            }
-                            TextEditor(text: $content)
-                                .scrollContentBackground(.hidden)
-                                .font(.appBody)
-                                .frame(height: isCompact ? 360 : (isProject ? 360 : 500))
-                                .darkField()
-                            HStack {
-                                Spacer()
-                                Text(String(format: L.t("%ld characters"), content.count))
-                                    .font(.appSmall)
-                                    .foregroundStyle(Color.appMuted)
-                            }
+                        if entry.kind == KnowledgeEntryKind.resume {
+                            Text(L.t("The AI summary is regenerated after you save the original."))
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
                         }
+                        MarkdownFormatToolbar(controller: editorController)
+                        // Markdown is styled as you type (Typora-style); shortcuts match Typora.
+                        MarkdownTextEditor(text: $content, controller: editorController)
+                            .frame(maxWidth: .infinity, minHeight: isCompact ? 320 : 380, maxHeight: .infinity)
+                            .padding(.horizontal, 8)
+                            .background(Color.appField)
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
+                        Text(L.t("Markdown supported. Shortcuts: ⌘B bold · ⌘I italic · ⌘U underline · ⌘K link · ⌘1–6 heading · ⌘0 paragraph · ⌃` code · ⌥⌘Q quote · ⌥⌘U / ⌥⌘O list · ⌥⌘C code block"))
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appMuted)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
-                .padding(24)
             }
-            .frame(minWidth: isCompact ? 0 : 680, minHeight: isCompact ? 0 : 650)
+            .padding(24)
+            .frame(minWidth: isCompact ? 0 : 760, minHeight: isCompact ? 0 : 720, alignment: .top)
             .background(Color.appBG)
             .foregroundStyle(Color.appText)
             .navigationTitle(isProject ? L.t("Edit Project") : L.t("Edit Source"))
@@ -2174,6 +2183,7 @@ private struct SourceEditorSheet<PDFPreview: View>: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L.t("Save")) { onSave(title, summary, content) }
+                        .keyboardShortcut("s", modifiers: .command)
                 }
             }
         }

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:loc="clr-namespace:InterviewAssistant.Services"
         xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
-        Width="760" Height="760" MinWidth="560" MinHeight="460"
+        Width="820" Height="820" MinWidth="600" MinHeight="520"
         WindowStartupLocation="CenterOwner" WindowStyle="None" ResizeMode="CanResizeWithGrip"
         AllowsTransparency="True" Background="Transparent" ShowInTaskbar="False" Foreground="{DynamicResource TextPrimaryBrush}">
     <Border Background="{DynamicResource BackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="24">
@@ -15,16 +15,30 @@
                 <Button Content="×" Width="38" Height="38" HorizontalAlignment="Right" VerticalAlignment="Top" Style="{StaticResource WindowButtonStyle}" Click="Cancel_Click"/>
             </Grid>
             <StackPanel Grid.Row="1" Margin="0,24,0,16">
-                <TextBlock Text="{loc:Loc Key=Source title}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,7"/>
+                <TextBlock x:Name="TitleLabel" Text="{loc:Loc Key=Source title}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,7"/>
                 <TextBox x:Name="TitleBox" Style="{StaticResource InputStyle}"/>
+                <StackPanel x:Name="SummaryPanel" Visibility="Collapsed" Margin="0,14,0,0">
+                    <TextBlock Text="{loc:Loc Key=Project description}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,4"/>
+                    <TextBlock Text="{loc:Loc Key=ProjectDescriptionHint}" Style="{StaticResource CaptionStyle}" FontSize="12" TextWrapping="Wrap" Margin="2,0,0,7"/>
+                    <TextBox x:Name="SummaryBox" Style="{StaticResource InputStyle}" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" Height="96" Padding="12,8"/>
+                </StackPanel>
             </StackPanel>
             <Grid Grid.Row="2">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                <TextBlock x:Name="ContentLabel" Text="{loc:Loc Key=Content}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="2,0,0,7"/>
-                <Border x:Name="PdfFrame" Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="15" ClipToBounds="True">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Margin="2,0,0,7">
+                    <TextBlock x:Name="ContentLabel" Text="{loc:Loc Key=Content}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="CharacterCount" Style="{StaticResource CaptionStyle}" FontSize="12" HorizontalAlignment="Right"/>
+                </Grid>
+                <Border x:Name="FormatBar" Grid.Row="1" Background="{DynamicResource InputBrush}" CornerRadius="10" Padding="4" Margin="0,0,0,8">
+                    <WrapPanel x:Name="FormatButtons"/>
+                </Border>
+                <Border x:Name="PdfFrame" Grid.Row="2" Visibility="Collapsed" Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="15" ClipToBounds="True">
                     <infra:PdfPagesView x:Name="PdfPreview"/>
                 </Border>
-                <TextBox x:Name="ContentBox" Grid.Row="1" Style="{StaticResource InputStyle}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" Padding="14"/>
+                <Border x:Name="EditorFrame" Grid.Row="2" Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="15" Padding="10,6">
+                    <infra:MarkdownEditor x:Name="ContentBox"/>
+                </Border>
+                <TextBlock x:Name="ShortcutHint" Grid.Row="3" Text="{loc:Loc Key=MarkdownShortcutHint}" Style="{StaticResource CaptionStyle}" FontSize="12" TextWrapping="Wrap" Margin="2,8,0,0"/>
             </Grid>
             <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
                 <Button Content="{loc:Loc Key=Cancel}" Style="{StaticResource SecondaryButtonStyle}" Click="Cancel_Click"/>

@@ -50,7 +50,7 @@ public static class InterviewPromptBuilder
     // ───────────────────────── system prompts ─────────────────────────
 
     /// <summary>Spoken-answer system prompt (KnowledgeContextBuilder.buildSystemPrompt).</summary>
-    public static string BuildSystemPrompt(string context, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, IEnumerable<ConversationTurnModel> recentTurns)
+    public static string BuildSystemPrompt(string context, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, IEnumerable<ConversationTurnModel> recentTurns, string? query = null)
     {
         var parts = new List<string>
         {
@@ -88,7 +88,8 @@ public static class InterviewPromptBuilder
             parts.Add($"\n--- My Background, Target Role, and Company Research ---\n{context}\n---\nDraw on this material when answering. Refer to my own projects and experiences naturally in first person. Use company research for company-fit questions.");
         }
 
-        var history = string.Join("\n\n", recentTurns
+        var turns = recentTurns.ToList();
+        var history = string.Join("\n\n", turns
             .Where(turn => !string.IsNullOrWhiteSpace(turn.Question) && !string.IsNullOrWhiteSpace(turn.Answer))
             .OrderBy(turn => turn.CreatedAt)
             .TakeLast(4)
@@ -98,7 +99,10 @@ public static class InterviewPromptBuilder
             parts.Add($"\n--- Recent Interview Conversation ---\n{history}\n---\nUse this only as context. Do not repeat it verbatim unless the current question asks for it.");
         }
 
-        var knowledge = KnowledgeText(knowledgeBases, activeIds, entryLimit: null, contentLimit: null);
+        // Large knowledge bases send a profile + passages retrieved for the current question, plus the
+        // previous question so follow-ups ("tell me more") still match.
+        var lastQuestion = turns.OrderBy(turn => turn.CreatedAt).LastOrDefault()?.Question ?? "";
+        var knowledge = KnowledgeText(knowledgeBases, activeIds, query is null ? null : $"{query}\n{lastQuestion}");
         if (knowledge.Length > 0)
         {
             parts.Add($"\n--- Selected Knowledge Bases ---\n{knowledge}\n---\nUse these knowledge bases when they are relevant to the question. If the knowledge base includes multiple projects, choose the project that best matches the current question instead of defaulting to the first one.");
@@ -107,7 +111,7 @@ public static class InterviewPromptBuilder
     }
 
     /// <summary>System prompt for screenshot / OCR questions (buildStructuredTechnicalSystemPrompt).</summary>
-    public static string BuildStructuredTechnicalSystemPrompt(string context, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds)
+    public static string BuildStructuredTechnicalSystemPrompt(string context, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, string? query = null)
     {
         var parts = new List<string>
         {
@@ -126,7 +130,7 @@ public static class InterviewPromptBuilder
             """
         };
         if (!string.IsNullOrWhiteSpace(context)) parts.Add($"\n--- Candidate Background ---\n{context}");
-        var knowledge = KnowledgeText(knowledgeBases, activeIds, entryLimit: null, contentLimit: null);
+        var knowledge = KnowledgeText(knowledgeBases, activeIds, query);
         if (knowledge.Length > 0) parts.Add($"\n--- Knowledge Bases ---\n{knowledge}");
         return string.Join("\n", parts);
     }
@@ -341,9 +345,9 @@ public static class InterviewPromptBuilder
 
     // ───────────────────────── helpers ─────────────────────────
 
-    private static string KnowledgeText(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, int? entryLimit, int? contentLimit) =>
-        // Structured knowledge bases: resume summary + full text, skills, projects, then other materials.
-        KnowledgeContextFormatter.Build(knowledgeBases, activeIds);
+    private static string KnowledgeText(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, string? query) =>
+        // Structured knowledge bases; large ones are reduced to a profile + passages retrieved for the query.
+        KnowledgeContextFormatter.Build(knowledgeBases, activeIds, query: query);
 
     /// <summary>Per-knowledge-base custom instructions, appended to the system prompt.</summary>
     public static string AppendCustomInstructions(string systemPrompt, IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds)

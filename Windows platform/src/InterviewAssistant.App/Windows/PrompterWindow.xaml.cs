@@ -336,14 +336,14 @@ public partial class PrompterWindow : Window
         int maxTokens;
         if (fromScreenshot)
         {
-            system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, data.KnowledgeBases, activeIds);
+            system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, data.KnowledgeBases, activeIds, question);
             system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: true);
             user = InterviewPromptBuilder.BuildQuestionPrompt(question, language, _codeLanguage);
             maxTokens = 1800;
         }
         else
         {
-            system = InterviewPromptBuilder.BuildSystemPrompt(context, data.KnowledgeBases, activeIds, _session.Turns);
+            system = InterviewPromptBuilder.BuildSystemPrompt(context, data.KnowledgeBases, activeIds, _session.Turns, question);
             system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: false);
             // Coding questions asked by voice still need code in the chosen language.
             if (InterviewPromptBuilder.IsAlgorithmQuestion(question))
