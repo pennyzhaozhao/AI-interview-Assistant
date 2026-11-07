@@ -60,7 +60,7 @@ enum KnowledgeContextBuilder {
         """
     }
 
-    static func buildAlgorithmApproachSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> String {
+    static func buildAlgorithmApproachSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID], query: String? = nil) -> String {
         var parts = [
             """
             You are a senior technical interview coach helping a candidate answer an algorithm question live.
@@ -77,8 +77,8 @@ enum KnowledgeContextBuilder {
         if !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append("\n--- Candidate Background ---\n\(context)")
         }
-        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
-        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
+        // Structured knowledge bases. Large ones send a profile + passages retrieved for `query`.
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs, query: query)
         if !kbText.isEmpty {
             parts.append("\n--- Useful Knowledge ---\n\(kbText)")
         }
@@ -172,7 +172,7 @@ enum KnowledgeContextBuilder {
         }
     }
 
-    static func buildStructuredTechnicalSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> String {
+    static func buildStructuredTechnicalSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID], query: String? = nil) -> String {
         var parts = [
             """
             You are a technical interview assistant. For screenshot OCR questions, output a practical structured answer.
@@ -191,15 +191,15 @@ enum KnowledgeContextBuilder {
         if !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             parts.append("\n--- Candidate Background ---\n\(context)")
         }
-        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
-        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
+        // Structured knowledge bases. Large ones send a profile + passages retrieved for `query`.
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs, query: query)
         if !kbText.isEmpty {
             parts.append("\n--- Knowledge Bases ---\n\(kbText)")
         }
         return parts.joined(separator: "\n")
     }
 
-    static func buildSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID], recentTurns: [ConversationTurn] = []) -> String {
+    static func buildSystemPrompt(context: String, knowledgeBases: [KnowledgeBase], activeIDs: [UUID], recentTurns: [ConversationTurn] = [], query: String? = nil) -> String {
         var parts = [
             """
             You are a job candidate in a live interview. Respond exactly as you would speak aloud.
@@ -246,8 +246,11 @@ enum KnowledgeContextBuilder {
         if !historyText.isEmpty {
             parts.append("\n--- Recent Interview Conversation ---\n\(historyText)\n---\nUse this only as context. Do not repeat it verbatim unless the current question asks for it.")
         }
-        // Structured knowledge bases: resume summary + full text, skills, projects, then materials.
-        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs)
+        // Structured knowledge bases. Large ones send a profile + passages retrieved for the
+        // current question, plus the previous question so follow-ups ("tell me more") still match.
+        let lastQuestion = recentTurns.max(by: { $0.createdAt < $1.createdAt })?.question ?? ""
+        let retrievalQuery = query.map { "\($0)\n\(lastQuestion)" }
+        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: activeIDs, query: retrievalQuery)
         if !kbText.isEmpty {
             parts.append("\n--- Selected Knowledge Bases ---\n\(kbText)\n---\nUse these knowledge bases when they are relevant to the question. If the knowledge base includes multiple projects, choose the project that best matches the current question instead of defaulting to the first one.")
         }

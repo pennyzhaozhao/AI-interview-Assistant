@@ -613,7 +613,8 @@ final class ReceiverCoordinator {
         var systemPrompt = KnowledgeContextBuilder.buildStructuredTechnicalSystemPrompt(
             context: session?.context ?? "",
             knowledgeBases: knowledgeBases,
-            activeIDs: session?.activeKBIds ?? []
+            activeIDs: session?.activeKBIds ?? [],
+            query: trimmed
         )
         let mockMemory = buildMockTrainingMemory()
         if !mockMemory.isEmpty {
@@ -651,7 +652,8 @@ final class ReceiverCoordinator {
         let systemPrompt = KnowledgeContextBuilder.buildStructuredTechnicalSystemPrompt(
             context: session.context,
             knowledgeBases: knowledgeBases,
-            activeIDs: session.activeKBIds
+            activeIDs: session.activeKBIds,
+            query: pendingCodeRawQuestion
         )
         let codePrompt = KnowledgeContextBuilder.buildAlgorithmCodePrompt(rawText: pendingCodeRawQuestion, language: selectedLanguage)
         var streamingCode = ""
@@ -715,7 +717,7 @@ final class ReceiverCoordinator {
         confidence = 0.34
         lastUpdatedAt = .now
         do {
-            var prompt = systemPromptOverride ?? enrichedSystemPrompt(for: session)
+            var prompt = systemPromptOverride ?? enrichedSystemPrompt(for: session, question: cleanQuestion)
             // Per-knowledge-base custom instructions (the user's own answer preferences).
             prompt += KnowledgeFormatter.instructionsBlock(knowledgeBases, activeIDs: session.activeKBIds)
             let answerLanguageCode = configuredAnswerLanguageCode
@@ -796,12 +798,13 @@ final class ReceiverCoordinator {
         return configuredLanguage.speechCode(appLanguage: appLanguage)
     }
 
-    private func enrichedSystemPrompt(for session: InterviewSession) -> String {
+    private func enrichedSystemPrompt(for session: InterviewSession, question: String) -> String {
         let basePrompt = KnowledgeContextBuilder.buildSystemPrompt(
             context: session.context,
             knowledgeBases: knowledgeBases,
             activeIDs: session.activeKBIds,
-            recentTurns: session.turns
+            recentTurns: session.turns,
+            query: question
         )
         let mockMemory = buildMockTrainingMemory()
         guard !mockMemory.isEmpty else { return basePrompt }

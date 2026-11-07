@@ -30,7 +30,11 @@ final class SpeechEngine {
     var answerTextProvider: (() -> String)?
     var canForceTrigger: Bool { !speechBuffer.isEmpty }
 
-    nonisolated(unsafe) private let engine = AVAudioEngine()
+    /// Recreated on every start so it picks up the current input device. A long-lived engine keeps
+    /// the format of the microphone it first saw; after switching to AirPods (Bluetooth HFP, 16 or
+    /// 24 kHz) installing a tap with that stale format raised an Objective-C exception and crashed.
+    @ObservationIgnored nonisolated(unsafe) private var engine = AVAudioEngine()
+    @ObservationIgnored private var configurationObserver: NSObjectProtocol?
     private let audioProcessor = SpeechAudioProcessor()
     private var recognitionTask: SFSpeechRecognitionTask?
     private var speechBuffer = [AVAudioPCMBuffer]()
@@ -170,34 +174,98 @@ final class SpeechEngine {
 
         // ── Microphone path ─────────────────────────────────────────────────
         // AVAudioEngine must not start on the main thread (internal mServiceQueue assertion).
-        let startResult: Result<Void, Error> = await withCheckedContinuation { [engine] cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let input = engine.inputNode
-                let format = input.outputFormat(forBus: 0)
-                input.removeTap(onBus: 0)
-                let tap = SpeechEngine.makeTapBlock(processor: processor, generation: generation)
-                input.installTap(onBus: 0,
-                                 bufferSize: AVAudioFrameCount(format.sampleRate / 10),
-                                 format: format,
-                                 block: tap)
-                engine.prepare()
-                do {
-                    try engine.start()
-                    cont.resume(returning: .success(()))
-                } catch {
-                    input.removeTap(onBus: 0)
-                    cont.resume(returning: .failure(error))
-                }
-            }
-        }
-        switch startResult {
+        let result = await startMicrophoneEngine(generation: generation, processor: processor)
+        switch result {
         case .success:
             isListening = true
+            installConfigurationObserver()
             statusText = L.t("🎙 Listening...")
             return true
         case .failure(let error):
             statusText = "❌ \(error.localizedDescription)"
             return false
+        }
+    }
+
+    private func startMicrophoneEngine(generation: Int, processor: SpeechAudioProcessor) async -> Result<Void, Error> {
+        let freshEngine = AVAudioEngine()
+        engine = freshEngine
+        return await withCheckedContinuation { [freshEngine] cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let input = freshEngine.inputNode
+                // Hardware format of the current device (AirPods in call mode report 16/24 kHz mono).
+                let hardwareFormat = input.inputFormat(forBus: 0)
+                guard hardwareFormat.channelCount > 0, hardwareFormat.sampleRate > 0 else {
+                    cont.resume(returning: .failure(NSError(
+                        domain: "InterviewAssistant.Audio",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")]
+                    )))
+                    return
+                }
+                input.removeTap(onBus: 0)
+                let tap = SpeechEngine.makeTapBlock(processor: processor, generation: generation)
+                // format: nil lets the engine use the node's own output format, so the tap can never
+                // disagree with the device's sample rate (that mismatch is an uncatchable exception).
+                input.installTap(onBus: 0,
+                                 bufferSize: AVAudioFrameCount(max(1_024, hardwareFormat.sampleRate / 10)),
+                                 format: nil,
+                                 block: tap)
+                freshEngine.prepare()
+                do {
+                    try freshEngine.start()
+                    cont.resume(returning: .success(()))
+                } catch {
+                    input.removeTap(onBus: 0)
+                    freshEngine.stop()
+                    cont.resume(returning: .failure(error))
+                }
+            }
+        }
+    }
+
+    /// Restart capture when the input device or its format changes mid-interview
+    /// (AirPods connected, switched to call mode, or unplugged).
+    private func installConfigurationObserver() {
+        removeConfigurationObserver()
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isListening else { return }
+                #if os(macOS)
+                guard self.systemAudioCapture == nil else { return }
+                #endif
+                self.statusText = L.t("⚠️ The microphone changed. Reconnecting…")
+                let oldEngine = self.engine
+                DispatchQueue.global(qos: .userInitiated).async {
+                    oldEngine.inputNode.removeTap(onBus: 0)
+                    oldEngine.stop()
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+                guard self.isListening else { return }
+                self.resetVAD()
+                self.processingGeneration += 1
+                let result = await self.startMicrophoneEngine(generation: self.processingGeneration, processor: self.audioProcessor)
+                switch result {
+                case .success:
+                    self.installConfigurationObserver()
+                    self.statusText = L.t("🎙 Listening...")
+                case .failure(let error):
+                    self.removeConfigurationObserver()
+                    self.isListening = false
+                    self.statusText = "❌ \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func removeConfigurationObserver() {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+            self.configurationObserver = nil
         }
     }
 
@@ -209,6 +277,7 @@ final class SpeechEngine {
         recognitionTask?.cancel()
         recognitionTask = nil
         resetVAD()
+        removeConfigurationObserver()
 
         #if os(macOS)
         if let capture = systemAudioCapture {
@@ -565,7 +634,7 @@ extension AVAudioPCMBuffer {
     }
 
     func copyPCM() -> AVAudioPCMBuffer {
-        let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity)!
+        guard let copy = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: max(frameCapacity, 1)) else { return self }
         copy.frameLength = frameLength
         for ch in 0..<Int(format.channelCount) {
             if let src = floatChannelData?[ch], let dst = copy.floatChannelData?[ch] {

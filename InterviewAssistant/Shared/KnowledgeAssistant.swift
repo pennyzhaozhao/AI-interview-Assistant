@@ -282,11 +282,37 @@ enum GitHubProjectImporter {
 }
 
 /// Builds the knowledge-base section of interview prompts from the structured knowledge bases.
+///
+/// Small knowledge bases are sent in full. Once the enabled content is larger than
+/// `retrievalThreshold`, only a compact profile (resume summary, skills, project list) is always
+/// sent, plus the passages that best match the current question (local BM25 retrieval, no
+/// embedding API or extra cost). This keeps token use roughly constant however much material
+/// the user imports.
 enum KnowledgeFormatter {
-    static func build(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID], limit: Int = 24_000) -> String {
+    /// Above this many characters of enabled knowledge, switch from "send everything" to retrieval.
+    static let retrievalThreshold = 12_000
+    /// Character budget for retrieved passages.
+    static let retrievalBudget = 7_000
+
+    static func build(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID], limit: Int = 24_000, query: String? = nil) -> String {
         let active = Set(activeIDs)
+        let selected = knowledgeBases.filter { active.contains($0.id) }
+        let cleanQuery = (query ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanQuery.isEmpty, totalCharacters(selected) > retrievalThreshold {
+            return buildRetrieved(selected, query: cleanQuery, limit: limit)
+        }
+        return buildFull(selected, limit: limit)
+    }
+
+    private static func totalCharacters(_ bases: [KnowledgeBase]) -> Int {
+        bases.reduce(0) { sum, kb in
+            sum + kb.entries.filter(\.isEnabled).reduce(0) { $0 + $1.content.count + $1.summary.count }
+        }
+    }
+
+    private static func buildFull(_ bases: [KnowledgeBase], limit: Int) -> String {
         var blocks: [String] = []
-        for kb in knowledgeBases where active.contains(kb.id) {
+        for kb in bases {
             var lines = ["[\(kb.name)]"]
             let entries = kb.entries.filter(\.isEnabled)
             if let resume = entries.first(where: { $0.kind == KnowledgeEntryKind.resume }) {
@@ -319,6 +345,54 @@ enum KnowledgeFormatter {
         return String(blocks.joined(separator: "\n\n").prefix(limit))
     }
 
+    /// Compact profile for every knowledge base + the passages most relevant to `query`.
+    private static func buildRetrieved(_ bases: [KnowledgeBase], query: String, limit: Int) -> String {
+        var blocks: [String] = []
+        var chunks: [KnowledgeChunk] = []
+        for kb in bases {
+            var lines = ["[\(kb.name)]"]
+            let entries = kb.entries.filter(\.isEnabled)
+            if let resume = entries.first(where: { $0.kind == KnowledgeEntryKind.resume }) {
+                let summary = resume.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+                let content = resume.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !summary.isEmpty {
+                    lines += ["Resume summary:", summary, ""]
+                } else if !content.isEmpty {
+                    lines += ["Resume (beginning):", String(content.prefix(1500)), ""]
+                }
+            }
+            let skills = kb.skills
+            if !skills.isEmpty { lines += ["Skills: " + skills.joined(separator: ", "), ""] }
+            let projects = entries.filter { $0.kind == KnowledgeEntryKind.project }.sorted { $0.createdAt < $1.createdAt }
+            if !projects.isEmpty {
+                lines.append("Projects:")
+                for project in projects {
+                    let meta = project.meta.isEmpty ? "" : " (\(project.meta))"
+                    let summary = project.summary.isEmpty
+                        ? String(project.content.replacingOccurrences(of: "\n", with: " ").prefix(300))
+                        : project.summary
+                    lines.append("- \(project.title)\(meta): \(summary)")
+                }
+                lines.append("")
+            }
+            if lines.count > 1 { blocks.append(lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)) }
+            for entry in entries { chunks += KnowledgeRetriever.chunks(for: entry, baseName: kb.name) }
+        }
+
+        let profile = blocks.joined(separator: "\n\n")
+        let budget = max(2_000, min(retrievalBudget, limit - profile.count))
+        let hits = KnowledgeRetriever.topChunks(chunks, query: query, budget: budget)
+        guard !hits.isEmpty else { return String(profile.prefix(limit)) }
+        let excerpts = hits.map { "(\($0.label))\n\($0.text)" }.joined(separator: "\n\n")
+        let result = """
+        \(profile)
+
+        Relevant excerpts from the candidate's materials (retrieved for this question; prepared Q&A here is the candidate's own answer, adapt it):
+        \(excerpts)
+        """
+        return String(result.prefix(limit))
+    }
+
     /// Per-knowledge-base custom instructions, appended to the system prompt.
     static func instructionsBlock(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> String {
         let active = Set(activeIDs)
@@ -333,5 +407,228 @@ enum KnowledgeFormatter {
     static func skills(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> [String] {
         let active = Set(activeIDs)
         return KnowledgeAssistant.normalizeSkills(knowledgeBases.filter { active.contains($0.id) }.flatMap(\.skills))
+    }
+}
+
+// MARK: - Local retrieval (RAG without embeddings)
+
+struct KnowledgeChunk {
+    let label: String
+    let text: String
+    let termFrequencies: [String: Int]
+    let length: Int
+}
+
+/// Splits knowledge entries into passages and ranks them against a question with BM25.
+/// Latin text is matched by words, Chinese / Japanese / Korean text by character bigrams,
+/// so it works for mixed-language material without any model or network call.
+enum KnowledgeRetriever {
+    static let targetChunkSize = 700
+    static let maxChunkSize = 1_400
+
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cache: [UUID: (signature: String, chunks: [KnowledgeChunk])] = [:]
+
+    static func chunks(for entry: KnowledgeEntry, baseName: String) -> [KnowledgeChunk] {
+        let content = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return [] }
+        let signature = "\(entry.updatedAt.timeIntervalSince1970)|\(content.count)|\(entry.title)|\(baseName)"
+        cacheLock.lock()
+        if let cached = cache[entry.id], cached.signature == signature {
+            cacheLock.unlock()
+            return cached.chunks
+        }
+        cacheLock.unlock()
+
+        let kindLabel: String
+        switch entry.kind {
+        case KnowledgeEntryKind.resume: kindLabel = "Resume"
+        case KnowledgeEntryKind.project: kindLabel = "Project"
+        default: kindLabel = "Material"
+        }
+        let label = "\(baseName) · \(kindLabel) · \(entry.title)"
+        let result = split(content).map { piece -> KnowledgeChunk in
+            // The title is indexed with every passage so "tell me about <project>" finds it.
+            let terms = tokenize(entry.title + "\n" + piece)
+            var frequencies: [String: Int] = [:]
+            for term in terms { frequencies[term, default: 0] += 1 }
+            return KnowledgeChunk(label: label, text: piece, termFrequencies: frequencies, length: max(1, terms.count))
+        }
+        cacheLock.lock()
+        cache[entry.id] = (signature, result)
+        cacheLock.unlock()
+        return result
+    }
+
+    /// Best-matching passages, highest score first, within `budget` characters.
+    static func topChunks(_ chunks: [KnowledgeChunk], query: String, budget: Int) -> [KnowledgeChunk] {
+        let queryTerms = Set(tokenize(query))
+        guard !queryTerms.isEmpty, !chunks.isEmpty else { return [] }
+        let count = Double(chunks.count)
+        let averageLength = Double(chunks.reduce(0) { $0 + $1.length }) / count
+        var documentFrequency: [String: Int] = [:]
+        for chunk in chunks {
+            for term in queryTerms where chunk.termFrequencies[term] != nil {
+                documentFrequency[term, default: 0] += 1
+            }
+        }
+        let k1 = 1.2
+        let b = 0.75
+        var scored: [(Double, Int)] = []
+        for (index, chunk) in chunks.enumerated() {
+            var score = 0.0
+            for term in queryTerms {
+                guard let tf = chunk.termFrequencies[term], let df = documentFrequency[term] else { continue }
+                let idf = log(1 + (count - Double(df) + 0.5) / (Double(df) + 0.5))
+                let frequency = Double(tf)
+                score += idf * (frequency * (k1 + 1)) / (frequency + k1 * (1 - b + b * Double(chunk.length) / averageLength))
+            }
+            if score > 0 { scored.append((score, index)) }
+        }
+        guard let best = scored.map({ $0.0 }).max() else { return [] }
+        // Drop weak matches (a single shared common bigram) once something clearly better exists.
+        let floor = best * 0.2
+        var used = 0
+        var result: [KnowledgeChunk] = []
+        for (score, index) in scored.sorted(by: { $0.0 > $1.0 }) where score >= floor {
+            let chunk = chunks[index]
+            let cost = chunk.text.count + chunk.label.count + 4
+            if used + cost > budget { if result.isEmpty { continue } else { break } }
+            used += cost
+            result.append(chunk)
+        }
+        return result
+    }
+
+    /// Paragraph-based passages. A line that starts a new question ("Q:", "问：", "## …", "1. …?")
+    /// always starts a new passage, so a prepared question stays together with its answer.
+    static func split(_ text: String) -> [String] {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        var paragraphs: [String] = []
+        var current: [String] = []
+        func flushParagraph() {
+            let paragraph = current.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !paragraph.isEmpty { paragraphs.append(paragraph) }
+            current = []
+        }
+        for line in normalized.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { flushParagraph(); continue }
+            if isQuestionStart(trimmed) { flushParagraph() }
+            current.append(line)
+        }
+        flushParagraph()
+
+        var pieces: [String] = []
+        var buffer = ""
+        func flushBuffer() {
+            let piece = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !piece.isEmpty { pieces.append(piece) }
+            buffer = ""
+        }
+        for paragraph in paragraphs {
+            if paragraph.count > maxChunkSize {
+                flushBuffer()
+                pieces += hardSplit(paragraph)
+                continue
+            }
+            let startsQuestion = isQuestionStart(paragraph.components(separatedBy: "\n").first ?? "")
+            let bufferIsQuestion = isQuestionStart(buffer.components(separatedBy: "\n").first ?? "")
+            // Keep an answer with its question; otherwise pack paragraphs up to the target size.
+            let wouldOverflow = buffer.count + paragraph.count + 2 > (bufferIsQuestion ? maxChunkSize : targetChunkSize)
+            if !buffer.isEmpty && (startsQuestion || wouldOverflow) { flushBuffer() }
+            buffer += buffer.isEmpty ? paragraph : "\n\n" + paragraph
+        }
+        flushBuffer()
+        return pieces
+    }
+
+    private static func isQuestionStart(_ line: String) -> Bool {
+        let lower = line.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !lower.isEmpty else { return false }
+        let prefixes = ["q:", "q：", "q.", "question:", "问：", "问:", "问题：", "问题:", "面试题", "#"]
+        if prefixes.contains(where: { lower.hasPrefix($0) }) { return true }
+        if lower.range(of: #"^(q|问题|题)?\s*\d{1,3}\s*[\.、:：\)]"#, options: .regularExpression) != nil,
+           lower.hasSuffix("?") || lower.hasSuffix("？") {
+            return true
+        }
+        return false
+    }
+
+    private static func hardSplit(_ text: String) -> [String] {
+        var pieces: [String] = []
+        var start = text.startIndex
+        while start < text.endIndex {
+            var end = text.index(start, offsetBy: targetChunkSize, limitedBy: text.endIndex) ?? text.endIndex
+            // Prefer to cut after a sentence end within the last 200 characters.
+            if end < text.endIndex {
+                let windowStart = text.index(end, offsetBy: -200, limitedBy: start) ?? start
+                let window = text[windowStart..<end]
+                if let cut = window.lastIndex(where: { "。！？.!?\n；;".contains($0) }) {
+                    end = text.index(after: cut)
+                }
+            }
+            let piece = text[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !piece.isEmpty { pieces.append(piece) }
+            start = end
+        }
+        return pieces
+    }
+
+    private static let stopWords: Set<String> = [
+        "the", "and", "for", "you", "your", "are", "was", "were", "with", "that", "this", "what", "how", "why",
+        "can", "could", "would", "about", "have", "has", "had", "did", "does", "from", "tell", "me", "is", "it",
+        "of", "to", "in", "on", "a", "an", "or", "be", "do", "as", "at", "by", "we", "our", "my", "i"
+    ]
+    private static let cjkStopBigrams: Set<String> = [
+        "一下", "什么", "怎么", "如何", "你的", "我的", "一个", "这个", "那个", "可以", "是否", "为什", "么样",
+        "请问", "介绍", "说说", "讲讲", "谈谈", "觉得", "我们", "你们", "他们", "的时", "时候", "有没", "没有"
+    ]
+
+    static func tokenize(_ text: String) -> [String] {
+        var tokens: [String] = []
+        var word = ""
+        var previousCJK: Character?
+        func flushWord() {
+            if word.count >= 2, !stopWords.contains(word) { tokens.append(stem(word)) }
+            word = ""
+        }
+        for character in text.lowercased() {
+            if isCJK(character) {
+                flushWord()
+                if let previous = previousCJK {
+                    let bigram = String([previous, character])
+                    if !cjkStopBigrams.contains(bigram) { tokens.append(bigram) }
+                }
+                previousCJK = character
+            } else if character.isLetter || character.isNumber || character == "+" || character == "#" {
+                previousCJK = nil
+                word.append(character)
+            } else {
+                previousCJK = nil
+                flushWord()
+            }
+        }
+        flushWord()
+        return tokens
+    }
+
+    /// Very light English stemming so "conflicts" / "conflict" and "handled" / "handling" match.
+    private static func stem(_ word: String) -> String {
+        guard word.count > 4, word.allSatisfy({ $0.isASCII && $0.isLetter }) else { return word }
+        if word.hasSuffix("ies") { return String(word.dropLast(3)) + "y" }
+        if word.hasSuffix("ing"), word.count > 5 { return String(word.dropLast(3)) }
+        if word.hasSuffix("ed") { return String(word.dropLast(2)) }
+        if word.hasSuffix("es"), !word.hasSuffix("ses") { return String(word.dropLast(2)) }
+        if word.hasSuffix("s"), !word.hasSuffix("ss") { return String(word.dropLast()) }
+        return word
+    }
+
+    private static func isCJK(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first else { return false }
+        switch scalar.value {
+        case 0x4E00...0x9FFF, 0x3400...0x4DBF, 0x3040...0x30FF, 0xAC00...0xD7AF: return true
+        default: return false
+        }
     }
 }

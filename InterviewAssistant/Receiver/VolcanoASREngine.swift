@@ -260,7 +260,8 @@ final class VolcanoASREngine {
         let startResult: Result<Void, Error> = await withCheckedContinuation { [audioEngine] cont in
             DispatchQueue.global(qos: .userInitiated).async { [self, audioEngine] in
                 let input = audioEngine.inputNode
-                let inputFormat = input.outputFormat(forBus: 0)
+                // Hardware format of the current device (AirPods in call mode report 16/24 kHz mono).
+                let inputFormat = input.inputFormat(forBus: 0)
                 guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
                     cont.resume(returning: .failure(NSError(
                         domain: "InterviewAssistant.Audio",
@@ -272,8 +273,10 @@ final class VolcanoASREngine {
                 input.removeTap(onBus: 0)
                 input.installTap(
                     onBus: 0,
-                    bufferSize: AVAudioFrameCount(inputFormat.sampleRate * 0.2),
-                    format: inputFormat
+                    bufferSize: AVAudioFrameCount(max(1_024, inputFormat.sampleRate * 0.2)),
+                    // nil = the node's own format, so the tap never disagrees with the device's
+                    // sample rate (a mismatch raises an uncatchable exception after switching mics).
+                    format: nil
                 ) { [weak self] buffer, _ in
                     self?.processCapturedBuffer(buffer)
                 }
