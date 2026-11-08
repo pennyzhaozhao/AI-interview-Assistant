@@ -610,12 +610,20 @@ final class ReceiverCoordinator {
             answerLanguage: answerLanguageCode,
             codeLanguage: selectedCodeLanguage
         )
+        // Local retrieval first (core profile + passages for this question), then the cloud request.
+        let knowledge = await LocalRAGService.shared.knowledgeContext(
+            question: trimmed,
+            knowledgeBases: knowledgeBases,
+            activeIDs: session?.activeKBIds ?? [],
+            recentTurns: session?.turns ?? [],
+            role: session?.role ?? ""
+        )
+        guard !Task.isCancelled else { return }
         var systemPrompt = KnowledgeContextBuilder.buildStructuredTechnicalSystemPrompt(
             context: session?.context ?? "",
-            knowledgeBases: knowledgeBases,
-            activeIDs: session?.activeKBIds ?? []
+            knowledge: knowledge
         )
-        let mockMemory = buildMockTrainingMemory()
+        let mockMemory = PromptTokenBudget.fit(buildMockTrainingMemory(), maxTokens: PromptBudget.default.mockMemory)
         if !mockMemory.isEmpty {
             systemPrompt += """
 
@@ -648,10 +656,16 @@ final class ReceiverCoordinator {
         isGeneratingCode = true
         let existingAnswer = aiText.trimmingCharacters(in: .whitespacesAndNewlines)
         aiText = "\(existingAnswer)\n\n\(L.t("Generating code..."))"
+        let knowledge = await LocalRAGService.shared.knowledgeContext(
+            question: pendingCodeRawQuestion,
+            knowledgeBases: knowledgeBases,
+            activeIDs: session.activeKBIds,
+            recentTurns: session.turns,
+            role: session.role
+        )
         let systemPrompt = KnowledgeContextBuilder.buildStructuredTechnicalSystemPrompt(
             context: session.context,
-            knowledgeBases: knowledgeBases,
-            activeIDs: session.activeKBIds
+            knowledge: knowledge
         )
         let codePrompt = KnowledgeContextBuilder.buildAlgorithmCodePrompt(rawText: pendingCodeRawQuestion, language: selectedLanguage)
         var streamingCode = ""
@@ -715,7 +729,14 @@ final class ReceiverCoordinator {
         confidence = 0.34
         lastUpdatedAt = .now
         do {
-            var prompt = systemPromptOverride ?? enrichedSystemPrompt(for: session)
+            var prompt: String
+            if let systemPromptOverride {
+                prompt = systemPromptOverride
+            } else {
+                // Local retrieval (core profile + passages for this question) completes before the cloud request.
+                prompt = await enrichedSystemPrompt(for: session, question: cleanQuestion)
+                guard !Task.isCancelled else { return }
+            }
             // Per-knowledge-base custom instructions (the user's own answer preferences).
             prompt += KnowledgeFormatter.instructionsBlock(knowledgeBases, activeIDs: session.activeKBIds)
             let answerLanguageCode = configuredAnswerLanguageCode
@@ -796,14 +817,20 @@ final class ReceiverCoordinator {
         return configuredLanguage.speechCode(appLanguage: appLanguage)
     }
 
-    private func enrichedSystemPrompt(for session: InterviewSession) -> String {
-        let basePrompt = KnowledgeContextBuilder.buildSystemPrompt(
-            context: session.context,
+    private func enrichedSystemPrompt(for session: InterviewSession, question: String) async -> String {
+        let knowledge = await LocalRAGService.shared.knowledgeContext(
+            question: question,
             knowledgeBases: knowledgeBases,
             activeIDs: session.activeKBIds,
+            recentTurns: session.turns,
+            role: session.role
+        )
+        let basePrompt = KnowledgeContextBuilder.buildSystemPrompt(
+            context: session.context,
+            knowledge: knowledge,
             recentTurns: session.turns
         )
-        let mockMemory = buildMockTrainingMemory()
+        let mockMemory = PromptTokenBudget.fit(buildMockTrainingMemory(), maxTokens: PromptBudget.default.mockMemory)
         guard !mockMemory.isEmpty else { return basePrompt }
         return """
         \(basePrompt)

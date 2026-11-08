@@ -165,18 +165,7 @@ public static class KnowledgeAssistant
         return cjk * 4 >= latin * 0.6 ? "Simplified Chinese" : "English";
     }
 
-    public static List<string> NormalizeSkills(IEnumerable<string> skills)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<string>();
-        foreach (var skill in skills)
-        {
-            var clean = Regex.Replace(skill ?? "", @"\s+", " ").Trim().Trim('-', '•', '·', ',', '，', '、');
-            if (clean.Length == 0 || clean.Length > 40) continue;
-            if (seen.Add(clean)) result.Add(clean);
-        }
-        return result;
-    }
+    public static List<string> NormalizeSkills(IEnumerable<string> skills) => KnowledgeContextFormatter.NormalizeSkills(skills);
 
     /// <summary>Heuristic used to offer "set as resume" when a file is uploaded as general material.</summary>
     public static bool LooksLikeResume(string fileName, string text)
@@ -302,52 +291,4 @@ public static class GitHubProjectImporter
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         return client;
     }
-}
-
-/// <summary>Builds the knowledge-base section of interview prompts from the structured knowledge bases.</summary>
-public static class KnowledgeContextFormatter
-{
-    public static string Build(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds, int limit = 24_000)
-    {
-        var blocks = new List<string>();
-        foreach (var kb in knowledgeBases.Where(item => activeIds.Contains(item.Id)))
-        {
-            var builder = new StringBuilder();
-            builder.AppendLine($"[{kb.Name}]");
-            var entries = kb.Entries.Where(entry => entry.IsEnabled).ToList();
-            var resume = entries.FirstOrDefault(entry => KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.Resume);
-            if (resume is not null)
-            {
-                if (!string.IsNullOrWhiteSpace(resume.Summary)) builder.AppendLine("Resume summary:").AppendLine(resume.Summary.Trim()).AppendLine();
-                if (!string.IsNullOrWhiteSpace(resume.Content)) builder.AppendLine("Resume (full text, use for specific details and numbers):").AppendLine(resume.Content.Trim()).AppendLine();
-            }
-            if (kb.Skills.Count > 0) builder.AppendLine("Skills: " + string.Join(", ", kb.Skills)).AppendLine();
-            var projects = entries.Where(entry => KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.Project).ToList();
-            if (projects.Count > 0)
-            {
-                builder.AppendLine("Projects:");
-                foreach (var project in projects)
-                {
-                    builder.AppendLine($"- {project.Title}{(project.Meta.Length > 0 ? $" ({project.Meta})" : "")}: {(project.Summary.Length > 0 ? project.Summary : "")}");
-                    if (project.Content.Length > 0) builder.AppendLine("  Details: " + Truncate(project.Content.Replace("\n", " "), 2500));
-                }
-                builder.AppendLine();
-            }
-            foreach (var material in entries.Where(entry => KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.Material && !string.IsNullOrWhiteSpace(entry.Content)))
-                builder.AppendLine($"{material.Title}:").AppendLine(material.Content.Trim()).AppendLine();
-            if (builder.Length > kb.Name.Length + 6) blocks.Add(builder.ToString().Trim());
-        }
-        return Truncate(string.Join("\n\n", blocks), limit);
-    }
-
-    /// <summary>Custom instructions from the active knowledge bases, combined.</summary>
-    public static string Instructions(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds) =>
-        string.Join("\n", knowledgeBases
-            .Where(item => activeIds.Contains(item.Id) && !string.IsNullOrWhiteSpace(item.CustomInstructions))
-            .Select(item => item.CustomInstructions.Trim()));
-
-    public static IReadOnlyList<string> Skills(IEnumerable<KnowledgeBaseModel> knowledgeBases, IReadOnlyCollection<Guid> activeIds) =>
-        KnowledgeAssistant.NormalizeSkills(knowledgeBases.Where(item => activeIds.Contains(item.Id)).SelectMany(item => item.Skills));
-
-    private static string Truncate(string text, int length) => text.Length <= length ? text : text[..length];
 }

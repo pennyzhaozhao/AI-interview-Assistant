@@ -845,13 +845,57 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
         }
     }
 
+    /// <summary>Longest preview rendered on a card; very long notes are read in the editor instead.</summary>
+    private const int ExpandedPreviewLimit = 20_000;
+    private bool _isPreviewExpanded;
+
+    public bool IsPreviewExpanded
+    {
+        get => _isPreviewExpanded;
+        set
+        {
+            if (_isPreviewExpanded == value) return;
+            _isPreviewExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PreviewText));
+            OnPropertyChanged(nameof(PreviewToggleText));
+        }
+    }
+
+    public bool IsLongContent
+    {
+        get
+        {
+            var value = model.Content.Trim();
+            return value.Length > 240 || value.Count(character => character == '\n') > 3;
+        }
+    }
+
+    public string PreviewText
+    {
+        get
+        {
+            if (!_isPreviewExpanded) return ContentPreview;
+            var value = model.Content.Trim();
+            return value.Length <= ExpandedPreviewLimit ? value : value[..ExpandedPreviewLimit] + "…\n" + LocalizationManager.Text("Open the editor to see the rest.");
+        }
+    }
+
+    public string PreviewToggleText => LocalizationManager.Text(_isPreviewExpanded ? "Show less" : "Show all");
+    public string CharacterCountText => string.Format(LocalizationManager.Text("{0} characters"), model.Content.Trim().Length);
+
     public bool HasSummary => model.Summary.Trim().Length > 0;
     /// <summary>What the card shows: the AI summary when there is one, otherwise the beginning of the text.</summary>
     public string DisplayText => HasSummary ? model.Summary.Trim() : ContentPreview;
 
     public ICommand DeleteCommand { get; } = new RelayCommand(onDelete);
 
-    public void RefreshLanguage() => OnPropertyChanged(nameof(SourceLabel));
+    public void RefreshLanguage()
+    {
+        OnPropertyChanged(nameof(SourceLabel));
+        OnPropertyChanged(nameof(PreviewToggleText));
+        OnPropertyChanged(nameof(CharacterCountText));
+    }
 
     public string Title
     {
@@ -876,6 +920,9 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
             OnPropertyChanged();
             OnPropertyChanged(nameof(ContentPreview));
             OnPropertyChanged(nameof(DisplayText));
+            OnPropertyChanged(nameof(PreviewText));
+            OnPropertyChanged(nameof(IsLongContent));
+            OnPropertyChanged(nameof(CharacterCountText));
         }
     }
 

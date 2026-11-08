@@ -25,8 +25,7 @@ struct KnowledgeBaseManagerView: View {
     @State private var status = ""
     @State private var searchText = ""
     @State private var editingSource: KnowledgeEntry?
-    @State private var sourceTitleDraft = ""
-    @State private var sourceContentDraft = ""
+    @State private var expandedEntryIDs = Set<UUID>()
     @State private var pendingDeleteBase: KnowledgeBase?
     @State private var showBaseDeleteConfirm = false
     @State private var isSelectingBases = false
@@ -546,6 +545,30 @@ struct KnowledgeBaseManagerView: View {
         }
     }
 
+    /// Local search index status (documents are indexed and searched on this device) with a rebuild action.
+    private var localIndexStatus: some View {
+        let status = LocalRAGService.shared.status
+        let text: String
+        switch status.state {
+        case .starting: text = L.t("Local index: starting…")
+        case .indexing: text = String(format: L.t("Local index: indexing (%ld passages left)…"), status.pendingEmbeddings)
+        case .ready: text = String(format: L.t("Local index ready: %ld passages, searched on this device"), status.totalChunks)
+        case .keywordOnly: text = String(format: L.t("Local index: keyword search only (%ld passages); the semantic model is not installed"), status.totalChunks)
+        case .error: text = L.t("Local index unavailable; answers use the core profile only")
+        }
+        return HStack(spacing: 10) {
+            Text(text)
+                .font(.appSmall)
+                .foregroundStyle(Color.appMuted)
+            Button(L.t("Rebuild index")) { LocalRAGService.shared.syncNow(rebuild: true) }
+                .buttonStyle(.plain)
+                .font(.appSmall)
+                .foregroundStyle(Color.appPrimary)
+                .help(L.t("Deletes the local search index and indexes every document again. Your knowledge bases are not changed."))
+        }
+        .padding(.top, 2)
+    }
+
     private var detailContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -557,6 +580,7 @@ struct KnowledgeBaseManagerView: View {
                         Text(L.t("Edit metadata, import sources, and decide whether this asset is available to interviews."))
                             .font(.appCaption)
                             .foregroundStyle(Color.appMuted)
+                        localIndexStatus
                     }
                     Spacer()
                     Label(L.t("Saved automatically"), systemImage: "checkmark")
@@ -856,6 +880,7 @@ struct KnowledgeBaseManagerView: View {
                         Toggle("", isOn: sourceEnabledBinding(for: project))
                             .labelsHidden()
                             .toggleStyle(.switch)
+                        editButton(project)
                         entryMenu(project)
                     }
                     .padding(14)
@@ -981,6 +1006,24 @@ struct KnowledgeBaseManagerView: View {
         .fixedSize()
     }
 
+    /// Longest preview rendered inline; very long notes are read in the editor instead.
+    private static let expandedPreviewLimit = 20_000
+
+    private func editButton(_ entry: KnowledgeEntry) -> some View {
+        Button {
+            beginEditingSource(entry)
+        } label: {
+            Image(systemName: "pencil")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.appPrimary)
+                .frame(width: 34, height: 34)
+                .background(Color.appPrimary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(L.t("Edit"))
+    }
+
     private func sourceRow(_ entry: KnowledgeEntry) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -1008,30 +1051,45 @@ struct KnowledgeBaseManagerView: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
 
-                Button {
-                    beginEditingSource(entry)
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.appPrimary)
-                        .frame(width: 34, height: 34)
-                        .background(Color.appPrimary.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                }
-                .buttonStyle(.plain)
+                editButton(entry)
 
                 entryMenu(entry)
             }
 
-            if !entry.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(entry.content.trimmingCharacters(in: .whitespacesAndNewlines))
-                    .font(.appSmall)
-                    .foregroundStyle(Color.appMuted)
-                    .lineLimit(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color.appBG.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            let preview = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !preview.isEmpty {
+                let isExpanded = expandedEntryIDs.contains(entry.id)
+                let isLong = preview.count > 240 || preview.filter { $0 == "\n" }.count > 3
+                VStack(alignment: .leading, spacing: 8) {
+                    // The collapsed card shows 4 lines; the full text is always kept and sent to the AI.
+                    Text(isExpanded ? String(preview.prefix(Self.expandedPreviewLimit)) : preview)
+                        .font(.appSmall)
+                        .foregroundStyle(Color.appMuted)
+                        .lineLimit(isExpanded ? nil : 4)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if isLong {
+                        HStack(spacing: 10) {
+                            Button(isExpanded ? L.t("Show less") : L.t("Show all")) {
+                                if isExpanded { expandedEntryIDs.remove(entry.id) } else { expandedEntryIDs.insert(entry.id) }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appPrimary)
+                            Text(String(format: L.t("%ld characters"), preview.count))
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
+                            if isExpanded && preview.count > Self.expandedPreviewLimit {
+                                Text(L.t("Open the editor to see the rest."))
+                                    .font(.appSmall)
+                                    .foregroundStyle(Color.appMuted)
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color.appBG.opacity(0.42))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .padding(14)
@@ -1040,78 +1098,50 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func sourceEditor(_ entry: KnowledgeEntry) -> some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                labeledField(L.t("Source title")) {
-                    TextField(L.t("Source title"), text: $sourceTitleDraft)
-                        .textFieldStyle(.plain)
-                        .darkField()
-                }
-
-                if isPDFSource(entry) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(L.t("PDF Preview"))
-                            .font(.appCaptionMedium)
-                            .foregroundStyle(Color.appMuted)
-                        if let url = pdfURL(for: entry), FileManager.default.fileExists(atPath: url.path) {
-                            PDFPagesPreview(url: url)
-                                .frame(height: isCompact ? 420 : 520)
-                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous)
-                                        .stroke(Color.appBorder, lineWidth: 1)
-                                )
-                        } else {
-                            Text(entry.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L.t("The original PDF file is not available. Re-import this PDF to enable preview.") : entry.content)
-                                .font(.appBody)
-                                .foregroundStyle(Color.appText)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, minHeight: isCompact ? 360 : 500, alignment: .topLeading)
-                                .padding(16)
-                                .background(Color.appField)
-                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
-                        }
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(entry.kind == KnowledgeEntryKind.resume ? L.t("Resume original (Markdown)") : L.t("Content"))
-                            .font(.appCaptionMedium)
-                            .foregroundStyle(Color.appMuted)
-                        if entry.kind == KnowledgeEntryKind.resume {
-                            Text(L.t("The AI summary is regenerated after you save the original."))
-                                .font(.appSmall)
-                                .foregroundStyle(Color.appMuted)
-                        }
-                        TextEditor(text: $sourceContentDraft)
-                            .scrollContentBackground(.hidden)
-                            .font(.appBody)
-                            .frame(height: isCompact ? 360 : 500)
-                            .darkField()
-                    }
-                }
+        // The editor keeps its own drafts, initialised from the entry when the sheet is created.
+        // Binding the sheet to this view's @State made the text editor open empty on macOS,
+        // because the sheet could be built before the drafts were filled in.
+        SourceEditorSheet(
+            entry: entry,
+            initialTitle: displayTitle(for: entry),
+            isCompact: isCompact,
+            isPDF: isPDFSource(entry),
+            onCancel: { editingSource = nil },
+            onSave: { title, summary, content in
+                saveSourceEdit(entry, title: title, summary: summary, content: content)
             }
-            .padding(24)
-            .frame(minWidth: isCompact ? 0 : 680, minHeight: isCompact ? 0 : 650)
-            .background(Color.appBG)
-            .foregroundStyle(Color.appText)
-            .navigationTitle(L.t("Edit Source"))
-            .iosNavigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L.t("Cancel")) {
-                        editingSource = nil
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L.t("Save")) {
-                        saveSourceEdit(entry)
-                    }
-                }
-            }
+        ) {
+            pdfPreview(for: entry)
         }
-        .onAppear {
-            sourceTitleDraft = displayTitle(for: entry)
-            sourceContentDraft = entry.content
+    }
+
+    @ViewBuilder
+    private func pdfPreview(for entry: KnowledgeEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L.t("PDF Preview"))
+                .font(.appCaptionMedium)
+                .foregroundStyle(Color.appMuted)
+            if let url = pdfURL(for: entry), FileManager.default.fileExists(atPath: url.path) {
+                PDFPagesPreview(url: url)
+                    .frame(height: isCompact ? 420 : 520)
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous)
+                            .stroke(Color.appBorder, lineWidth: 1)
+                    )
+            } else {
+                ScrollView {
+                    Text(entry.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L.t("The original PDF file is not available. Re-import this PDF to enable preview.") : entry.content)
+                        .font(.appBody)
+                        .foregroundStyle(Color.appText)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(16)
+                }
+                .frame(height: isCompact ? 360 : 500)
+                .background(Color.appField)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
+            }
         }
     }
 
@@ -1387,22 +1417,27 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func beginEditingSource(_ entry: KnowledgeEntry) {
-        sourceTitleDraft = displayTitle(for: entry)
-        sourceContentDraft = entry.content
         editingSource = entry
     }
 
-    private func saveSourceEdit(_ entry: KnowledgeEntry) {
-        let trimmedTitle = sourceTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func saveSourceEdit(_ entry: KnowledgeEntry, title: String, summary: String, content: String) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         entry.title = trimmedTitle.isEmpty ? L.t("Main Content") : trimmedTitle
         if !isPDFSource(entry) {
-            entry.content = sourceContentDraft
+            entry.content = content
+        }
+        if entry.kind == KnowledgeEntryKind.project {
+            entry.summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         entry.updatedAt = .now
         entry.knowledgeBase?.updatedAt = .now
         do {
             try modelContext.save()
-            status = L.t("Source saved")
+            if entry.kind == KnowledgeEntryKind.project {
+                projectStatus = L.t("Project saved")
+            } else {
+                status = L.t("Source saved")
+            }
             editingSource = nil
             // Only refresh a summary the user already chose to generate; never call AI unasked.
             if entry.kind == KnowledgeEntryKind.resume, !entry.summary.isEmpty, let kb = entry.knowledgeBase, !isResumeBusy {
@@ -2065,6 +2100,134 @@ private struct FlowLayout: Layout {
             subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// Edit sheet for a knowledge entry (note, material, resume original or project).
+/// Owns its drafts so the text is always loaded when the sheet opens.
+private struct SourceEditorSheet<PDFPreview: View>: View {
+    let entry: KnowledgeEntry
+    let isCompact: Bool
+    let isPDF: Bool
+    let onCancel: () -> Void
+    let onSave: (_ title: String, _ summary: String, _ content: String) -> Void
+    let pdfPreview: PDFPreview
+
+    @State private var title: String
+    @State private var summary: String
+    @State private var content: String
+    @State private var editorController = MarkdownEditorController()
+
+    init(
+        entry: KnowledgeEntry,
+        initialTitle: String,
+        isCompact: Bool,
+        isPDF: Bool,
+        onCancel: @escaping () -> Void,
+        onSave: @escaping (_ title: String, _ summary: String, _ content: String) -> Void,
+        @ViewBuilder pdfPreview: () -> PDFPreview
+    ) {
+        self.entry = entry
+        self.isCompact = isCompact
+        self.isPDF = isPDF
+        self.onCancel = onCancel
+        self.onSave = onSave
+        self.pdfPreview = pdfPreview()
+        _title = State(initialValue: initialTitle)
+        _summary = State(initialValue: entry.summary)
+        _content = State(initialValue: entry.content)
+    }
+
+    private var isProject: Bool { entry.kind == KnowledgeEntryKind.project }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                field(isProject ? L.t("Project name") : L.t("Source title")) {
+                    TextField(isProject ? L.t("Project name") : L.t("Source title"), text: $title)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                }
+
+                if isProject {
+                    field(L.t("Project description")) {
+                        Text(L.t("Shown on the project card and always sent to the AI. Describe what you built, your role, the stack and the results."))
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appMuted)
+                        TextEditor(text: $summary)
+                            .scrollContentBackground(.hidden)
+                            .font(.appBody)
+                            .frame(height: 110)
+                            .darkField()
+                    }
+                }
+
+                if isPDF {
+                    pdfPreview
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(contentLabel)
+                                .font(.appCaptionMedium)
+                                .foregroundStyle(Color.appMuted)
+                            Spacer()
+                            Text(String(format: L.t("%ld characters"), content.count))
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
+                        }
+                        if entry.kind == KnowledgeEntryKind.resume {
+                            Text(L.t("The AI summary is regenerated after you save the original."))
+                                .font(.appSmall)
+                                .foregroundStyle(Color.appMuted)
+                        }
+                        MarkdownFormatToolbar(controller: editorController)
+                        // Markdown is styled as you type (Typora-style); shortcuts match Typora.
+                        MarkdownTextEditor(text: $content, controller: editorController)
+                            .frame(maxWidth: .infinity, minHeight: isCompact ? 320 : 380, maxHeight: .infinity)
+                            .padding(.horizontal, 8)
+                            .background(Color.appField)
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.input, style: .continuous))
+                        Text(L.t("Markdown supported. Shortcuts: ⌘B bold · ⌘I italic · ⌘U underline · ⌘K link · ⌘1–6 heading · ⌘0 paragraph · ⌃` code · ⌥⌘Q quote · ⌥⌘U / ⌥⌘O list · ⌥⌘C code block"))
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                }
+            }
+            .padding(24)
+            .frame(minWidth: isCompact ? 0 : 760, minHeight: isCompact ? 0 : 720, alignment: .top)
+            .background(Color.appBG)
+            .foregroundStyle(Color.appText)
+            .navigationTitle(isProject ? L.t("Edit Project") : L.t("Edit Source"))
+            .iosNavigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L.t("Cancel"), action: onCancel)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L.t("Save")) { onSave(title, summary, content) }
+                        .keyboardShortcut("s", modifiers: .command)
+                }
+            }
+        }
+    }
+
+    private var contentLabel: String {
+        switch entry.kind {
+        case KnowledgeEntryKind.resume: return L.t("Resume original (Markdown)")
+        case KnowledgeEntryKind.project: return L.t("Project details (README)")
+        default: return L.t("Content")
+        }
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label)
+                .font(.appCaptionMedium)
+                .foregroundStyle(Color.appMuted)
+            content()
         }
     }
 }

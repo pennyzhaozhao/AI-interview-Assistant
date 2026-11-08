@@ -51,13 +51,26 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag '$env:TAG' must look like v1.2.3" }
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      # Local RAG embedding model (intfloat/multilingual-e5-small, int8 ONNX; ~135 MB, SHA-256 verified).
+      # Not stored in git because of its size; bundled into the app so users never download anything.
+      - name: Fetch local RAG model
+        shell: pwsh
+        run: ./scripts/fetch-rag-model.ps1
+
+      - name: Run local RAG tests
+        shell: pwsh
+        run: dotnet test "Windows platform/tests/InterviewAssistant.Rag.Tests/InterviewAssistant.Rag.Tests.csproj" -c Release
+
       - name: Publish single-file exe
         shell: pwsh
         run: |
+          # IncludeAllContentForSelfExtract: the model files (Content) travel inside the single exe and are
+          # extracted next to the app's other native files on first launch.
           dotnet publish "$env:PROJECT" `
             -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:IncludeAllContentForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
             -p:DebugType=None `
             -p:GenerateDocumentationFile=false `

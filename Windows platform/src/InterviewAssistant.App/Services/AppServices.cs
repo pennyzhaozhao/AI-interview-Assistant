@@ -1,3 +1,5 @@
+using InterviewAssistant.Rag;
+
 namespace InterviewAssistant.Services;
 
 public sealed class AppServices
@@ -11,7 +13,13 @@ public sealed class AppServices
     public AppDataStore DataStore { get; } = new();
     public WindowsCredentialStore Credentials { get; } = new();
     public AIService AI { get; } = new();
+    /// <summary>Local RAG index (derived data in the data folder); null until the data store is loaded.</summary>
+    public KnowledgeIndexCoordinator? KnowledgeIndex => KnowledgeIndexHost.Coordinator;
+    public KnowledgeIndexHost KnowledgeIndexHost { get; } = new();
 
-    public Task InitializeAsync(CancellationToken cancellationToken = default) =>
-        DataStore.LoadAsync(cancellationToken);
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await DataStore.LoadAsync(cancellationToken);
+        KnowledgeIndexHost.Attach(DataStore);
+    }
 }

@@ -27,6 +27,7 @@
 		AA0000000000000000000011 /* SenderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000111 /* SenderView.swift */; };
 		AA0000000000000000000012 /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SetupView.swift */; };
 		AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */; };
+		AA00000000000000000009F0 /* MarkdownTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009F1 /* MarkdownTextEditor.swift */; };
 		AA0000000000000000000014 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* HistoryView.swift */; };
 		AA0000000000000000000015 /* APIConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* APIConfigView.swift */; };
 		AA0000000000000000000016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000118 /* Assets.xcassets */; };
@@ -48,6 +49,15 @@
 		AA000000000000000000002F /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012E /* UpdateChecker.swift */; };
 		AA0000000000000000000030 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = AA0000000000000000000A03 /* Sparkle */; };
 		BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000101 /* SpeechProtectionTests.swift */; };
+		AA00000000000000000009A0 /* LocalRAGCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B0 /* LocalRAGCore.swift */; };
+		AA00000000000000000009A1 /* XLMRobertaTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B1 /* XLMRobertaTokenizer.swift */; };
+		AA00000000000000000009A2 /* KnowledgeChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B2 /* KnowledgeChunker.swift */; };
+		AA00000000000000000009A3 /* LocalEmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B3 /* LocalEmbeddingService.swift */; };
+		AA00000000000000000009A4 /* LocalVectorIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B4 /* LocalVectorIndex.swift */; };
+		AA00000000000000000009A5 /* KnowledgeRetrieval.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B5 /* KnowledgeRetrieval.swift */; };
+		AA00000000000000000009A6 /* KnowledgeIndexCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B6 /* KnowledgeIndexCoordinator.swift */; };
+		AA00000000000000000009A7 /* LocalRAGService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B7 /* LocalRAGService.swift */; };
+		BB0000000000000000000002 /* LocalRAGTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000102 /* LocalRAGTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +91,7 @@
 		AA0000000000000000000111 /* SenderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SenderView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000112 /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeBaseManagerView.swift; sourceTree = "<group>"; };
+		AA00000000000000000009F1 /* MarkdownTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTextEditor.swift; sourceTree = "<group>"; };
 		AA0000000000000000000114 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000115 /* APIConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfigView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000116 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -104,6 +115,16 @@
 		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000100 /* InterviewAssistantTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InterviewAssistantTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000101 /* SpeechProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechProtectionTests.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B0 /* LocalRAGCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRAGCore.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B1 /* XLMRobertaTokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLMRobertaTokenizer.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B2 /* KnowledgeChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeChunker.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B3 /* LocalEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalEmbeddingService.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B4 /* LocalVectorIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalVectorIndex.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B5 /* KnowledgeRetrieval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeRetrieval.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B6 /* KnowledgeIndexCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnowledgeIndexCoordinator.swift; sourceTree = "<group>"; };
+		AA00000000000000000009B7 /* LocalRAGService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRAGService.swift; sourceTree = "<group>"; };
+		AA00000000000000000009C0 /* LocalRAG-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LocalRAG-Bridging-Header.h"; sourceTree = "<group>"; };
+		BB0000000000000000000102 /* LocalRAGTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalRAGTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,9 +174,26 @@
 			path = InterviewAssistant;
 			sourceTree = "<group>";
 		};
+		AA00000000000000000009C1 /* LocalRAG */ = {
+			isa = PBXGroup;
+			children = (
+				AA00000000000000000009B0 /* LocalRAGCore.swift */,
+				AA00000000000000000009B1 /* XLMRobertaTokenizer.swift */,
+				AA00000000000000000009B2 /* KnowledgeChunker.swift */,
+				AA00000000000000000009B3 /* LocalEmbeddingService.swift */,
+				AA00000000000000000009B4 /* LocalVectorIndex.swift */,
+				AA00000000000000000009B5 /* KnowledgeRetrieval.swift */,
+				AA00000000000000000009B6 /* KnowledgeIndexCoordinator.swift */,
+				AA00000000000000000009B7 /* LocalRAGService.swift */,
+				AA00000000000000000009C0 /* LocalRAG-Bridging-Header.h */,
+			);
+			path = LocalRAG;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000402 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				AA00000000000000000009C1 /* LocalRAG */,
 				AA0000000000000000000103 /* Theme.swift */,
 				AA000000000000000000012E /* UpdateChecker.swift */,
 				AA0000000000000000000104 /* Models.swift */,
@@ -213,6 +251,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000113 /* KnowledgeBaseManagerView.swift */,
+				AA00000000000000000009F1 /* MarkdownTextEditor.swift */,
 			);
 			path = KnowledgeBase;
 			sourceTree = "<group>";
@@ -267,6 +306,7 @@
 			isa = PBXGroup;
 			children = (
 				BB0000000000000000000101 /* SpeechProtectionTests.swift */,
+				BB0000000000000000000102 /* LocalRAGTests.swift */,
 			);
 			path = InterviewAssistantTests;
 			sourceTree = "<group>";
@@ -282,6 +322,7 @@
 				AA0000000000000000000300 /* Frameworks */,
 				AA0000000000000000000601 /* Resources */,
 				AA0000000000000000000602 /* Fix ONNX Runtime Loader Link */,
+				AA00000000000000000009C2 /* Bundle Local RAG Model */,
 			);
 			buildRules = (
 			);
@@ -388,6 +429,25 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\nframeworks_dir=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\nif [ \"${PLATFORM_NAME}\" = \"macosx\" ]; then\n  runtime_target=\"onnxruntime.framework/Versions/A/onnxruntime\"\nelse\n  runtime_target=\"onnxruntime.framework/onnxruntime\"\nfi\n/bin/ln -sfn \"${runtime_target}\" \"${frameworks_dir}/libonnxruntime.dylib\"\n";
 		};
+		AA00000000000000000009C2 /* Bundle Local RAG Model */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle Local RAG Model";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n# Copies the local embedding model (fetched with scripts/fetch-rag-model.sh; not in git) into the app bundle.\n# Without it the app still works and retrieval falls back to keyword search.\nsrc=\"${SRCROOT}/LocalRAG/model\"\ndst=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/LocalRAG/model\"\nif [ -f \"${src}/model_quantized.onnx\" ] && [ -f \"${src}/tokenizer.json\" ]; then\n  mkdir -p \"${dst}\"\n  /usr/bin/rsync -a \"${src}/model_quantized.onnx\" \"${src}/tokenizer.json\" \"${dst}/\"\nelse\n  echo \"warning: Local RAG model not found in ${src}. Run scripts/fetch-rag-model.sh to bundle semantic search; keyword search is used without it.\"\nfi\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -403,6 +463,14 @@
 				AA0000000000000000000005 /* KeychainStore.swift in Sources */,
 				AA0000000000000000000006 /* AIService.swift in Sources */,
 				AA0000000000000000000007 /* KnowledgeContextBuilder.swift in Sources */,
+				AA00000000000000000009A0 /* LocalRAGCore.swift in Sources */,
+				AA00000000000000000009A1 /* XLMRobertaTokenizer.swift in Sources */,
+				AA00000000000000000009A2 /* KnowledgeChunker.swift in Sources */,
+				AA00000000000000000009A3 /* LocalEmbeddingService.swift in Sources */,
+				AA00000000000000000009A4 /* LocalVectorIndex.swift in Sources */,
+				AA00000000000000000009A5 /* KnowledgeRetrieval.swift in Sources */,
+				AA00000000000000000009A6 /* KnowledgeIndexCoordinator.swift in Sources */,
+				AA00000000000000000009A7 /* LocalRAGService.swift in Sources */,
 				AA0000000000000000000008 /* PDFImporter.swift in Sources */,
 				AA0000000000000000000009 /* URLFetcher.swift in Sources */,
 				AA00000000000000000007A1 /* KnowledgeAssistant.swift in Sources */,
@@ -423,6 +491,7 @@
 				AA0000000000000000000011 /* SenderView.swift in Sources */,
 				AA0000000000000000000012 /* SetupView.swift in Sources */,
 				AA0000000000000000000013 /* KnowledgeBaseManagerView.swift in Sources */,
+				AA00000000000000000009F0 /* MarkdownTextEditor.swift in Sources */,
 				AA0000000000000000000014 /* HistoryView.swift in Sources */,
 				AA0000000000000000000025 /* MockInterviewView.swift in Sources */,
 				AA0000000000000000000015 /* APIConfigView.swift in Sources */,
@@ -440,6 +509,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */,
+				BB0000000000000000000002 /* LocalRAGTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -568,25 +638,27 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = YJHNV22T7N;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "InterviewAssistant/Shared/LocalRAG/LocalRAG-Bridging-Header.h";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
@@ -599,26 +671,28 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = InterviewAssistant/Resources/InterviewAssistant.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = YJHNV22T7N;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				INFOPLIST_FILE = InterviewAssistant/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pennyzhaozhao.interviewassistant;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "macosx iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "InterviewAssistant/Shared/LocalRAG/LocalRAG-Bridging-Header.h";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};

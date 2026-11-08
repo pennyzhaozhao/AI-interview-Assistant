@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>InterviewAssistant.Rag.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\InterviewAssistant.Rag\InterviewAssistant.Rag.csproj" />
+  </ItemGroup>
+  <!-- The app's prompt construction and LLM request code (platform-neutral files) are compiled in so tests check what is really sent. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\InterviewAssistant.App\Models\AppData.cs" Link="AppSources\AppData.cs" />
+    <Compile Include="..\..\src\InterviewAssistant.App\Services\AIService.cs" Link="AppSources\AIService.cs" />
+    <Compile Include="..\..\src\InterviewAssistant.App\Services\InterviewPromptBuilder.cs" Link="AppSources\InterviewPromptBuilder.cs" />
+    <Compile Include="..\..\src\InterviewAssistant.App\Services\KnowledgeContextFormatter.cs" Link="AppSources\KnowledgeContextFormatter.cs" />
+    <Compile Include="..\..\src\InterviewAssistant.App\Services\RagPromptContext.cs" Link="AppSources\RagPromptContext.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="TestData\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

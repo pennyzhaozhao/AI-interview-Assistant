@@ -45,6 +45,12 @@ DMG_PATH="${DIST_DIR}/InterviewAssistant-${VERSION}-macOS.dmg"
 mkdir -p "${BUILD_DIR}" "${DIST_DIR}"
 rm -rf "${ARCHIVE_PATH}" "${EXPORT_DIR}" "${STAGING_DIR}" "${DMG_PATH}"
 
+# Local RAG: bundle the verified embedding model (the "Bundle Local RAG Model" build phase copies it into the app).
+# SKIP_RAG_MODEL=1 builds without it; the app then uses keyword-only retrieval.
+if [[ "${SKIP_RAG_MODEL:-0}" != "1" ]]; then
+  "${ROOT_DIR}/scripts/fetch-rag-model.sh"
+fi
+
 if [[ "${SIGNED_RELEASE}" == "1" ]]; then
   echo "Building a Developer ID signed archive..."
   xcodebuild archive \

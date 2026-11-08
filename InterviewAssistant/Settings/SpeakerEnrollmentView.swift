@@ -483,7 +483,7 @@ final class SpeakerEnrollmentRecorder: ObservableObject {
             let startResult: Result<Void, Error> = await withCheckedContinuation { [audioQueue, engine, self] continuation in
                 audioQueue.async {
                     let input = engine.inputNode
-                    let format = input.outputFormat(forBus: 0)
+                    let format = input.inputFormat(forBus: 0)
                     guard format.channelCount > 0, format.sampleRate > 0 else {
                         continuation.resume(returning: .failure(Self.noAudioInputError()))
                         return
@@ -491,8 +491,9 @@ final class SpeakerEnrollmentRecorder: ObservableObject {
                     input.removeTap(onBus: 0)
                     input.installTap(
                         onBus: 0,
-                        bufferSize: AVAudioFrameCount(max(1, format.sampleRate / 10)),
-                        format: format,
+                        bufferSize: AVAudioFrameCount(max(1_024, format.sampleRate / 10)),
+                        // nil = the node's own format; avoids a sample-rate mismatch crash with Bluetooth mics.
+                        format: nil,
                         block: Self.makeTapBlock(recorder: self, generation: currentGeneration)
                     )
                     engine.prepare()

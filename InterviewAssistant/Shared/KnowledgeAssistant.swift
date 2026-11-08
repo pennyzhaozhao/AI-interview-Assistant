@@ -281,8 +281,55 @@ enum GitHubProjectImporter {
     }
 }
 
-/// Builds the knowledge-base section of interview prompts from the structured knowledge bases.
+/// Structured views of the knowledge bases. Interview prompts no longer receive the whole knowledge base: they get
+/// `coreProfile` (a short, always-present profile) plus passages retrieved locally for the current question
+/// (LocalRAGService). `build` keeps the legacy full-text view for compatibility; it is not used for LLM requests.
 enum KnowledgeFormatter {
+    /// Compact candidate profile: resume summary (or the start of the resume), skills and one line per project, within
+    /// `maxTokens`. Same rules as KnowledgeContextFormatter.CoreProfile on Windows.
+    static func coreProfile(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID], maxTokens: Int = 450) -> String {
+        let active = Set(activeIDs)
+        let bases = knowledgeBases.filter { active.contains($0.id) }
+        guard !bases.isEmpty else { return "" }
+        let perBase = max(120, maxTokens / bases.count)
+        var blocks: [String] = []
+        for kb in bases {
+            var lines = ["[\(kb.name)]"]
+            let entries = kb.entries.filter(\.isEnabled)
+            if let resume = entries.first(where: { $0.kind == KnowledgeEntryKind.resume }) {
+                let summary = resume.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+                lines.append("Profile: " + (summary.isEmpty ? PromptTokenBudget.fit(resume.content, maxTokens: perBase / 2) : summary))
+            }
+            let skills = Array(kb.skills.prefix(25))
+            if !skills.isEmpty { lines.append("Skills: " + skills.joined(separator: ", ")) }
+            let projects = entries.filter { $0.kind == KnowledgeEntryKind.project }.sorted { $0.createdAt < $1.createdAt }
+            if !projects.isEmpty {
+                lines.append("Projects:")
+                for project in projects {
+                    let line = firstSentence(project.summary.isEmpty ? project.content : project.summary, maxCharacters: 160)
+                    lines.append("- \(project.title)\(project.meta.isEmpty ? "" : " (\(project.meta))")\(line.isEmpty ? "" : ": " + line)")
+                }
+            }
+            let materials = entries.filter { $0.kind == KnowledgeEntryKind.material }.map(\.title).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.prefix(12)
+            if !materials.isEmpty { lines.append("Other materials: " + materials.joined(separator: "; ")) }
+            if lines.count > 1 { blocks.append(PromptTokenBudget.fit(lines.joined(separator: "\n"), maxTokens: perBase)) }
+        }
+        return PromptTokenBudget.fit(blocks.joined(separator: "\n\n"), maxTokens: maxTokens)
+    }
+
+    /// Snapshot of every knowledge entry for the local index (filtering by active bases happens at query time).
+    @MainActor
+    static func ragDocuments(_ knowledgeBases: [KnowledgeBase]) -> [RagDocument] {
+        knowledgeBases.flatMap { kb in
+            kb.entries.map { entry in
+                RagDocument(knowledgeBaseID: kb.id, knowledgeBaseName: kb.name, entryID: entry.id, title: entry.title, kind: entry.kind,
+                            source: entry.source, summary: entry.summary, meta: entry.meta, content: entry.content, isEnabled: entry.isEnabled)
+            }
+        }
+    }
+
+    /// Legacy full-text view (resume, skills, projects, materials) truncated to `limit` characters. Kept for
+    /// compatibility; interview prompts use the core profile plus retrieval instead.
     static func build(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID], limit: Int = 24_000) -> String {
         let active = Set(activeIDs)
         var blocks: [String] = []
@@ -319,19 +366,28 @@ enum KnowledgeFormatter {
         return String(blocks.joined(separator: "\n\n").prefix(limit))
     }
 
-    /// Per-knowledge-base custom instructions, appended to the system prompt.
-    static func instructionsBlock(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> String {
+    /// Per-knowledge-base custom instructions, appended to the system prompt (bounded by the prompt budget).
+    static func instructionsBlock(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID], budget: PromptBudget = .default) -> String {
         let active = Set(activeIDs)
         let text = knowledgeBases
             .filter { active.contains($0.id) }
             .map { $0.customInstructions.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-        return text.isEmpty ? "" : "\n\nCANDIDATE'S OWN ANSWER PREFERENCES (follow them unless they conflict with the rules above):\n\(text)"
+        let fitted = PromptTokenBudget.fit(text, maxTokens: budget.customInstructions)
+        return fitted.isEmpty ? "" : "\n\nCANDIDATE'S OWN ANSWER PREFERENCES (follow them unless they conflict with the rules above):\n\(fitted)"
     }
 
     static func skills(_ knowledgeBases: [KnowledgeBase], activeIDs: [UUID]) -> [String] {
         let active = Set(activeIDs)
         return KnowledgeAssistant.normalizeSkills(knowledgeBases.filter { active.contains($0.id) }.flatMap(\.skills))
+    }
+
+    private static func firstSentence(_ text: String, maxCharacters: Int) -> String {
+        let value = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+        if let end = value.firstIndex(where: { "。！？.!?".contains($0) }), value.distance(from: value.startIndex, to: end) < maxCharacters {
+            return String(value[...end])
+        }
+        return value.count <= maxCharacters ? value : String(value.prefix(maxCharacters)) + "…"
     }
 }

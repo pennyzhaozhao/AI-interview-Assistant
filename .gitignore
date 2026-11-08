@@ -94,3 +94,7 @@ dist/
 *.tmp
 *.log
 *~
+
+# Local RAG model files (downloaded by scripts/fetch-rag-model.*; too large for git)
+LocalRAG/model/
+LocalRAG/onnxruntime/
