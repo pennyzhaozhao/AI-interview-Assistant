@@ -468,7 +468,7 @@ struct MockInterviewView: View {
 
         let cleanRole = role.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanJD = jobDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        let context = buildContext(role: cleanRole, jobDescription: cleanJD)
+        let context = await buildContext(role: cleanRole, jobDescription: cleanJD)
         let newSession = InterviewSession(
             title: cleanRole.isEmpty ? L.t("Mock Interview") : "\(L.t("Mock Interview")) - \(cleanRole)",
             role: cleanRole,
@@ -574,19 +574,29 @@ struct MockInterviewView: View {
         }
     }
 
-    private func buildContext(role: String, jobDescription: String) -> String {
+    /// Mock-interview context: role, JD, skills, the compact core profile and passages retrieved locally for the role
+    /// and job description (one per document, for breadth) — not the whole knowledge base.
+    private func buildContext(role: String, jobDescription: String) async -> String {
         let ids = Array(selectedKBIds)
-        let kbText = KnowledgeFormatter.build(knowledgeBases, activeIDs: ids, limit: 14_000)
         let skills = KnowledgeFormatter.skills(knowledgeBases, activeIDs: ids)
+        var budget = PromptBudget.default
+        budget.coreProfile = 600
+        var options = RetrievalOptions.default
+        options.topK = 8
+        options.maxChunksPerEntry = 1
+        let focus = role + "\n" + PromptTokenBudget.fit(jobDescription, maxTokens: 300)
+        let knowledge = await LocalRAGService.shared.knowledgeContext(question: focus, knowledgeBases: knowledgeBases, activeIDs: ids,
+                                                                      recentTurns: [], role: role, budget: budget, options: options)
         let skillsLine = skills.isEmpty ? "" : "Candidate skills (ask about these where relevant): \(skills.joined(separator: ", "))\n\n"
+        let retrieved = knowledge.retrievedKnowledge.isEmpty ? "" : "\n\n" + knowledge.retrievedKnowledge
         return """
         Target role: \(role)
 
         Job description:
-        \(jobDescription)
+        \(PromptTokenBudget.fit(jobDescription, maxTokens: PromptBudget.default.jobContext))
 
-        \(skillsLine)Candidate knowledge base:
-        \(kbText)
+        \(skillsLine)Candidate profile:
+        \(knowledge.coreProfile)\(retrieved)
         """
     }
 

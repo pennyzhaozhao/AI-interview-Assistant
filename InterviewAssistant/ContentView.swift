@@ -45,6 +45,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.modelContext) private var modelContext
     @AppStorage(AppPreferenceKey.themeMode) private var themeMode = AppThemeMode.dark.rawValue
     @AppStorage(AppPreferenceKey.language) private var language = AppLanguage.english.rawValue
     @State private var selection: AppSection = .interview
@@ -68,6 +69,8 @@ struct ContentView: View {
         .preferredColorScheme(currentTheme.colorScheme)
         .onAppear {
             installKeyboardObservers()
+            // Local RAG index: opens in the background and syncs with the knowledge bases (derived data).
+            LocalRAGService.shared.attach(modelContext)
         }
         .onDisappear {
             removeKeyboardObservers()

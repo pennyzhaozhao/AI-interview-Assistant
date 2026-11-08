@@ -138,8 +138,19 @@ public partial class PrompterWindow : Window
     {
         question = question.Trim();
         if (question.Length == 0) return;
-        // Build prompts before the new turn is added so it is not part of "recent conversation".
-        var (systemPrompt, userPrompt, maxTokens) = BuildPrompts(question, fromScreenshot);
+        // Retrieve local knowledge and build prompts before the new turn is added, so it is not part of
+        // "recent conversation". The cloud request below is only sent after retrieval has finished.
+        _answerCancellation?.Cancel();
+        string systemPrompt, userPrompt;
+        int maxTokens;
+        try
+        {
+            (systemPrompt, userPrompt, maxTokens) = await BuildPromptsAsync(question, fromScreenshot, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
         var turn = new ConversationTurnModel { Question = fromScreenshot && question.Length > 240 ? question[..240] : question, SpeakerLabel = "interviewer" };
         _session.Turns.Add(turn);
         _session.UpdatedAt = DateTimeOffset.Now;
@@ -323,27 +334,34 @@ public partial class PrompterWindow : Window
 
     private string AnswerLanguageCode() => InterviewPromptBuilder.AnswerLanguageCode(_store.Data.Preferences);
 
-    /// <summary>Same prompt selection as the macOS ReceiverCoordinator (askAI / askScreenshotQuestion).</summary>
-    private (string System, string User, int MaxTokens) BuildPrompts(string question, bool fromScreenshot)
+    /// <summary>
+    /// Same prompt selection as the macOS ReceiverCoordinator (askAI / askScreenshotQuestion). Knowledge comes from
+    /// local retrieval: a compact core profile plus passages retrieved for this question, never the whole knowledge base.
+    /// </summary>
+    private async Task<(string System, string User, int MaxTokens)> BuildPromptsAsync(string question, bool fromScreenshot, CancellationToken cancellationToken)
     {
         var data = _store.Data;
         var language = AnswerLanguageCode();
         var context = InterviewPromptBuilder.BuildCandidateContext(_session, data.Workspace);
         var activeIds = _session.ActiveKnowledgeBaseIds.Count > 0 ? (IReadOnlyCollection<Guid>)_session.ActiveKnowledgeBaseIds : data.Workspace.ActiveKnowledgeBaseIds;
         var mockMemory = InterviewPromptBuilder.BuildMockTrainingMemory(data.Sessions);
+        var role = string.IsNullOrWhiteSpace(_session.Role) ? data.Workspace.Role : _session.Role;
+        // Snapshot read here on the UI thread; embedding and search run in the background.
+        var knowledge = await RagPromptContext.BuildAsync(AppServices.Current.KnowledgeIndex, question, data.KnowledgeBases, activeIds,
+            _session.Turns.ToList(), role ?? "", cancellationToken: cancellationToken);
         string system;
         string user;
         int maxTokens;
         if (fromScreenshot)
         {
-            system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, data.KnowledgeBases, activeIds, question);
+            system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, knowledge);
             system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: true);
             user = InterviewPromptBuilder.BuildQuestionPrompt(question, language, _codeLanguage);
             maxTokens = 1800;
         }
         else
         {
-            system = InterviewPromptBuilder.BuildSystemPrompt(context, data.KnowledgeBases, activeIds, _session.Turns, question);
+            system = InterviewPromptBuilder.BuildSystemPrompt(context, knowledge, _session.Turns);
             system = InterviewPromptBuilder.AppendMockMemory(system, mockMemory, screenshot: false);
             // Coding questions asked by voice still need code in the chosen language.
             if (InterviewPromptBuilder.IsAlgorithmQuestion(question))

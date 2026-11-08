@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using InterviewAssistant.Models;
+using InterviewAssistant.Rag;
 using InterviewAssistant.Services;
 
 namespace InterviewAssistant.Windows;
@@ -62,7 +63,7 @@ public partial class MockInterviewWindow : UserControl
         SetVisiblePanel(LoadingPanel);
         try
         {
-            var context = BuildContext();
+            var context = await BuildContextAsync();
             try
             {
                 _questions = await GenerateQuestionsAsync(context, _cancellation.Token);
@@ -322,15 +323,30 @@ public partial class MockInterviewWindow : UserControl
         catch (Exception exception) { SpeechStatusText.Text = exception.Message; }
     }
 
-    private string BuildContext()
+    /// <summary>
+    /// Mock-interview context: role, JD, skills, the compact core profile and passages retrieved locally for the role
+    /// and job description (one per document, for breadth) — not the whole knowledge base.
+    /// </summary>
+    private async Task<string> BuildContextAsync()
     {
         var ids = _config.ActiveKnowledgeBaseIds.ToHashSet();
-        var knowledge = KnowledgeContextFormatter.Build(_store.Data.KnowledgeBases, ids, 14_000);
         var skills = KnowledgeContextFormatter.Skills(_store.Data.KnowledgeBases, ids);
-        var text = $"Target role: {_config.Role}\n\nJob description:\n{_config.JobDescription}\n\n"
+        var focus = $"{_config.Role}\n{PromptTokenBudget.Fit(_config.JobDescription, 300)}";
+        KnowledgePromptContext knowledge;
+        try
+        {
+            knowledge = await RagPromptContext.BuildAsync(AppServices.Current.KnowledgeIndex, focus, _store.Data.KnowledgeBases, ids, [], _config.Role,
+                PromptBudget.Default with { CoreProfile = 600 }, options: RetrievalOptions.Default with { TopK = 8, MaxChunksPerEntry = 1 });
+        }
+        catch (Exception)
+        {
+            knowledge = new KnowledgePromptContext(KnowledgeContextFormatter.CoreProfile(_store.Data.KnowledgeBases, ids, 600), "", RetrievalResult.Empty(RetrievalMode.None));
+        }
+        var text = $"Target role: {_config.Role}\n\nJob description:\n{PromptTokenBudget.Fit(_config.JobDescription, PromptBudget.Default.JobContext)}\n\n"
             + (skills.Count > 0 ? $"Candidate skills (ask about these where relevant): {string.Join(", ", skills)}\n\n" : "")
-            + $"Candidate knowledge base:\n{knowledge}";
-        return text.Length > 16000 ? text[..16000] : text;
+            + $"Candidate profile:\n{knowledge.CoreProfile}"
+            + (knowledge.RetrievedKnowledge.Length > 0 ? $"\n\n{knowledge.RetrievedKnowledge}" : "");
+        return text;
     }
 
     private List<MockQuestionDraft> FallbackQuestions()

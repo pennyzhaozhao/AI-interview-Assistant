@@ -16,6 +16,13 @@ public partial class App : Application
 
     private static readonly string LogPath = Path.Combine(LogDirectory, "startup.log");
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        // Stop background indexing and close the local index (a half-finished batch is simply redone next launch).
+        try { AppServices.Current.KnowledgeIndex?.Dispose(); } catch (Exception) { }
+        base.OnExit(e);
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);

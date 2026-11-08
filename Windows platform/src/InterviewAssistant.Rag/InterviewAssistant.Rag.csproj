@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Local RAG core: tokenizer, chunker, local embeddings (ONNX Runtime), SQLite index, hybrid retrieval
+    and prompt budgeting. Platform-neutral (net10.0) so it is unit-tested on any OS; the WPF app references it.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>InterviewAssistant.Rag</RootNamespace>
+    <AssemblyName>InterviewAssistant.Rag</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="System.Numerics.Tensors" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="InterviewAssistant.Rag.Tests" />
+  </ItemGroup>
+</Project>

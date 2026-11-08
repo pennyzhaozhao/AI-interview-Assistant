@@ -36,6 +36,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["WebsiteBlockedMessage"] = "The website refused automated access (HTTP {0}), usually because of bot protection. Try another company page (home or About page), or paste the company introduction into the notes",
         ["ProjectDescriptionHint"] = "Shown on the project card and always sent to the AI. Describe what you built, your role, the stack and the results.",
         ["MarkdownShortcutHint"] = "Markdown supported. Shortcuts as in Typora: Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+K link · Ctrl+1–6 heading · Ctrl+0 paragraph · Ctrl+Shift+` code · Alt+Shift+5 strikethrough · Ctrl+Shift+Q quote · Ctrl+Shift+] / [ list · Ctrl+Shift+K code block · Ctrl+S save",
+        ["RebuildIndexHint"] = "Deletes the local search index and indexes every document again. Your knowledge bases are not changed.",
         ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded."
     };
 
@@ -264,6 +265,13 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["Not uploaded"] = "未上传",
         ["Open on GitHub"] = "在 GitHub 打开",
         ["Open link"] = "打开链接",
+        ["Local index: starting…"] = "本地索引：正在启动…",
+        ["Local index: indexing ({0} passages left)…"] = "本地索引：正在建立索引（剩余 {0} 段）…",
+        ["Local index ready: {0} passages, searched on this device"] = "本地索引已就绪：共 {0} 段，检索在本机完成",
+        ["Local index: keyword search only ({0} passages); the semantic model is not installed"] = "本地索引：仅关键词检索（共 {0} 段），未安装语义模型",
+        ["Local index unavailable; answers use the core profile only"] = "本地索引暂不可用，回答仅使用核心档案",
+        ["Rebuild index"] = "重建索引",
+        ["RebuildIndexHint"] = "删除本地检索索引并重新索引所有资料，不会改动你的知识库内容。",
         ["Edit Project"] = "编辑项目", ["Project saved"] = "项目已保存", ["Project name"] = "项目名称", ["Project description"] = "项目简介",
         ["Project details (README)"] = "项目详情（README）",
         ["ProjectDescriptionHint"] = "显示在项目卡片上，并且每次都会发给 AI。建议写清楚做了什么、你的角色、技术栈和成果。",

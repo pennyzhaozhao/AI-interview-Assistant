@@ -11,10 +11,18 @@ namespace InterviewAssistant.Services;
 
 public sealed class AIService
 {
-    private readonly HttpClient _httpClient = new()
+    private readonly HttpClient _httpClient;
+
+    public AIService() : this(null)
     {
-        Timeout = TimeSpan.FromSeconds(120)
-    };
+    }
+
+    /// <summary>Tests pass a handler that records the outgoing request instead of calling a provider.</summary>
+    internal AIService(HttpMessageHandler? handler)
+    {
+        _httpClient = handler is null ? new HttpClient() : new HttpClient(handler);
+        _httpClient.Timeout = TimeSpan.FromSeconds(120);
+    }
 
     public async Task<string> CompleteAsync(
         AIConfig config,

@@ -545,6 +545,30 @@ struct KnowledgeBaseManagerView: View {
         }
     }
 
+    /// Local search index status (documents are indexed and searched on this device) with a rebuild action.
+    private var localIndexStatus: some View {
+        let status = LocalRAGService.shared.status
+        let text: String
+        switch status.state {
+        case .starting: text = L.t("Local index: starting…")
+        case .indexing: text = String(format: L.t("Local index: indexing (%ld passages left)…"), status.pendingEmbeddings)
+        case .ready: text = String(format: L.t("Local index ready: %ld passages, searched on this device"), status.totalChunks)
+        case .keywordOnly: text = String(format: L.t("Local index: keyword search only (%ld passages); the semantic model is not installed"), status.totalChunks)
+        case .error: text = L.t("Local index unavailable; answers use the core profile only")
+        }
+        return HStack(spacing: 10) {
+            Text(text)
+                .font(.appSmall)
+                .foregroundStyle(Color.appMuted)
+            Button(L.t("Rebuild index")) { LocalRAGService.shared.syncNow(rebuild: true) }
+                .buttonStyle(.plain)
+                .font(.appSmall)
+                .foregroundStyle(Color.appPrimary)
+                .help(L.t("Deletes the local search index and indexes every document again. Your knowledge bases are not changed."))
+        }
+        .padding(.top, 2)
+    }
+
     private var detailContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -556,6 +580,7 @@ struct KnowledgeBaseManagerView: View {
                         Text(L.t("Edit metadata, import sources, and decide whether this asset is available to interviews."))
                             .font(.appCaption)
                             .foregroundStyle(Color.appMuted)
+                        localIndexStatus
                     }
                     Spacer()
                     Label(L.t("Saved automatically"), systemImage: "checkmark")

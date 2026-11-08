@@ -16,7 +16,38 @@ public partial class KnowledgeView : UserControl
 {
     private const string ResumeFilter = "Resume|*.pdf;*.docx;*.doc;*.rtf;*.txt;*.md|All files|*.*";
 
-    public KnowledgeView() => InitializeComponent();
+    public KnowledgeView()
+    {
+        InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            AppServices.Current.KnowledgeIndexHost.StatusChanged += OnIndexStatusChanged;
+            LocalizationManager.Instance.LanguageChanged += RefreshIndexStatus;
+            RefreshIndexStatus();
+        };
+        Unloaded += (_, _) =>
+        {
+            AppServices.Current.KnowledgeIndexHost.StatusChanged -= OnIndexStatusChanged;
+            LocalizationManager.Instance.LanguageChanged -= RefreshIndexStatus;
+        };
+    }
+
+    private void OnIndexStatusChanged(InterviewAssistant.Rag.RagIndexStatus status) => Dispatcher.BeginInvoke(RefreshIndexStatus);
+
+    private void RefreshIndexStatus()
+    {
+        var status = AppServices.Current.KnowledgeIndex?.Status;
+        RagStatusText.Text = status is null ? "" : status.State switch
+        {
+            InterviewAssistant.Rag.RagIndexState.Starting => LocalizationManager.Text("Local index: starting…"),
+            InterviewAssistant.Rag.RagIndexState.Indexing => string.Format(LocalizationManager.Text("Local index: indexing ({0} passages left)…"), status.PendingEmbeddings),
+            InterviewAssistant.Rag.RagIndexState.Ready => string.Format(LocalizationManager.Text("Local index ready: {0} passages, searched on this device"), status.TotalChunks),
+            InterviewAssistant.Rag.RagIndexState.KeywordOnly => string.Format(LocalizationManager.Text("Local index: keyword search only ({0} passages); the semantic model is not installed"), status.TotalChunks),
+            _ => LocalizationManager.Text("Local index unavailable; answers use the core profile only") + (status.Message.Length > 0 ? $" ({status.Message})" : "")
+        };
+    }
+
+    private void RebuildIndex_Click(object sender, RoutedEventArgs e) => AppServices.Current.KnowledgeIndexHost.SyncNow(rebuild: true);
 
     private KnowledgeViewModel? Page => DataContext as KnowledgeViewModel;
     private KnowledgeBaseItemViewModel? Current => Page?.SelectedKnowledgeBase;

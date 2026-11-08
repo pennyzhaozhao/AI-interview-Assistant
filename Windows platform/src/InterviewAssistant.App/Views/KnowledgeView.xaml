@@ -111,6 +111,14 @@
                     <StackPanel>
                         <TextBlock Text="{Binding Name}" Style="{StaticResource SectionTitleStyle}" FontSize="28" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
                         <TextBlock Text="{loc:Loc Key=KnowledgeEditDescription}" Style="{StaticResource CaptionStyle}" FontSize="14.5" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <!-- Local search index status (documents are indexed and searched on this device). -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock x:Name="RagStatusText" Style="{StaticResource CaptionStyle}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="560"/>
+                            <Button Click="RebuildIndex_Click" Cursor="Hand" Background="Transparent" BorderThickness="0" Padding="0" Margin="12,0,0,0" VerticalAlignment="Center" ToolTip="{loc:Loc Key=RebuildIndexHint}">
+                                <Button.Template><ControlTemplate TargetType="Button"><ContentPresenter/></ControlTemplate></Button.Template>
+                                <TextBlock Text="{loc:Loc Key=Rebuild index}" FontSize="12.5" Foreground="{DynamicResource PrimaryBrush}"/>
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,8,0,0">
                         <TextBlock Text="&#xE73E;" Style="{StaticResource FluentIconStyle}" FontSize="13" Foreground="{DynamicResource SuccessBrush}" Margin="0,0,6,0"/>
