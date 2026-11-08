@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Interview AI — 免费开源的 AI 面试助手</title>
-  <meta name="description" content="Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库、模拟面试。自带 API Key，数据留在本机。" />
-  <meta name="keywords" content="AI 面试助手, 面试准备, 模拟面试, 面试题, 简历, 知识库, 开源, 免费, Windows, macOS, AI interview assistant, interview copilot, mock interview, open source" />
+  <meta name="description" content="Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库（本地增强 RAG）、模拟面试。自带 API Key，数据留在本机。" />
+  <meta name="keywords" content="AI 面试助手, 面试准备, 模拟面试, 面试题, 简历, 知识库, RAG, 本地检索, 开源, 免费, Windows, macOS, AI interview assistant, interview copilot, mock interview, open source" />
   <meta name="robots" content="index, follow" />
   <meta name="google-site-verification" content="giU_VQBe1Zf22KsD7tRopSheFkjqhH-YcrI8GOuM5Vo" />
   <link rel="canonical" id="canonical" href="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
@@ -16,11 +16,11 @@
   <meta property="og:site_name" content="Interview AI" />
   <meta property="og:url" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/" />
   <meta property="og:title" content="Interview AI — Free & open-source AI interview copilot" />
-  <meta property="og:description" content="Real-time answers, screenshot solving, knowledge bases and mock interviews. Bring your own API key. macOS & Windows." />
+  <meta property="og:description" content="Real-time answers, screenshot solving, knowledge bases with local enhanced RAG, and mock interviews. Bring your own API key. macOS & Windows." />
   <meta property="og:image" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Interview AI — Free & open-source AI interview copilot" />
-  <meta name="twitter:description" content="Real-time answers, screenshot solving, knowledge bases and mock interviews. Bring your own API key. macOS & Windows." />
+  <meta name="twitter:description" content="Real-time answers, screenshot solving, knowledge bases with local enhanced RAG, and mock interviews. Bring your own API key. macOS & Windows." />
   <meta name="twitter:image" content="https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png" />
   <script type="application/ld+json">
   {
@@ -28,10 +28,10 @@
     "@type": "SoftwareApplication",
     "name": "Interview AI",
     "alternateName": ["InterviewAssistant", "AI 面试助手"],
-    "description": "Free and open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases built from your resume, and mock interviews. Bring your own API key or run local models.",
+    "description": "Free and open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases built from your resume with local enhanced RAG retrieval, and mock interviews. Bring your own API key or run local models.",
     "applicationCategory": "ProductivityApplication",
     "operatingSystem": "macOS 14+, Windows 10, Windows 11",
-    "softwareVersion": "1.1.1",
+    "softwareVersion": "1.2.0",
     "url": "https://pennyzhaozhao.github.io/AI-interview-Assistant/",
     "image": "https://pennyzhaozhao.github.io/AI-interview-Assistant/assets/icon-256.png",
     "downloadUrl": "https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest",
@@ -445,8 +445,8 @@
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></div>
-        <h3 data-i18n="f3.t">个人知识库</h3>
-        <p data-i18n="f3.d">导入简历、项目文档、PDF 和 GitHub 链接，回答引用你的真实经历，不编造项目和数据。</p>
+        <h3 data-i18n="f3.t">个人知识库 · 本地增强 RAG</h3>
+        <p data-i18n="f3.d">导入简历、项目文档、PDF、GitHub 和面经。本地增强 RAG 在你的电脑上把资料建成索引，语义 + 关键词混合检索，每次只把和当前问题最相关的几段交给 AI；能听懂“具体怎么解决的”这类追问。资料再多也不会整份上传，回答更准、更省 token。</p>
       </div>
       <div class="card">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div>
@@ -524,6 +524,7 @@
             <tr><td data-i18n="cmp.r2">AI 模型</td><td class="us" data-i18n="cmp.r2a">自己选择，随时切换，支持本地模型</td><td class="them" data-i18n="cmp.r2b">通常由平台指定</td></tr>
             <tr><td data-i18n="cmp.r3">费用去向</td><td class="us" data-i18n="cmp.r3a">按用量直接付给模型服务商</td><td class="them" data-i18n="cmp.r3b">付给平台，包含平台加价</td></tr>
             <tr><td data-i18n="cmp.r4">数据</td><td class="us" data-i18n="cmp.r4a">知识库与历史记录保存在本机</td><td class="them" data-i18n="cmp.r4b">通常保存在厂商服务器</td></tr>
+            <tr><td data-i18n="cmp.r6">知识检索</td><td class="us" data-i18n="cmp.r6a">本地增强 RAG：在本机建索引、混合检索，只发送相关片段</td><td class="them" data-i18n="cmp.r6b">整份上传资料，或在云端建索引</td></tr>
             <tr><td data-i18n="cmp.r5">透明度</td><td class="us" data-i18n="cmp.r5a">源码公开，可审计、可修改</td><td class="them" data-i18n="cmp.r5b">闭源</td></tr>
           </tbody>
         </table>
@@ -556,7 +557,8 @@
     <div class="faq">
       <details><summary data-i18n="faq.q1">真的完全免费吗？</summary><p data-i18n="faq.a1">是的。App 本身免费且开源（MIT 协议）。你只需要为自己选择的模型服务商付费，费用按实际用量直接结算给服务商；使用本地 Ollama 模型则完全不需要 API 费用。</p></details>
       <details><summary data-i18n="faq.q2">需要准备什么 API？</summary><p data-i18n="faq.a2">一个大模型 API Key（DeepSeek、OpenAI、Claude、Gemini、火山方舟任选其一），或在本机安装 Ollama。语音识别可用系统自带的本地识别，也可以配置豆包流式语音识别以获得更好的中文效果和会议软件声音识别。</p></details>
-      <details><summary data-i18n="faq.q3">我的数据安全吗？</summary><p data-i18n="faq.a3">面试历史、知识库和截图都保存在你的电脑上，项目没有任何接收数据的服务器。只有在你使用外部模型或语音服务时，请求所需的内容才会直接发送给你选择的服务商。API Key 保存在系统钥匙串 / Windows 凭据管理器中。</p></details>
+      <details><summary data-i18n="faq.q3">我的数据安全吗？</summary><p data-i18n="faq.a3">面试历史、知识库和截图都保存在你的电脑上，项目没有任何接收数据的服务器。知识库的切分、索引和检索也都在本机完成，不使用任何云端向量服务。只有在你使用外部模型或语音服务时，请求所需的内容才会直接发送给你选择的服务商。API Key 保存在系统钥匙串 / Windows 凭据管理器中。</p></details>
+      <details><summary data-i18n="faq.q7">什么是本地增强 RAG？会把整个知识库发给 AI 吗？</summary><p data-i18n="faq.a7">不会。导入的资料会在你的电脑上切成小段并建立索引（内置多语言向量模型，离线运行，不需要额外的 API Key）。每次提问时，App 在本机用语义 + 关键词混合检索找出最相关的几段，连同一份简短的个人档案一起交给你选择的模型。这样资料再多也不会把 token 用爆，回答也更贴合问题；面经按「Q: … A: …」的格式写，问题和答案会被一起找到。</p></details>
       <details><summary data-i18n="faq.q4">Windows 打开时提示「已保护你的电脑」怎么办？</summary><p data-i18n="faq.a4">Windows 版暂未进行代码签名，点击「更多信息 → 仍要运行」即可。请只从本项目的 GitHub Releases 下载。macOS 版已签名并通过 Apple 公证。</p></details>
       <details><summary data-i18n="faq.q5">支持哪些语言？</summary><p data-i18n="faq.a5">界面支持简体中文和英文。面试官语言可单独设置为中文或英文，AI 回答会使用对应语言。</p></details>
       <details><summary data-i18n="faq.q6">可以在任何面试中使用吗？</summary><p data-i18n="faq.a6">本项目适合面试练习、知识整理，以及在获得许可的场景中提供辅助。使用实时提示、录音或屏幕捕获前，请确认符合面试方规则、当地法律和第三方服务条款。</p></details>
@@ -615,7 +617,7 @@
       "features.sub": "From preparing materials to live suggestions to practice and review — all in one app.",
       "f1.t": "Live prompt panel", "f1.d": "Get a natural, first-person answer seconds after the question. Works with your microphone or meeting-app audio, collapses out of the way, and can hide from screen sharing.",
       "f2.t": "Screenshot solving", "f2.d": "Capture a coding or written question and get Approach · Steps · Code · Complexity, with line-numbered, highlighted code in the language you choose.",
-      "f3.t": "Personal knowledge base", "f3.d": "Import your resume, project docs, PDFs and GitHub links. Answers draw on your real experience instead of making things up.",
+      "f3.t": "Personal knowledge base · local enhanced RAG", "f3.d": "Import your resume, project docs, PDFs, GitHub repos and prepared Q&A. Local enhanced RAG indexes them on your computer and combines semantic and keyword search, so each answer gets only the few passages that matter for the current question — and follow-ups like “how did you solve it?” stay on topic. However much you import, nothing is uploaded wholesale: sharper answers, fewer tokens.",
       "f4.t": "Mock interviews & review", "f4.d": "Questions generated from the role and JD, answered by voice, with per-question scores, feedback and model answers — exportable as PDF.",
       "f5.t": "Voice recognition", "f5.d": "Tells your voice apart from the interviewer's on-device, so your own answer is never mistaken for a new question. Voiceprints stay encrypted on your computer.",
       "f6.t": "Director mode", "f6.d": "On the same local network, a trusted friend can push questions and Markdown answers to your panel from another device.",
@@ -644,6 +646,7 @@
       "cmp.r2": "AI model", "cmp.r2a": "Your choice, switch anytime, local models supported", "cmp.r2b": "Usually chosen by the vendor",
       "cmp.r3": "Where your money goes", "cmp.r3a": "Pay-as-you-go, directly to the model provider", "cmp.r3b": "To the vendor, including its markup",
       "cmp.r4": "Data", "cmp.r4a": "Knowledge bases and history stay on your computer", "cmp.r4b": "Usually stored on vendor servers",
+      "cmp.r6": "Knowledge retrieval", "cmp.r6a": "Local enhanced RAG: indexed on your computer, hybrid search, only relevant passages are sent", "cmp.r6b": "Whole documents uploaded, or indexed in the cloud",
       "cmp.r5": "Transparency", "cmp.r5a": "Open source, auditable and modifiable", "cmp.r5b": "Closed source",
       "models.title": "Supported providers", "models.ark": "Volcengine Ark", "models.ollama": "Ollama (local)", "models.asr": "Doubao ASR / on-device speech",
       "how.title": "Get started in three steps",
@@ -653,7 +656,8 @@
       "faq.title": "FAQ",
       "faq.q1": "Is it really free?", "faq.a1": "Yes. The app is free and open source (MIT). You only pay the model provider you choose, directly and based on usage — or nothing at all with a local Ollama model.",
       "faq.q2": "Which APIs do I need?", "faq.a2": "One LLM API key (DeepSeek, OpenAI, Claude, Gemini or Volcengine Ark), or Ollama installed locally. For speech, use the built-in on-device recognition, or configure Doubao streaming ASR for stronger Chinese recognition and meeting-app audio.",
-      "faq.q3": "Is my data safe?", "faq.a3": "Interview history, knowledge bases and screenshots are stored on your computer; the project runs no servers that receive data. Only when you use an external model or speech service is the content needed for that request sent directly to the provider you chose. API keys are stored in the macOS Keychain / Windows Credential Manager.",
+      "faq.q3": "Is my data safe?", "faq.a3": "Interview history, knowledge bases and screenshots are stored on your computer; the project runs no servers that receive data. Knowledge-base indexing and retrieval also run on your computer, with no cloud vector service. Only when you use an external model or speech service is the content needed for that request sent directly to the provider you chose. API keys are stored in the macOS Keychain / Windows Credential Manager.",
+      "faq.q7": "What is local enhanced RAG? Is my whole knowledge base sent to the AI?", "faq.a7": "No. Your materials are split into passages and indexed on your computer, using a built-in multilingual embedding model that runs offline and needs no extra API key. For each question the app finds the most relevant passages with hybrid semantic + keyword search on your machine, and sends only those plus a short profile to the model you chose. Large knowledge bases no longer blow up token usage, and answers fit the question better. Write prepared answers as “Q: … A: …” so each question is found together with its answer.",
       "faq.q4": "Windows says “Windows protected your PC”", "faq.a4": "The Windows build is not code-signed yet. Click “More info → Run anyway”, and only download from this project's GitHub Releases. The macOS build is signed and notarized by Apple.",
       "faq.q5": "Which languages are supported?", "faq.a5": "The interface is available in Simplified Chinese and English. The interviewer language can be set separately to Chinese or English, and answers follow it.",
       "faq.q6": "Can I use it in any interview?", "faq.a6": "It is designed for interview practice, organizing your knowledge, and assistance where it is permitted. Before using live suggestions, recording or screen capture, make sure this complies with the interviewer's rules, local law and third-party terms.",
@@ -661,10 +665,10 @@
       "footer.license": "MIT License", "footer.feedback": "Feedback",
       "footer.legal": "For interview preparation and permitted assistance only. Brand icons from Simple Icons (CC0); trademarks belong to their respective owners, with no affiliation implied.",
       "meta.version": "Latest version {v}", "doc.title": "Interview AI — Free & open-source AI interview copilot",
-      "doc.description": "Interview AI is a free, open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases and mock interviews. Bring your own API key; your data stays on your computer."
+      "doc.description": "Interview AI is a free, open-source AI interview assistant for macOS and Windows: real-time answers, screenshot Q&A, personal knowledge bases with local enhanced RAG, and mock interviews. Bring your own API key; your data stays on your computer."
     },
     zh: { "meta.version": "最新版本 {v}", "doc.title": "Interview AI — 免费开源的 AI 面试助手",
-          "doc.description": "Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库、模拟面试。自带 API Key，数据留在本机。" }
+          "doc.description": "Interview AI：免费开源的 AI 面试助手，支持 macOS 与 Windows。实时识别面试问题、截图解题、个人知识库（本地增强 RAG）、模拟面试。自带 API Key，数据留在本机。" }
   };
 
   // Marks come from Simple Icons (CC0); brands without one are shown as wordmarks.
