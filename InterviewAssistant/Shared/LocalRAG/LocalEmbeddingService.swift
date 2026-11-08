@@ -94,11 +94,19 @@ final class LocalEmbeddingService: @unchecked Sendable {
             values[slot] = value
         }
 
-        let inputNames = ["input_ids", "attention_mask", "token_type_ids"].map { strdup($0) }
-        let outputNames = [strdup("last_hidden_state")]
+        let inputNames: [UnsafeMutablePointer<CChar>?] = ["input_ids", "attention_mask", "token_type_ids"].map { name in
+            name.withCString { strdup($0) }
+        }
+        let outputNames: [UnsafeMutablePointer<CChar>?] = ["last_hidden_state"].map { name in
+            name.withCString { strdup($0) }
+        }
         defer { (inputNames + outputNames).forEach { free($0) } }
-        let inputNamePointers: [UnsafePointer<CChar>?] = inputNames.map { UnsafePointer($0) }
-        let outputNamePointers: [UnsafePointer<CChar>?] = outputNames.map { UnsafePointer($0) }
+        let inputNamePointers: [UnsafePointer<CChar>?] = inputNames.map { pointer in
+            pointer.map { UnsafePointer<CChar>($0) }
+        }
+        let outputNamePointers: [UnsafePointer<CChar>?] = outputNames.map { pointer in
+            pointer.map { UnsafePointer<CChar>($0) }
+        }
         var outputs: [OpaquePointer?] = [nil]
         try check(api.pointee.Run(session, nil, inputNamePointers, values, 3, outputNamePointers, 1, &outputs))
         defer { if let output = outputs[0] { api.pointee.ReleaseValue(output) } }
