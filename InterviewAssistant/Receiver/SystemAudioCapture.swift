@@ -14,6 +14,8 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
     var onStopped: ((Error) -> Void)?
 
     private var stream: SCStream?
+    private var stopRequested = false
+    private let stateLock = NSLock()
     private let outputQueue = DispatchQueue(label: "InterviewAssistant.SystemAudio",
                                             qos: .userInitiated)
 
@@ -33,6 +35,7 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
         guard let display = content.displays.first else {
             throw CaptureError.noDisplay
         }
+        try throwIfStopRequested()
 
         let filter = SCContentFilter(display: display, excludingWindows: [])
 
@@ -48,14 +51,40 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         try newStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
+
+        let shouldStop = stateLock.withLock {
+            if stopRequested { return true }
+            stream = newStream
+            return false
+        }
+        if shouldStop {
+            throw CancellationError()
+        }
+
         try await newStream.startCapture()
-        self.stream = newStream
+        if isStopRequested {
+            try? await newStream.stopCapture()
+            throw CancellationError()
+        }
     }
 
     func stop() async {
+        let stream = stateLock.withLock {
+            stopRequested = true
+            let currentStream = self.stream
+            self.stream = nil
+            return currentStream
+        }
         guard let stream else { return }
-        self.stream = nil
         try? await stream.stopCapture()
+    }
+
+    private var isStopRequested: Bool {
+        stateLock.withLock { stopRequested }
+    }
+
+    private func throwIfStopRequested() throws {
+        if isStopRequested { throw CancellationError() }
     }
 
     // MARK: - Errors
@@ -87,7 +116,7 @@ extension SystemAudioCapture: SCStreamOutput {
     func stream(_ stream: SCStream,
                 didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                 of type: SCStreamOutputType) {
-        guard type == .audio else { return }
+        guard type == .audio, !isStopRequested else { return }
         if let pcm = Self.convertToPCM(sampleBuffer) {
             onBuffer?(pcm)
         }

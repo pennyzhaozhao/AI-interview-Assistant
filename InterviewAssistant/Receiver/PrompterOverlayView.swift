@@ -589,13 +589,13 @@ struct PrompterOverlayView: View {
     private func cycleAudioMode() async {
         switch audioMode {
         case .microphone:
-            if coordinator.aiEnabled { await coordinator.toggleAI() }
+            coordinator.disableAI()
             audioMode = .system
             coordinator.setAudioSource(.system)
             await coordinator.toggleAI()
         case .system:
-            if coordinator.aiEnabled { await coordinator.toggleAI() }
             audioMode = .muted
+            coordinator.disableAI()
         case .muted:
             audioMode = .microphone
             coordinator.setAudioSource(.microphone)

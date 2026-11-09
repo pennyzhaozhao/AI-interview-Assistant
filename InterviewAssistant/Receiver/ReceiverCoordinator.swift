@@ -248,29 +248,47 @@ final class ReceiverCoordinator {
                     }
                 }
             }
+            // The user can mute while an asynchronous recognizer start is still
+            // waiting for permissions, a WebSocket, or ScreenCaptureKit. In that
+            // case the stop call may run before the capture object reports itself
+            // as listening. Re-check the requested state after the await and tear
+            // down anything that finished starting in the meantime.
+            if !aiEnabled {
+                speech.stop()
+                volcanoSpeech.stop()
+                activeASRProvider = nil
+                return
+            }
             if !didStart {
                 activeASRProvider = nil
                 aiEnabled = false
             }
         } else {
-            aiEnabled = false
-            pendingSpeechQuestionTask?.cancel()
-            pendingSpeechQuestionTask = nil
-            pendingSpeechQuestion = ""
-            pendingSpeechHasStrongQuestionSignal = false
-            pendingSpeechSpeaker = .unknown
-            pendingInterruptQuestion = nil
-            pendingInterruptSpeaker = .unknown
-            activeSpeechAnswerTask?.cancel()
-            activeSpeechAnswerTask = nil
-            activeSpeechQuestion = ""
-            activeSpeechQuestionStartedAt = nil
-            activeSpeechAnswerHasStarted = false
-            activeSpeechSpeaker = .unknown
-            speech.stop()
-            volcanoSpeech.stop()
-            activeASRProvider = nil
+            disableAI()
         }
+    }
+
+    /// Stops both possible audio routes even when a recognizer is still starting.
+    /// Unlike `toggleAI`, this is deliberately idempotent so the explicit muted
+    /// mode can always enforce silence.
+    func disableAI() {
+        aiEnabled = false
+        pendingSpeechQuestionTask?.cancel()
+        pendingSpeechQuestionTask = nil
+        pendingSpeechQuestion = ""
+        pendingSpeechHasStrongQuestionSignal = false
+        pendingSpeechSpeaker = .unknown
+        pendingInterruptQuestion = nil
+        pendingInterruptSpeaker = .unknown
+        activeSpeechAnswerTask?.cancel()
+        activeSpeechAnswerTask = nil
+        activeSpeechQuestion = ""
+        activeSpeechQuestionStartedAt = nil
+        activeSpeechAnswerHasStarted = false
+        activeSpeechSpeaker = .unknown
+        speech.stop()
+        volcanoSpeech.stop()
+        activeASRProvider = nil
     }
 
     private func startAppleSpeech() async -> Bool {

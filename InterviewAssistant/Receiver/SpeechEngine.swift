@@ -270,7 +270,14 @@ final class SpeechEngine {
     }
 
     func stop() {
+        #if os(macOS)
+        // A system-audio capture can exist while `startCapture()` is still
+        // suspended and before `isListening` becomes true. Muting must cancel
+        // that pending capture too.
+        guard isListening || systemAudioCapture != nil else { return }
+        #else
         guard isListening else { return }
+        #endif
         isListening = false
         processingGeneration += 1
         statusText = ""
