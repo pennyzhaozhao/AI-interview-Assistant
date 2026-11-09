@@ -10,6 +10,8 @@ public sealed class SpeechRecognitionService : IDisposable
     private SpeechRecognitionEngine? _engine;
     private DoubaoSpeechRecognitionService? _doubao;
     private bool _isListening;
+    private readonly object _lifecycleGate = new();
+    private int _startGeneration;
 
     public bool IsListening => _isListening;
     public event Action<string>? Recognized;
@@ -26,26 +28,49 @@ public sealed class SpeechRecognitionService : IDisposable
 
     public async Task<bool> StartAsync(string languageCode, bool systemAudio = false)
     {
-        Stop();
+        int generation;
+        lock (_lifecycleGate)
+        {
+            generation = ++_startGeneration;
+            StopCurrent();
+        }
         if (AppServices.Current.DataStore.Data.Preferences.SpeechRecognitionEngine == "volcano")
         {
-            _doubao = new DoubaoSpeechRecognitionService();
-            var doubao = _doubao;
+            var doubao = new DoubaoSpeechRecognitionService();
+            lock (_lifecycleGate)
+            {
+                if (generation != _startGeneration) return false;
+                _doubao = doubao;
+            }
             string? doubaoStatus = null;
-            _doubao.Recognized += text => Deliver(text, () => doubao.TakeUtteranceAudio());
-            _doubao.PartialRecognized += text => PartialRecognized?.Invoke(text);
+            doubao.Recognized += text => Deliver(text, () => doubao.TakeUtteranceAudio());
+            doubao.PartialRecognized += text => PartialRecognized?.Invoke(text);
             // Hold connection errors until we know whether the transparent local fallback is needed.
             // Otherwise a transient Doubao timeout covers the prompter even though Windows speech
             // recognition starts successfully a moment later.
-            _doubao.StatusChanged += text => doubaoStatus = text;
-            _isListening = await _doubao.StartAsync(languageCode, systemAudio);
+            doubao.StatusChanged += text => doubaoStatus = text;
+            var started = await doubao.StartAsync(languageCode, systemAudio);
+            bool stale;
+            lock (_lifecycleGate)
+            {
+                stale = generation != _startGeneration || !ReferenceEquals(_doubao, doubao);
+                if (!stale) _isListening = started;
+            }
+            if (stale)
+            {
+                doubao.Dispose();
+                return false;
+            }
             if (_isListening)
             {
                 if (!string.IsNullOrWhiteSpace(doubaoStatus)) StatusChanged?.Invoke(doubaoStatus);
                 return true;
             }
-            _doubao.Dispose();
-            _doubao = null;
+            doubao.Dispose();
+            lock (_lifecycleGate)
+            {
+                if (ReferenceEquals(_doubao, doubao)) _doubao = null;
+            }
             if (systemAudio)
             {
                 if (!string.IsNullOrWhiteSpace(doubaoStatus)) StatusChanged?.Invoke(doubaoStatus);
@@ -60,28 +85,32 @@ public sealed class SpeechRecognitionService : IDisposable
         }
         try
         {
-            var culture = ResolveCulture(languageCode);
-            var recognizer = SpeechRecognitionEngine.InstalledRecognizers()
-                .FirstOrDefault(item => string.Equals(item.Culture.Name, culture.Name, StringComparison.OrdinalIgnoreCase))
-                ?? SpeechRecognitionEngine.InstalledRecognizers()
-                    .FirstOrDefault(item => string.Equals(item.Culture.TwoLetterISOLanguageName, culture.TwoLetterISOLanguageName, StringComparison.OrdinalIgnoreCase))
-                ?? SpeechRecognitionEngine.InstalledRecognizers().FirstOrDefault();
-            if (recognizer is null)
+            lock (_lifecycleGate)
             {
-                StatusChanged?.Invoke("No Windows speech recognition language is installed.");
-                return false;
-            }
+                if (generation != _startGeneration) return false;
+                var culture = ResolveCulture(languageCode);
+                var recognizer = SpeechRecognitionEngine.InstalledRecognizers()
+                    .FirstOrDefault(item => string.Equals(item.Culture.Name, culture.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? SpeechRecognitionEngine.InstalledRecognizers()
+                        .FirstOrDefault(item => string.Equals(item.Culture.TwoLetterISOLanguageName, culture.TwoLetterISOLanguageName, StringComparison.OrdinalIgnoreCase))
+                    ?? SpeechRecognitionEngine.InstalledRecognizers().FirstOrDefault();
+                if (recognizer is null)
+                {
+                    StatusChanged?.Invoke("No Windows speech recognition language is installed.");
+                    return false;
+                }
 
-            _engine = new SpeechRecognitionEngine(recognizer);
-            _engine.LoadGrammar(new DictationGrammar());
-            _engine.SetInputToDefaultAudioDevice();
-            _engine.SpeechRecognized += OnSpeechRecognized;
-            _engine.SpeechHypothesized += OnSpeechHypothesized;
-            _engine.RecognizeCompleted += OnRecognizeCompleted;
-            _engine.RecognizeAsync(RecognizeMode.Multiple);
-            _isListening = true;
-            StatusChanged?.Invoke($"Listening · {recognizer.Culture.DisplayName}");
-            return true;
+                _engine = new SpeechRecognitionEngine(recognizer);
+                _engine.LoadGrammar(new DictationGrammar());
+                _engine.SetInputToDefaultAudioDevice();
+                _engine.SpeechRecognized += OnSpeechRecognized;
+                _engine.SpeechHypothesized += OnSpeechHypothesized;
+                _engine.RecognizeCompleted += OnRecognizeCompleted;
+                _engine.RecognizeAsync(RecognizeMode.Multiple);
+                _isListening = true;
+                StatusChanged?.Invoke($"Listening · {recognizer.Culture.DisplayName}");
+                return true;
+            }
         }
         catch (Exception exception)
         {
@@ -92,6 +121,15 @@ public sealed class SpeechRecognitionService : IDisposable
     }
 
     public void Stop()
+    {
+        lock (_lifecycleGate)
+        {
+            _startGeneration++;
+            StopCurrent();
+        }
+    }
+
+    private void StopCurrent()
     {
         var engine = _engine;
         _doubao?.Dispose();

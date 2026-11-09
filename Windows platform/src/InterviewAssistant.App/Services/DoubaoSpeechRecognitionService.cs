@@ -14,6 +14,8 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     private CancellationTokenSource? _cancellation;
     private int _sequence;
     private double _resamplePosition;
+    private readonly object _lifecycleGate = new();
+    private int _lifecycleGeneration;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     // Audio of the utterance currently being recognized (16 kHz mono), used for speaker verification.
     private readonly List<float> _utteranceAudio = [];
@@ -27,6 +29,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     public async Task<bool> StartAsync(string languageCode, bool systemAudio)
     {
         Stop();
+        var generation = Volatile.Read(ref _lifecycleGeneration);
         var store = AppServices.Current.DataStore;
         var appId = AppServices.Current.Credentials.Read("speech-app-id").Trim();
         var token = AppServices.Current.Credentials.Read("speech-access-token").Trim();
@@ -43,7 +46,11 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             _socket = await ConnectAsync(appId, token, resource, TimeSpan.FromSeconds(25), _cancellation.Token);
             await SendInitializationAsync(languageCode.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-CN" : "en-US", _cancellation.Token);
             _ = ReceiveLoopAsync(_cancellation.Token);
-            StartCapture(systemAudio);
+            lock (_lifecycleGate)
+            {
+                if (generation != _lifecycleGeneration) return false;
+                StartCapture(systemAudio);
+            }
             StatusChanged?.Invoke(systemAudio ? "Listening to system audio with Doubao Voice…" : "Listening with Doubao Voice…");
             return true;
         }
@@ -354,19 +361,23 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
 
     public void Stop()
     {
-        try { _capture?.StopRecording(); } catch { }
-        _capture?.Dispose();
-        _capture = null;
-        _cancellation?.Cancel();
-        _cancellation?.Dispose();
-        _cancellation = null;
-        _socket?.Abort();
-        _socket?.Dispose();
-        _socket = null;
-        _sequence = 0;
-        _resamplePosition = 0;
-        lock (_utteranceGate) _utteranceAudio.Clear();
-        _lastDefiniteIndex = 0;
+        lock (_lifecycleGate)
+        {
+            _lifecycleGeneration++;
+            try { _capture?.StopRecording(); } catch { }
+            _capture?.Dispose();
+            _capture = null;
+            _cancellation?.Cancel();
+            _cancellation?.Dispose();
+            _cancellation = null;
+            _socket?.Abort();
+            _socket?.Dispose();
+            _socket = null;
+            _sequence = 0;
+            _resamplePosition = 0;
+            lock (_utteranceGate) _utteranceAudio.Clear();
+            _lastDefiniteIndex = 0;
+        }
     }
 
     public void Dispose() => Stop();
