@@ -90,7 +90,7 @@ public sealed class AIService
         var baseUrl = NormalizeBaseUrl(config.ApiUrl);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", string.IsNullOrWhiteSpace(config.ApiKey) ? "ollama" : config.ApiKey);
-        request.Content = JsonContent.Create(new JsonObject
+        var body = new JsonObject
         {
             ["model"] = config.Model,
             ["stream"] = false,
@@ -107,7 +107,12 @@ public sealed class AIService
                     }
                 }
             }
-        });
+        };
+        // DeepSeek is a reasoning model: without this the transcription ends up in reasoning_content
+        // and content comes back empty (see CompleteOpenAICompatibleAsync / StreamOpenAICompatibleAsync).
+        if (config.Provider == AIProvider.DeepSeek)
+            body["thinking"] = new JsonObject { ["type"] = "disabled" };
+        request.Content = JsonContent.Create(body);
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         EnsureSuccess(response, responseBody);
