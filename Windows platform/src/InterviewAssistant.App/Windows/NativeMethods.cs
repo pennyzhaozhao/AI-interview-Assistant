@@ -7,6 +7,8 @@ internal static class NativeMethods
     internal const int GwlExStyle = -20;
     internal const int WsExToolWindow = 0x00000080;
     internal const int WsExNoActivate = 0x08000000;
+    internal const int WsExLayered = 0x00080000;
+    internal const int SmRemoteSession = 0x1000;
     internal const uint WdaExcludeFromCapture = 0x00000011;
     internal const uint WdaMonitor = 0x00000001;
     internal const int DwmwaWindowCornerPreference = 33;
@@ -40,6 +42,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetWindowDisplayAffinity(nint windowHandle, out uint affinity);
+
+    [DllImport("user32.dll")]
+    internal static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll")]
     internal static extern nint MonitorFromWindow(nint windowHandle, uint flags);

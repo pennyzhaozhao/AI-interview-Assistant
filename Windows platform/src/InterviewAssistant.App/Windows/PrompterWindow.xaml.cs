@@ -48,6 +48,7 @@ public partial class PrompterWindow : Window
     private bool _screenshotBusy;
     private bool _autoScroll;
     private bool _aiEnabled = true;
+    private bool _captureWarningShown;
 
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
@@ -244,22 +245,27 @@ public partial class PrompterWindow : Window
     {
         if (_windowHandle == nint.Zero) return;
         var shouldExclude = _store.Data.Preferences.HidePrompterFromCapture;
-        if (!shouldExclude)
+        var result = CaptureExclusion.Apply(_windowHandle, shouldExclude, "Prompter");
+        CaptureExclusionApplied = result is CaptureExclusionResult.Excluded or CaptureExclusionResult.BlackBoxFallback;
+        if (CodeLanguagePopup.IsOpen) ApplyPopupCaptureExclusion();
+
+        if (!shouldExclude || result == CaptureExclusionResult.Excluded)
         {
-            _ = NativeMethods.SetWindowDisplayAffinity(_windowHandle, 0);
-            CaptureExclusionApplied = false;
+            _captureWarningShown = false;
             return;
         }
+        if (_captureWarningShown) return;
+        _captureWarningShown = true;
+        ShowToast(result == CaptureExclusionResult.BlackBoxFallback
+                ? Localized("Prompter can only be blacked out in screen sharing on this PC", "此电脑上提示板共享时只能显示为黑框，无法完全隐藏")
+                : Localized("Prompter could not be hidden from screen sharing", "提示板隐藏失败，共享屏幕时可能被看到"),
+            TimeSpan.FromSeconds(6));
+    }
 
-        CaptureExclusionApplied = NativeMethods.SetWindowDisplayAffinity(_windowHandle, NativeMethods.WdaExcludeFromCapture)
-            && NativeMethods.GetWindowDisplayAffinity(_windowHandle, out var affinity)
-            && affinity == NativeMethods.WdaExcludeFromCapture;
-        if (!CaptureExclusionApplied)
-        {
-            CaptureExclusionApplied = NativeMethods.SetWindowDisplayAffinity(_windowHandle, NativeMethods.WdaMonitor)
-                && NativeMethods.GetWindowDisplayAffinity(_windowHandle, out affinity)
-                && affinity == NativeMethods.WdaMonitor;
-        }
+    private void ApplyPopupCaptureExclusion()
+    {
+        if (CodeLanguagePopup.Child is null || PresentationSource.FromVisual(CodeLanguagePopup.Child) is not HwndSource source) return;
+        _ = CaptureExclusion.Apply(source.Handle, _store.Data.Preferences.HidePrompterFromCapture, "CodeLanguagePopup");
     }
 
     private void StoreChanged()
@@ -650,6 +656,7 @@ public partial class PrompterWindow : Window
         CodeLanguageInput.Text = _codeLanguage;
         SetNoActivate(false);
         CodeLanguagePopup.IsOpen = true;
+        ApplyPopupCaptureExclusion();
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
             Activate();
@@ -704,11 +711,16 @@ public partial class PrompterWindow : Window
         DirectorModeChanged?.Invoke(_isDirectorMode);
     }
 
-    private void ShowModeToast()
-    {
-        ModeToastText.Text = _isDirectorMode
+    private void ShowModeToast() =>
+        ShowToast(_isDirectorMode
             ? Localized("User switched to Director mode", "用户已切换至导演模式")
-            : Localized("User switched to AI mode", "用户已切换至 AI 模式");
+            : Localized("User switched to AI mode", "用户已切换至 AI 模式"),
+            TimeSpan.FromSeconds(2));
+
+    private void ShowToast(string text, TimeSpan duration)
+    {
+        ModeToastText.Text = text;
+        _modeToastTimer.Interval = duration;
         ModeToast.Opacity = 0;
         ModeToast.Visibility = Visibility.Visible;
         ModeToast.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)));
