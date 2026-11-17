@@ -63,6 +63,12 @@ public partial class PrompterWindow : Window
         _session = session;
         _isDirectorMode = directorMode || string.Equals(session.Kind, "director", StringComparison.OrdinalIgnoreCase);
         InitializeComponent();
+        if (_store.Data.Preferences.HidePrompterFromCapture && !CaptureExclusion.LayeredWindowsSupported)
+        {
+            // Compatibility mode: layered windows cannot be hidden from capture on this PC.
+            AllowsTransparency = false;
+            CodeLanguagePopup.AllowsTransparency = false;
+        }
         Loaded += PrompterWindow_Loaded;
         SizeChanged += (_, _) => PositionAtTopCenter();
         _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
@@ -104,6 +110,7 @@ public partial class PrompterWindow : Window
     {
         base.OnSourceInitialized(e);
         _windowHandle = new WindowInteropHelper(this).Handle;
+        if (!AllowsTransparency) CaptureExclusion.EnableDwmTransparency(_windowHandle);
         var extendedStyle = NativeMethods.GetWindowLong(_windowHandle, NativeMethods.GwlExStyle);
         _ = NativeMethods.SetWindowLong(_windowHandle, NativeMethods.GwlExStyle, extendedStyle | NativeMethods.WsExToolWindow | NativeMethods.WsExNoActivate);
         ApplyCaptureExclusion();
@@ -256,6 +263,14 @@ public partial class PrompterWindow : Window
         }
         if (_captureWarningShown) return;
         _captureWarningShown = true;
+        if (AllowsTransparency)
+        {
+            // The next prompter window opens in the non-layered compatibility mode.
+            CaptureExclusion.MarkLayeredWindowsUnsupported();
+            ShowToast(Localized("Switched to compatibility mode. Close and reopen the prompter to hide it from sharing.", "已切换兼容模式，请关闭提示板后重新打开即可隐藏"),
+                TimeSpan.FromSeconds(8));
+            return;
+        }
         ShowToast(result == CaptureExclusionResult.BlackBoxFallback
                 ? Localized("Prompter can only be blacked out in screen sharing on this PC", "此电脑上提示板共享时只能显示为黑框，无法完全隐藏")
                 : Localized("Prompter could not be hidden from screen sharing", "提示板隐藏失败，共享屏幕时可能被看到"),

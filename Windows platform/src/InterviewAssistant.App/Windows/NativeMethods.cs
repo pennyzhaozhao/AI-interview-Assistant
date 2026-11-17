@@ -54,6 +54,12 @@ internal static class NativeMethods
     internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo monitorInfo);
 
     [DllImport("dwmapi.dll")]
+    internal static extern int DwmExtendFrameIntoClientArea(nint windowHandle, ref DwmMargins margins);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DwmMargins { public int Left; public int Right; public int Top; public int Bottom; }
+
+    [DllImport("dwmapi.dll")]
     internal static extern int DwmSetWindowAttribute(nint windowHandle, int attribute, ref int attributeValue, int attributeSize);
 
     [StructLayout(LayoutKind.Sequential)]
