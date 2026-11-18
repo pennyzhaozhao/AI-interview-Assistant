@@ -54,16 +54,16 @@ public partial class PrompterWindow : Window
     static PrompterWindow()
     {
         // Tooltips and the "More" menu are separate popup windows: hide them from screen sharing too.
-        EventManager.RegisterClassHandler(typeof(ToolTip), ToolTip.OpenedEvent, new RoutedEventHandler(PopupOpened));
-        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent, new RoutedEventHandler(PopupOpened));
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ToolTip), System.Windows.Controls.ToolTip.OpenedEvent, new RoutedEventHandler(PopupOpened));
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ContextMenu), System.Windows.Controls.ContextMenu.OpenedEvent, new RoutedEventHandler(PopupOpened));
     }
 
     private static void PopupOpened(object sender, RoutedEventArgs e)
     {
         var target = sender switch
         {
-            ToolTip tip => tip.PlacementTarget,
-            ContextMenu menu => menu.PlacementTarget,
+            System.Windows.Controls.ToolTip tip => tip.PlacementTarget,
+            System.Windows.Controls.ContextMenu menu => menu.PlacementTarget,
             _ => null,
         };
         if (target is null || Window.GetWindow(target) is not PrompterWindow prompter) return;
