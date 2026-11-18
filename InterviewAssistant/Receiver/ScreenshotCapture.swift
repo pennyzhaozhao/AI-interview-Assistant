@@ -154,6 +154,7 @@ final class ScreenshotCapture: ObservableObject {
     }
 
     func silentCaptureSegment(reset: Bool = false) async {
+        NSLog("[ScreenshotCapture] silentCaptureSegment reset=%@ mode=%@", reset ? "true" : "false", String(describing: captureMode))
         if reset {
             capturedSegments = []
             capturedImages = []
@@ -168,11 +169,13 @@ final class ScreenshotCapture: ObservableObject {
 
         guard let text = await silentCapturePresetRegion() else {
             captureMode = capturedSegments.isEmpty ? .idle : .segmentDone
+            NSLog("[ScreenshotCapture] silent capture failed mode=%@ error=%@", String(describing: captureMode), captureError ?? "nil")
             return
         }
         capturedSegments.append(text)
         segmentCount = capturedSegments.count
         captureMode = .segmentDone
+        NSLog("[ScreenshotCapture] silent capture completed segments=%d", segmentCount)
     }
 
     private func savePresetRegion(_ rect: CGRect) {
@@ -333,16 +336,20 @@ final class ScreenshotCapture: ObservableObject {
     func requestScreenCapturePermissionIfNeeded() async -> Bool {
         if CGPreflightScreenCaptureAccess() {
             hasScreenCapturePermission = true
+            NSLog("[ScreenshotCapture] screen capture permission preflight=true")
             return true
         }
+        NSLog("[ScreenshotCapture] screen capture permission preflight=false; requesting")
         let granted = await Task.detached(priority: .userInitiated) {
             CGRequestScreenCaptureAccess()
         }.value
         if granted {
             hasScreenCapturePermission = true
+            NSLog("[ScreenshotCapture] screen capture permission request=true")
             return true
         }
         hasScreenCapturePermission = false
+        NSLog("[ScreenshotCapture] screen capture permission request=false")
         captureError = L.t("Screen-recording permission is required. Allow InterviewAssistant in System Settings → Privacy & Security → Screen & System Audio Recording, then quit and reopen the app.")
         return false
     }

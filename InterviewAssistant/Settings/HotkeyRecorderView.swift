@@ -68,11 +68,23 @@ struct HotkeyRecorderView: View {
                 NSSound.beep()
                 return nil
             }
+            let previousHotkey = hotkey
             hotkey = recorded
             UserDefaults.standard.set(recorded, forKey: preferenceKey)
-            if hotkeyID != HotkeyManager.screenshotID || HotkeyManager.shared.isRegistered(id: hotkeyID) {
-                HotkeyManager.shared.register(key: recorded, id: hotkeyID) {
+            // Screenshot registration follows board presence, not the previous registration result:
+            // after an initial conflict there is no ref yet, but choosing a new available key while
+            // the board is open still needs to take effect immediately.
+            if hotkeyID != HotkeyManager.screenshotID || InterviewWindowPresence.hasOpenBoards {
+                let registered = HotkeyManager.shared.register(key: recorded, id: hotkeyID) {
                     NotificationCenter.default.post(name: notificationName, object: nil)
+                }
+                guard registered else {
+                    // Availability can change between the probe and the real registration. Keep the
+                    // previous working preference in that race instead of displaying a dead shortcut.
+                    hotkey = previousHotkey
+                    UserDefaults.standard.set(previousHotkey, forKey: preferenceKey)
+                    NSSound.beep()
+                    return nil
                 }
             }
             stopRecording()
@@ -101,30 +113,66 @@ final class HotkeyManager {
     private var eventHandlerRef: EventHandlerRef?
     private var actions: [UInt32: () -> Void] = [:]
     private var registeredKeys: [UInt32: (keyCode: UInt32, modifiers: UInt32)] = [:]
+    nonisolated private static let hotKeySignature = signature("IAHK")
 
     /// Registers a system-wide hotkey through Carbon. Unlike an NSEvent global monitor this needs no
     /// Accessibility permission and also fires while this app is frontmost. Returns false when the
     /// combination could not be registered (for example, another app already owns it).
     @discardableResult
     func register(key: String, id: UInt32 = manualTriggerID, action: @escaping () -> Void) -> Bool {
-        unregister(id: id)
-        actions[id] = action
-
         let parsed = Self.parse(key)
-        guard Self.isValidHotkey(key) else { return false }
-        let hotKeyID = EventHotKeyID(signature: Self.signature("IAHK"), id: id)
+        guard Self.isValidHotkey(key) else {
+            NSLog("[HotkeyManager] register rejected invalid hotkey key=%@ id=%u", key, id)
+            return false
+        }
+        guard installHandlerIfNeeded() else {
+            NSLog("[HotkeyManager] register aborted because InstallEventHandler failed key=%@ id=%u", key, id)
+            return false
+        }
+
+        // Both PrompterOverlayView layouts can appear during a size-class transition. Treat their
+        // repeated registration as an action refresh instead of briefly releasing the global key.
+        if let current = registeredKeys[id],
+           current.keyCode == parsed.keyCode,
+           current.modifiers == parsed.modifiers,
+           eventHotKeyRefs[id] != nil {
+            actions[id] = action
+            NSLog("[HotkeyManager] register reused key=%@ id=%u", key, id)
+            return true
+        }
+
+        let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: id)
         var newRef: EventHotKeyRef?
         let status = RegisterEventHotKey(parsed.keyCode, parsed.modifiers, hotKeyID, GetApplicationEventTarget(), 0, &newRef)
+        NSLog(
+            "[HotkeyManager] RegisterEventHotKey key=%@ keyCode=%u modifiers=%u signature=%u id=%u status=%d%@",
+            key,
+            parsed.keyCode,
+            parsed.modifiers,
+            hotKeyID.signature,
+            hotKeyID.id,
+            status,
+            status == eventHotKeyExistsErr ? " (eventHotKeyExistsErr; shortcut is owned elsewhere)" : ""
+        )
         guard status == noErr, let newRef else { return false }
+
+        // Register the replacement before releasing the old key. A failed replacement therefore
+        // leaves the previously working shortcut intact.
+        let oldRef = eventHotKeyRefs[id]
         eventHotKeyRefs[id] = newRef
         registeredKeys[id] = parsed
-        installHandlerIfNeeded()
+        actions[id] = action
+        if let oldRef {
+            let unregisterStatus = UnregisterEventHotKey(oldRef)
+            NSLog("[HotkeyManager] replaced previous hotkey id=%u unregisterStatus=%d", id, unregisterStatus)
+        }
         return true
     }
 
     func unregister(id: UInt32) {
         if let eventHotKeyRef = eventHotKeyRefs[id] {
-            UnregisterEventHotKey(eventHotKeyRef)
+            let status = UnregisterEventHotKey(eventHotKeyRef)
+            NSLog("[HotkeyManager] UnregisterEventHotKey id=%u status=%d", id, status)
         }
         eventHotKeyRefs[id] = nil
         registeredKeys[id] = nil
@@ -149,6 +197,13 @@ final class HotkeyManager {
         let probeID = EventHotKeyID(signature: Self.signature("IAPR"), id: 99)
         let status = RegisterEventHotKey(parsed.keyCode, parsed.modifiers, probeID, GetApplicationEventTarget(), 0, &probeRef)
         if let probeRef { UnregisterEventHotKey(probeRef) }
+        NSLog(
+            "[HotkeyManager] availability key=%@ ignoringID=%u status=%d%@",
+            key,
+            id,
+            status,
+            status == eventHotKeyExistsErr ? " (eventHotKeyExistsErr)" : ""
+        )
         return status == noErr
     }
 
@@ -160,8 +215,8 @@ final class HotkeyManager {
         return functionKeyCodes.contains(parsed.keyCode)
     }
 
-    private func installHandlerIfNeeded() {
-        guard eventHandlerRef == nil else { return }
+    private func installHandlerIfNeeded() -> Bool {
+        guard eventHandlerRef == nil else { return true }
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let managerPointer = Unmanaged.passUnretained(self).toOpaque()
         let status = InstallEventHandler(
@@ -179,8 +234,27 @@ final class HotkeyManager {
                     nil,
                     &hotKeyID
                 )
-                guard status == noErr else { return noErr }
-                Task { @MainActor in manager.actions[hotKeyID.id]?() }
+                guard status == noErr else {
+                    NSLog("[HotkeyManager] GetEventParameter failed status=%d", status)
+                    return status
+                }
+                let signatureMatches = hotKeyID.signature == HotkeyManager.hotKeySignature
+                NSLog(
+                    "[HotkeyManager] callback signature=%u expected=%u id=%u signatureMatches=%@",
+                    hotKeyID.signature,
+                    HotkeyManager.hotKeySignature,
+                    hotKeyID.id,
+                    signatureMatches ? "true" : "false"
+                )
+                guard signatureMatches else { return OSStatus(eventNotHandledErr) }
+                Task { @MainActor in
+                    guard let action = manager.actions[hotKeyID.id] else {
+                        NSLog("[HotkeyManager] callback has no action id=%u", hotKeyID.id)
+                        return
+                    }
+                    NSLog("[HotkeyManager] invoking action id=%u", hotKeyID.id)
+                    action()
+                }
                 return noErr
             },
             1,
@@ -188,9 +262,11 @@ final class HotkeyManager {
             managerPointer,
             &eventHandlerRef
         )
+        NSLog("[HotkeyManager] InstallEventHandler status=%d", status)
         if status != noErr {
             eventHandlerRef = nil
         }
+        return status == noErr && eventHandlerRef != nil
     }
 
     static func hotkeyString(from event: NSEvent) -> String? {
@@ -253,7 +329,7 @@ final class HotkeyManager {
         return map[normalizedKeyName(key).uppercased()] ?? 49
     }
 
-    private static func signature(_ value: String) -> OSType {
+    nonisolated private static func signature(_ value: String) -> OSType {
         value.utf8.reduce(0) { ($0 << 8) + OSType($1) }
     }
 }
