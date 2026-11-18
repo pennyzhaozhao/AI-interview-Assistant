@@ -51,6 +51,26 @@ public partial class PrompterWindow : Window
     private bool _captureWarningShown;
     private bool _useRegionFallback;
 
+    static PrompterWindow()
+    {
+        // Tooltips and the "More" menu are separate popup windows: hide them from screen sharing too.
+        EventManager.RegisterClassHandler(typeof(ToolTip), ToolTip.OpenedEvent, new RoutedEventHandler(PopupOpened));
+        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent, new RoutedEventHandler(PopupOpened));
+    }
+
+    private static void PopupOpened(object sender, RoutedEventArgs e)
+    {
+        var target = sender switch
+        {
+            ToolTip tip => tip.PlacementTarget,
+            ContextMenu menu => menu.PlacementTarget,
+            _ => null,
+        };
+        if (target is null || Window.GetWindow(target) is not PrompterWindow prompter) return;
+        if (PresentationSource.FromVisual((Visual)sender) is not HwndSource source) return;
+        _ = CaptureExclusion.Apply(source.Handle, prompter._store.Data.Preferences.HidePrompterFromCapture, sender.GetType().Name);
+    }
+
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
     public PrompterWindow(bool directorMode) : this(
@@ -69,6 +89,11 @@ public partial class PrompterWindow : Window
             // Compatibility mode: layered windows cannot be hidden from capture on this PC.
             AllowsTransparency = false;
             CodeLanguagePopup.AllowsTransparency = false;
+            // Tooltip popups are layered and could not be hidden on this PC, so do not show them while hiding.
+            AddHandler(ToolTipService.ToolTipOpeningEvent, new ToolTipEventHandler((_, args) =>
+            {
+                if (_store.Data.Preferences.HidePrompterFromCapture) args.Handled = true;
+            }));
         }
         Loaded += PrompterWindow_Loaded;
         SizeChanged += (_, _) =>
@@ -913,6 +938,8 @@ public partial class PrompterWindow : Window
     private void MoreButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = MoreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        // Without a drop shadow the menu popup is not layered, so it can be hidden from capture in compatibility mode.
+        if (!AllowsTransparency) menu.HasDropShadow = false;
         var smaller = new MenuItem { Header = Localized("Smaller text", "缩小字体") };
         smaller.Click += (_, _) => { _answerFontSize = Math.Max(12, _answerFontSize - 1); RefreshTurns(false); };
         var larger = new MenuItem { Header = Localized("Larger text", "放大字体") };

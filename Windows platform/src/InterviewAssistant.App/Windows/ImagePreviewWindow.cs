@@ -18,6 +18,7 @@ public sealed class ImagePreviewWindow : Window
         ShowInTaskbar = false;
         ShowActivated = true;
         Topmost = true;
+        CaptureExclusion.Protect(this, "ImagePreview");
 
         var image = new BitmapImage();
         image.BeginInit();

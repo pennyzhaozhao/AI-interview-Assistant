@@ -134,6 +134,23 @@ internal static class CaptureExclusion
         if (NativeMethods.SetWindowRgn(windowHandle, region, true) == 0) NativeMethods.DeleteObject(region);
     }
 
+    /// <summary>
+    /// Hides a helper window (screenshot region selector, image preview, …) from screen sharing the same way as the
+    /// prompter. Call before Show(): in compatibility mode the window must be created non-layered.
+    /// </summary>
+    internal static void Protect(Window window, string windowName)
+    {
+        var exclude = InterviewAssistant.Services.AppServices.Current.DataStore.Data.Preferences.HidePrompterFromCapture;
+        if (!exclude) return;
+        if (window.AllowsTransparency && !LayeredWindowsSupported) window.AllowsTransparency = false;
+        window.SourceInitialized += (_, _) =>
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            if (!window.AllowsTransparency) EnableDwmTransparency(handle);
+            _ = Apply(handle, true, windowName);
+        };
+    }
+
     internal static CaptureExclusionResult Apply(nint windowHandle, bool exclude, string windowName)
     {
         if (windowHandle == nint.Zero) return CaptureExclusionResult.Failed;

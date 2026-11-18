@@ -12,6 +12,8 @@ public partial class RegionSelectionWindow : Window
     public RegionSelectionWindow()
     {
         InitializeComponent();
+        // The selector covers the whole screen while the user may be sharing it: keep it out of the share.
+        CaptureExclusion.Protect(this, "RegionSelection");
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
         Width = SystemParameters.VirtualScreenWidth;
