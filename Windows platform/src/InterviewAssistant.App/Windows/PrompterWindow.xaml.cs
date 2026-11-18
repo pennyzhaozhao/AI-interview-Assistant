@@ -290,6 +290,10 @@ public partial class PrompterWindow : Window
     {
         if (_windowHandle == nint.Zero) return;
         var shouldExclude = _store.Data.Preferences.HidePrompterFromCapture;
+        // Screen sharing still shows the mouse pointer: keep it a plain arrow over the board (no hand / resize
+        // pointer) so the other side cannot tell the pointer is over something.
+        ForceCursor = shouldExclude;
+        Cursor = shouldExclude ? Cursors.Arrow : null;
         var result = CaptureExclusion.Apply(_windowHandle, shouldExclude, "Prompter");
         CaptureExclusionApplied = result is CaptureExclusionResult.Excluded or CaptureExclusionResult.BlackBoxFallback;
         if (CodeLanguagePopup.IsOpen) ApplyPopupCaptureExclusion();
