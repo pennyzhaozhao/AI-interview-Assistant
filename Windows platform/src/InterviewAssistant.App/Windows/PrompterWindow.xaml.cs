@@ -343,6 +343,15 @@ public partial class PrompterWindow : Window
         CaptureExclusion.ApplyRoundedRegion(_windowHandle, ActualWidth, ActualHeight, radius, VisualTreeHelper.GetDpi(this).DpiScaleX);
     }
 
+    /// <summary>Menus are separate windows: keep them hideable (no layered shadow in compatibility mode) and arrow-only.</summary>
+    private void PrepareMenu(ContextMenu menu)
+    {
+        if (!AllowsTransparency) menu.HasDropShadow = false;
+        if (!_store.Data.Preferences.HidePrompterFromCapture) return;
+        menu.Cursor = Cursors.Arrow;
+        menu.ForceCursor = true;
+    }
+
     public void ShowNotice(string text) => ShowToast(text, TimeSpan.FromSeconds(6));
 
     private void StoreChanged()
@@ -529,7 +538,7 @@ public partial class PrompterWindow : Window
     private void ShowScreenshotSessionMenu()
     {
         var menu = new ContextMenu { PlacementTarget = ScreenshotButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
-        if (!AllowsTransparency) menu.HasDropShadow = false;
+        PrepareMenu(menu);
         var count = new MenuItem { Header = Localized($"Captured {_screenshotSegments.Count} screenshot(s)", $"已截取 {_screenshotSegments.Count} 张"), IsEnabled = false };
         var more = new MenuItem { Header = Localized("Capture another", "继续截图") };
         more.Click += async (_, _) => await CaptureScreenshotSegmentAsync();
@@ -917,7 +926,7 @@ public partial class PrompterWindow : Window
     private void KnowledgeButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = AiKnowledgeButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
-        if (!AllowsTransparency) menu.HasDropShadow = false;
+        PrepareMenu(menu);
         foreach (var knowledgeBase in _store.Data.KnowledgeBases)
         {
             var item = new MenuItem { Header = knowledgeBase.Name, IsCheckable = true, IsChecked = _session.ActiveKnowledgeBaseIds.Contains(knowledgeBase.Id), StaysOpenOnClick = true };
@@ -945,7 +954,7 @@ public partial class PrompterWindow : Window
     {
         var menu = new ContextMenu { PlacementTarget = MoreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
         // Without a drop shadow the menu popup is not layered, so it can be hidden from capture in compatibility mode.
-        if (!AllowsTransparency) menu.HasDropShadow = false;
+        PrepareMenu(menu);
         var smaller = new MenuItem { Header = Localized("Smaller text", "缩小字体") };
         smaller.Click += (_, _) => { _answerFontSize = Math.Max(12, _answerFontSize - 1); RefreshTurns(false); };
         var larger = new MenuItem { Header = Localized("Larger text", "放大字体") };
@@ -958,9 +967,7 @@ public partial class PrompterWindow : Window
         pin.Click += (_, _) => Topmost = pin.IsChecked;
         var copy = new MenuItem { Header = Localized("Copy current answer", "复制当前回答"), IsEnabled = _turnIndex >= 0 && _turnIndex < _session.Turns.Count };
         copy.Click += (_, _) => { if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count) Clipboard.SetText(_session.Turns[_turnIndex].Answer ?? ""); };
-        var history = new MenuItem { Header = Localized("Open history", "打开历史记录") };
-        history.Click += (_, _) => { if (Application.Current.MainWindow?.DataContext is MainViewModel vm) vm.NavigateTo("History"); (Application.Current.MainWindow as MainWindow)?.RevealDuringInterview(); };
-        menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy); menu.Items.Add(history);
+        menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy);
         menu.IsOpen = true;
     }
 
