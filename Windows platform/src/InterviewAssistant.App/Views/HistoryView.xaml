@@ -5,9 +5,9 @@
   </UserControl.Resources>
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="46*"/>
+      <ColumnDefinition Width="46*" MinWidth="0"/>
       <ColumnDefinition Width="1"/>
-      <ColumnDefinition Width="54*"/>
+      <ColumnDefinition Width="54*" MinWidth="0"/>
     </Grid.ColumnDefinitions>
     <Grid Grid.Column="0" Margin="32,28,32,32">
       <Grid.RowDefinitions>

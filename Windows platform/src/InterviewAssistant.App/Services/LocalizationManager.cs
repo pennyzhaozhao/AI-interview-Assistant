@@ -37,7 +37,12 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["ProjectDescriptionHint"] = "Shown on the project card and always sent to the AI. Describe what you built, your role, the stack and the results.",
         ["MarkdownShortcutHint"] = "Markdown supported. Shortcuts as in Typora: Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+K link · Ctrl+1–6 heading · Ctrl+0 paragraph · Ctrl+Shift+` code · Alt+Shift+5 strikethrough · Ctrl+Shift+Q quote · Ctrl+Shift+] / [ list · Ctrl+Shift+K code block · Ctrl+S save",
         ["RebuildIndexHint"] = "Deletes the local search index and indexes every document again. Your knowledge bases are not changed.",
-        ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded."
+        ["VoiceprintPrivacyNote"] = "Voiceprints are biometric data. They are encrypted on this device with Windows Data Protection and never uploaded.",
+        ["RolePlaceholder"] = "e.g. Senior Software Engineer",
+        ["JobDescriptionPlaceholder"] = "Paste the job description here…",
+        ["CompanyPlaceholder"] = "e.g. Acme Inc.",
+        ["CompanyWebsitePlaceholder"] = "https://…",
+        ["CompanyNotesPlaceholder"] = "Notes, business, compensation, and anything worth reviewing before the interview…"
     };
 
     private static readonly IReadOnlyDictionary<string, string> Chinese = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -279,7 +284,12 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["Bold"] = "加粗", ["Italic"] = "斜体", ["Underline"] = "下划线", ["Strikethrough"] = "删除线", ["Inline code"] = "行内代码", ["Link"] = "链接",
         ["Heading 1"] = "一级标题", ["Heading 2"] = "二级标题", ["Heading 3"] = "三级标题", ["Quote"] = "引用",
         ["Bulleted list"] = "无序列表", ["Numbered list"] = "有序列表", ["Code block"] = "代码块",
-        ["MarkdownShortcutHint"] = "支持 Markdown，快捷键同 Typora：Ctrl+B 加粗 · Ctrl+I 斜体 · Ctrl+U 下划线 · Ctrl+K 链接 · Ctrl+1–6 标题 · Ctrl+0 正文 · Ctrl+Shift+` 行内代码 · Alt+Shift+5 删除线 · Ctrl+Shift+Q 引用 · Ctrl+Shift+] / [ 列表 · Ctrl+Shift+K 代码块 · Ctrl+S 保存"
+        ["MarkdownShortcutHint"] = "支持 Markdown，快捷键同 Typora：Ctrl+B 加粗 · Ctrl+I 斜体 · Ctrl+U 下划线 · Ctrl+K 链接 · Ctrl+1–6 标题 · Ctrl+0 正文 · Ctrl+Shift+` 行内代码 · Alt+Shift+5 删除线 · Ctrl+Shift+Q 引用 · Ctrl+Shift+] / [ 列表 · Ctrl+Shift+K 代码块 · Ctrl+S 保存",
+        ["RolePlaceholder"] = "例如：高级软件工程师",
+        ["JobDescriptionPlaceholder"] = "请粘贴职位描述…",
+        ["CompanyPlaceholder"] = "例如：某某公司",
+        ["CompanyWebsitePlaceholder"] = "https://…",
+        ["CompanyNotesPlaceholder"] = "公司资料、业务、薪资结构，以及面试前值得复习的内容…"
     };
 
     public static LocalizationManager Instance { get; } = new();
