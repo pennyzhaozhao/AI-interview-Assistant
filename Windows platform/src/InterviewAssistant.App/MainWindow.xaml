@@ -90,11 +90,7 @@
             <Border Grid.Column="1" Background="{DynamicResource BorderBrush}" />
 
             <Grid Grid.Column="2">
-                <Ellipse Width="700" Height="700" Fill="{DynamicResource AccentGlowBrush}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-410,-250,0" IsHitTestVisible="False">
-                    <Ellipse.Effect>
-                        <BlurEffect Radius="90" />
-                    </Ellipse.Effect>
-                </Ellipse>
+                <Ellipse Width="700" Height="700" Fill="{DynamicResource AccentGlowBrush}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-410,-250,0" IsHitTestVisible="False" />
                 <ContentControl Content="{Binding CurrentPage}" />
             </Grid>
         </Grid>
