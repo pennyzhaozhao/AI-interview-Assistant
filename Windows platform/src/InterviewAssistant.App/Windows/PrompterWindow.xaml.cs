@@ -525,6 +525,7 @@ public partial class PrompterWindow : Window
     private void ShowScreenshotSessionMenu()
     {
         var menu = new ContextMenu { PlacementTarget = ScreenshotButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        if (!AllowsTransparency) menu.HasDropShadow = false;
         var count = new MenuItem { Header = Localized($"Captured {_screenshotSegments.Count} screenshot(s)", $"已截取 {_screenshotSegments.Count} 张"), IsEnabled = false };
         var more = new MenuItem { Header = Localized("Capture another", "继续截图") };
         more.Click += async (_, _) => await CaptureScreenshotSegmentAsync();
@@ -912,6 +913,7 @@ public partial class PrompterWindow : Window
     private void KnowledgeButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = AiKnowledgeButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        if (!AllowsTransparency) menu.HasDropShadow = false;
         foreach (var knowledgeBase in _store.Data.KnowledgeBases)
         {
             var item = new MenuItem { Header = knowledgeBase.Name, IsCheckable = true, IsChecked = _session.ActiveKnowledgeBaseIds.Contains(knowledgeBase.Id), StaysOpenOnClick = true };
