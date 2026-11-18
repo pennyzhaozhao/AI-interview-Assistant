@@ -7,6 +7,10 @@ internal static class NativeMethods
     internal const int GwlExStyle = -20;
     internal const int WsExToolWindow = 0x00000080;
     internal const int WsExNoActivate = 0x08000000;
+    internal const int WsExLayered = 0x00080000;
+    internal const int WsExAppWindow = 0x00040000;
+    internal const int ErrorHotkeyAlreadyRegistered = 1409;
+    internal const int SmRemoteSession = 0x1000;
     internal const uint WdaExcludeFromCapture = 0x00000011;
     internal const uint WdaMonitor = 0x00000001;
     internal const int DwmwaWindowCornerPreference = 33;
@@ -17,6 +21,7 @@ internal static class NativeMethods
     internal const uint ModControl = 0x0002;
     internal const uint ModShift = 0x0004;
     internal const uint ModWin = 0x0008;
+    internal const uint ModNoRepeat = 0x4000;
     internal const uint MonitorDefaultToNearest = 0x00000002;
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -42,11 +47,30 @@ internal static class NativeMethods
     internal static extern bool GetWindowDisplayAffinity(nint windowHandle, out uint affinity);
 
     [DllImport("user32.dll")]
+    internal static extern int GetSystemMetrics(int index);
+
+    [DllImport("gdi32.dll")]
+    internal static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool DeleteObject(nint handle);
+
+    [DllImport("user32.dll")]
+    internal static extern int SetWindowRgn(nint windowHandle, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [DllImport("user32.dll")]
     internal static extern nint MonitorFromWindow(nint windowHandle, uint flags);
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo monitorInfo);
+
+    [DllImport("dwmapi.dll")]
+    internal static extern int DwmExtendFrameIntoClientArea(nint windowHandle, ref DwmMargins margins);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DwmMargins { public int Left; public int Right; public int Top; public int Bottom; }
 
     [DllImport("dwmapi.dll")]
     internal static extern int DwmSetWindowAttribute(nint windowHandle, int attribute, ref int attributeValue, int attributeSize);

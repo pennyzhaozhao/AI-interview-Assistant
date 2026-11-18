@@ -216,16 +216,29 @@ enum InterviewWindowPresence {
     private static var boards: [ObjectIdentifier: NSObjectProtocol] = [:]
     private static var hiddenWindows: [NSWindow] = []
     private static var minimizedWindows: [NSWindow] = []
+    private static var lifecycleGeneration: UInt64 = 0
+
+    static var hasOpenBoards: Bool { !boards.isEmpty }
 
     static func track(_ board: NSWindow) {
         let id = ObjectIdentifier(board)
         guard boards[id] == nil else { return }
+        lifecycleGeneration &+= 1
         boards[id] = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: board,
             queue: .main
         ) { _ in
             MainActor.assumeIsolated { boardClosed(id) }
+        }
+        NSLog(
+            "[InterviewWindowPresence] track board=%@ boards=%d generation=%llu",
+            String(describing: id),
+            boards.count,
+            lifecycleGeneration
+        )
+        if boards.count == 1 {
+            registerScreenshotHotkey()
         }
         moveMainWindowsAside()
     }
@@ -237,13 +250,49 @@ enum InterviewWindowPresence {
 
     private static func boardClosed(_ id: ObjectIdentifier) {
         if let observer = boards.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
+        lifecycleGeneration &+= 1
+        let closeGeneration = lifecycleGeneration
+        NSLog(
+            "[InterviewWindowPresence] close board=%@ boards=%d generation=%llu",
+            String(describing: id),
+            boards.count,
+            closeGeneration
+        )
         // A board that is being replaced closes just before the new one opens: wait a moment
         // so the main window does not flash back in between.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             MainActor.assumeIsolated {
-                if boards.isEmpty { restoreMainWindows() }
+                let isCurrentClose = lifecycleGeneration == closeGeneration
+                NSLog(
+                    "[InterviewWindowPresence] delayed close boards=%d scheduledGeneration=%llu currentGeneration=%llu current=%@",
+                    boards.count,
+                    closeGeneration,
+                    lifecycleGeneration,
+                    isCurrentClose ? "true" : "false"
+                )
+                if isCurrentClose, boards.isEmpty {
+                    restoreMainWindows()
+                    // The screenshot hotkey is only held while a board is open, so the shortcut
+                    // (Cmd+Shift+S by default, "Save As" in many apps) goes back to other apps.
+                    HotkeyManager.shared.unregister(id: HotkeyManager.screenshotID)
+                }
             }
         }
+    }
+
+    private static func registerScreenshotHotkey() {
+        let storedKey = UserDefaults.standard.string(forKey: AppPreferenceKey.screenshotHotkey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = storedKey.flatMap { $0.isEmpty ? nil : $0 } ?? HotkeyManager.screenshotDefaultHotkey
+        let registered = HotkeyManager.shared.register(key: key, id: HotkeyManager.screenshotID) {
+            NSLog("[ScreenshotHotkey] board lifecycle action posting .screenshotHotkey")
+            NotificationCenter.default.post(name: .screenshotHotkey, object: nil)
+        }
+        NSLog(
+            "[ScreenshotHotkey] board lifecycle registration key=%@ result=%@",
+            key,
+            registered ? "true" : "false"
+        )
     }
 
     private static var mainWindows: [NSWindow] {

@@ -48,6 +48,28 @@ public partial class PrompterWindow : Window
     private bool _screenshotBusy;
     private bool _autoScroll;
     private bool _aiEnabled = true;
+    private bool _captureWarningShown;
+    private bool _useRegionFallback;
+
+    static PrompterWindow()
+    {
+        // Tooltips and the "More" menu are separate popup windows: hide them from screen sharing too.
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ToolTip), System.Windows.Controls.ToolTip.OpenedEvent, new RoutedEventHandler(PopupOpened));
+        EventManager.RegisterClassHandler(typeof(System.Windows.Controls.ContextMenu), System.Windows.Controls.ContextMenu.OpenedEvent, new RoutedEventHandler(PopupOpened));
+    }
+
+    private static void PopupOpened(object sender, RoutedEventArgs e)
+    {
+        var target = sender switch
+        {
+            System.Windows.Controls.ToolTip tip => tip.PlacementTarget,
+            System.Windows.Controls.ContextMenu menu => menu.PlacementTarget,
+            _ => null,
+        };
+        if (target is null || Window.GetWindow(target) is not PrompterWindow prompter) return;
+        if (PresentationSource.FromVisual((Visual)sender) is not HwndSource source) return;
+        _ = CaptureExclusion.Apply(source.Handle, prompter._store.Data.Preferences.HidePrompterFromCapture, sender.GetType().Name);
+    }
 
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
@@ -62,8 +84,25 @@ public partial class PrompterWindow : Window
         _session = session;
         _isDirectorMode = directorMode || string.Equals(session.Kind, "director", StringComparison.OrdinalIgnoreCase);
         InitializeComponent();
+        if (_store.Data.Preferences.HidePrompterFromCapture && !CaptureExclusion.LayeredWindowsSupported)
+        {
+            // Compatibility mode: layered windows cannot be hidden from capture on this PC.
+            AllowsTransparency = false;
+            CodeLanguagePopup.AllowsTransparency = false;
+            // Tooltip popups are layered and could not be hidden on this PC, so do not show them while hiding.
+            AddHandler(ToolTipService.ToolTipOpeningEvent, new ToolTipEventHandler((_, args) =>
+            {
+                if (_store.Data.Preferences.HidePrompterFromCapture) args.Handled = true;
+            }));
+        }
         Loaded += PrompterWindow_Loaded;
-        SizeChanged += (_, _) => PositionAtTopCenter();
+        SizeChanged += (_, _) =>
+        {
+            PositionAtTopCenter();
+            UpdateFallbackRegion();
+        };
+        CodeLanguagePopup.Opened += (_, _) => PreparePopupWindow();
+        IsVisibleChanged += (_, _) => { if (IsVisible) ApplyCaptureExclusion(); };
         _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _waveTimer.Tick += (_, _) => AnimateWaveform();
         _waveTimer.Start();
@@ -103,6 +142,11 @@ public partial class PrompterWindow : Window
     {
         base.OnSourceInitialized(e);
         _windowHandle = new WindowInteropHelper(this).Handle;
+        if (!AllowsTransparency)
+        {
+            _useRegionFallback = !CaptureExclusion.EnableDwmTransparency(_windowHandle);
+            UpdateFallbackRegion();
+        }
         var extendedStyle = NativeMethods.GetWindowLong(_windowHandle, NativeMethods.GwlExStyle);
         _ = NativeMethods.SetWindowLong(_windowHandle, NativeMethods.GwlExStyle, extendedStyle | NativeMethods.WsExToolWindow | NativeMethods.WsExNoActivate);
         ApplyCaptureExclusion();
@@ -236,31 +280,79 @@ public partial class PrompterWindow : Window
         ApplyCaptureExclusion();
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ApplyCaptureExclusion));
         if (_audioMode == PrompterAudioMode.Microphone) _ = StartMicrophoneRecognitionAsync();
-        Opacity = 0;
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+        // Window.Opacity only works on layered windows; in compatibility mode fade the content instead.
+        var fadeTarget = AllowsTransparency ? (UIElement)this : (UIElement)Content;
+        fadeTarget.Opacity = 0;
+        fadeTarget.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
     }
 
     private void ApplyCaptureExclusion()
     {
         if (_windowHandle == nint.Zero) return;
         var shouldExclude = _store.Data.Preferences.HidePrompterFromCapture;
-        if (!shouldExclude)
+        // Screen sharing still shows the mouse pointer: keep it a plain arrow over the board (no hand / resize
+        // pointer) so the other side cannot tell the pointer is over something.
+        ForceCursor = shouldExclude;
+        Cursor = shouldExclude ? Cursors.Arrow : null;
+        var result = CaptureExclusion.Apply(_windowHandle, shouldExclude, "Prompter");
+        CaptureExclusionApplied = result is CaptureExclusionResult.Excluded or CaptureExclusionResult.BlackBoxFallback;
+        if (CodeLanguagePopup.IsOpen) ApplyPopupCaptureExclusion();
+
+        if (!shouldExclude || result == CaptureExclusionResult.Excluded)
         {
-            _ = NativeMethods.SetWindowDisplayAffinity(_windowHandle, 0);
-            CaptureExclusionApplied = false;
+            _captureWarningShown = false;
             return;
         }
-
-        CaptureExclusionApplied = NativeMethods.SetWindowDisplayAffinity(_windowHandle, NativeMethods.WdaExcludeFromCapture)
-            && NativeMethods.GetWindowDisplayAffinity(_windowHandle, out var affinity)
-            && affinity == NativeMethods.WdaExcludeFromCapture;
-        if (!CaptureExclusionApplied)
+        if (_captureWarningShown) return;
+        _captureWarningShown = true;
+        if (AllowsTransparency)
         {
-            CaptureExclusionApplied = NativeMethods.SetWindowDisplayAffinity(_windowHandle, NativeMethods.WdaMonitor)
-                && NativeMethods.GetWindowDisplayAffinity(_windowHandle, out affinity)
-                && affinity == NativeMethods.WdaMonitor;
+            // The next prompter window opens in the non-layered compatibility mode.
+            CaptureExclusion.MarkLayeredWindowsUnsupported();
+            ShowToast(Localized("Switched to compatibility mode. Close and reopen the prompter to hide it from sharing.", "已切换兼容模式，请关闭提示板后重新打开即可隐藏"),
+                TimeSpan.FromSeconds(8));
+            return;
         }
+        ShowToast(result == CaptureExclusionResult.BlackBoxFallback
+                ? Localized("Prompter can only be blacked out in screen sharing on this PC", "此电脑上提示板共享时只能显示为黑框，无法完全隐藏")
+                : Localized("Prompter could not be hidden from screen sharing", "提示板隐藏失败，共享屏幕时可能被看到"),
+            TimeSpan.FromSeconds(6));
     }
+
+    private void ApplyPopupCaptureExclusion()
+    {
+        if (CodeLanguagePopup.Child is null || PresentationSource.FromVisual(CodeLanguagePopup.Child) is not HwndSource source) return;
+        _ = CaptureExclusion.Apply(source.Handle, _store.Data.Preferences.HidePrompterFromCapture, "CodeLanguagePopup");
+    }
+
+    /// <summary>Compatibility mode: give the non-layered popup the same transparent rounded look.</summary>
+    private void PreparePopupWindow()
+    {
+        if (CodeLanguagePopup.AllowsTransparency || CodeLanguagePopup.Child is not FrameworkElement child
+            || PresentationSource.FromVisual(child) is not HwndSource source) return;
+        if (!CaptureExclusion.EnableDwmTransparency(source.Handle))
+            CaptureExclusion.ApplyRoundedRegion(source.Handle, child.ActualWidth, child.ActualHeight, 18, VisualTreeHelper.GetDpi(child).DpiScaleX);
+        ApplyPopupCaptureExclusion();
+    }
+
+    /// <summary>Only used when DWM transparency is unavailable: clip the window to the island's rounded shape.</summary>
+    private void UpdateFallbackRegion()
+    {
+        if (!_useRegionFallback || _windowHandle == nint.Zero) return;
+        var radius = _isCompact ? Math.Min(ActualHeight, ActualWidth) / 2 : ExpandedIsland.CornerRadius.TopLeft;
+        CaptureExclusion.ApplyRoundedRegion(_windowHandle, ActualWidth, ActualHeight, radius, VisualTreeHelper.GetDpi(this).DpiScaleX);
+    }
+
+    /// <summary>Menus are separate windows: keep them hideable (no layered shadow in compatibility mode) and arrow-only.</summary>
+    private void PrepareMenu(ContextMenu menu)
+    {
+        if (!AllowsTransparency) menu.HasDropShadow = false;
+        if (!_store.Data.Preferences.HidePrompterFromCapture) return;
+        menu.Cursor = Cursors.Arrow;
+        menu.ForceCursor = true;
+    }
+
+    public void ShowNotice(string text) => ShowToast(text, TimeSpan.FromSeconds(6));
 
     private void StoreChanged()
     {
@@ -446,6 +538,7 @@ public partial class PrompterWindow : Window
     private void ShowScreenshotSessionMenu()
     {
         var menu = new ContextMenu { PlacementTarget = ScreenshotButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        PrepareMenu(menu);
         var count = new MenuItem { Header = Localized($"Captured {_screenshotSegments.Count} screenshot(s)", $"已截取 {_screenshotSegments.Count} 张"), IsEnabled = false };
         var more = new MenuItem { Header = Localized("Capture another", "继续截图") };
         more.Click += async (_, _) => await CaptureScreenshotSegmentAsync();
@@ -650,6 +743,7 @@ public partial class PrompterWindow : Window
         CodeLanguageInput.Text = _codeLanguage;
         SetNoActivate(false);
         CodeLanguagePopup.IsOpen = true;
+        ApplyPopupCaptureExclusion();
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
             Activate();
@@ -704,11 +798,16 @@ public partial class PrompterWindow : Window
         DirectorModeChanged?.Invoke(_isDirectorMode);
     }
 
-    private void ShowModeToast()
-    {
-        ModeToastText.Text = _isDirectorMode
+    private void ShowModeToast() =>
+        ShowToast(_isDirectorMode
             ? Localized("User switched to Director mode", "用户已切换至导演模式")
-            : Localized("User switched to AI mode", "用户已切换至 AI 模式");
+            : Localized("User switched to AI mode", "用户已切换至 AI 模式"),
+            TimeSpan.FromSeconds(2));
+
+    private void ShowToast(string text, TimeSpan duration)
+    {
+        ModeToastText.Text = text;
+        _modeToastTimer.Interval = duration;
         ModeToast.Opacity = 0;
         ModeToast.Visibility = Visibility.Visible;
         ModeToast.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)));
@@ -827,6 +926,7 @@ public partial class PrompterWindow : Window
     private void KnowledgeButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = AiKnowledgeButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        PrepareMenu(menu);
         foreach (var knowledgeBase in _store.Data.KnowledgeBases)
         {
             var item = new MenuItem { Header = knowledgeBase.Name, IsCheckable = true, IsChecked = _session.ActiveKnowledgeBaseIds.Contains(knowledgeBase.Id), StaysOpenOnClick = true };
@@ -853,6 +953,8 @@ public partial class PrompterWindow : Window
     private void MoreButton_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = MoreButton, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        // Without a drop shadow the menu popup is not layered, so it can be hidden from capture in compatibility mode.
+        PrepareMenu(menu);
         var smaller = new MenuItem { Header = Localized("Smaller text", "缩小字体") };
         smaller.Click += (_, _) => { _answerFontSize = Math.Max(12, _answerFontSize - 1); RefreshTurns(false); };
         var larger = new MenuItem { Header = Localized("Larger text", "放大字体") };
@@ -865,9 +967,7 @@ public partial class PrompterWindow : Window
         pin.Click += (_, _) => Topmost = pin.IsChecked;
         var copy = new MenuItem { Header = Localized("Copy current answer", "复制当前回答"), IsEnabled = _turnIndex >= 0 && _turnIndex < _session.Turns.Count };
         copy.Click += (_, _) => { if (_turnIndex >= 0 && _turnIndex < _session.Turns.Count) Clipboard.SetText(_session.Turns[_turnIndex].Answer ?? ""); };
-        var history = new MenuItem { Header = Localized("Open history", "打开历史记录") };
-        history.Click += (_, _) => { if (Application.Current.MainWindow?.DataContext is MainViewModel vm) vm.NavigateTo("History"); (Application.Current.MainWindow as MainWindow)?.RevealDuringInterview(); };
-        menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy); menu.Items.Add(history);
+        menu.Items.Add(smaller); menu.Items.Add(larger); menu.Items.Add(auto); menu.Items.Add(ai); menu.Items.Add(pin); menu.Items.Add(new Separator()); menu.Items.Add(copy);
         menu.IsOpen = true;
     }
 

@@ -12,6 +12,14 @@ public partial class RegionSelectionWindow : Window
     public RegionSelectionWindow()
     {
         InitializeComponent();
+        // The selector covers the whole screen while the user may be sharing it: keep it out of the share.
+        CaptureExclusion.Protect(this, "RegionSelection");
+        if (InterviewAssistant.Services.AppServices.Current.DataStore.Data.Preferences.HidePrompterFromCapture)
+        {
+            // The pointer is part of the shared picture: no crosshair, so selecting a region looks like normal mouse use.
+            Cursor = Cursors.Arrow;
+            ForceCursor = true;
+        }
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
         Width = SystemParameters.VirtualScreenWidth;

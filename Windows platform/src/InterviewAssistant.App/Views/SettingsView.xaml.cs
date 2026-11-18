@@ -63,7 +63,16 @@ public partial class SettingsView : UserControl
         if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
         if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
         parts.Add(key.ToString().ToUpperInvariant());
-        viewModel.ScreenshotHotkey = string.Join("+", parts);
+        var recorded = string.Join("+", parts);
+        if (!InterviewAssistant.Windows.ScreenshotHotkey.IsAvailable(recorded))
+        {
+            // Keep recording so the user can try another combination right away.
+            ScreenshotHotkeyBox.Text = LocalizationManager.Instance.IsChinese
+                ? $"{recorded} 已被占用，请换一个"
+                : $"{recorded} is in use, try another";
+            return;
+        }
+        viewModel.ScreenshotHotkey = recorded;
         ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
         Keyboard.ClearFocus();
     }

@@ -153,7 +153,8 @@ struct PrompterOverlayView: View {
         .onChange(of: screenshotCapture.captureMode) { _, mode in
             handleCaptureModeChange(mode)
         }
-        .onChange(of: screenshotHotkey) { _, _ in
+        .onChange(of: screenshotHotkey) { oldValue, newValue in
+            NSLog("[ScreenshotHotkey] desktop AppStorage changed old=%@ new=%@", oldValue, newValue)
             registerScreenshotHotkey()
         }
         .onChange(of: isHiddenFromCapture) { _, _ in
@@ -714,7 +715,8 @@ struct PrompterOverlayView: View {
         .onChange(of: screenshotCapture.captureMode) { _, mode in
             handleCaptureModeChange(mode)
         }
-        .onChange(of: screenshotHotkey) { _, _ in
+        .onChange(of: screenshotHotkey) { oldValue, newValue in
+            NSLog("[ScreenshotHotkey] compact AppStorage changed old=%@ new=%@", oldValue, newValue)
             registerScreenshotHotkey()
         }
         .alert(L.t("Set screenshot region first"), isPresented: $showSetupRegionAlert) {
@@ -1778,9 +1780,21 @@ struct PrompterOverlayView: View {
     }
 
     private func registerScreenshotHotkey() {
-        HotkeyManager.shared.register(key: screenshotHotkey, id: HotkeyManager.screenshotID) {
+        guard InterviewWindowPresence.hasOpenBoards else {
+            NSLog("[ScreenshotHotkey] skipped registration key=%@ because no board is tracked", screenshotHotkey)
+            return
+        }
+        let registered = HotkeyManager.shared.register(key: screenshotHotkey, id: HotkeyManager.screenshotID) {
+            NSLog("[ScreenshotHotkey] Carbon action posting .screenshotHotkey")
             NotificationCenter.default.post(name: .screenshotHotkey, object: nil)
         }
+        NSLog(
+            "[ScreenshotHotkey] registration key=%@ result=%@ isRegistered=%@ boardsOpen=%@",
+            screenshotHotkey,
+            registered ? "true" : "false",
+            HotkeyManager.shared.isRegistered(id: HotkeyManager.screenshotID) ? "true" : "false",
+            InterviewWindowPresence.hasOpenBoards ? "true" : "false"
+        )
     }
 
     private func updateScreenShareVisibility() {
@@ -1802,6 +1816,13 @@ struct PrompterOverlayView: View {
 
     @MainActor
     private func handleScreenshot() async {
+        NSLog(
+            "[ScreenshotHotkey] handleScreenshot mode=%@ screenshotMode=%@ hasPresetRegion=%@ permission=%@",
+            String(describing: screenshotCapture.captureMode),
+            screenshotMode.rawValue,
+            screenshotCapture.hasPresetRegion ? "true" : "false",
+            screenshotCapture.hasScreenCapturePermission ? "true" : "false"
+        )
         switch screenshotCapture.captureMode {
         case .idle:
             screenshotSubmissionState = .idle
@@ -1810,6 +1831,7 @@ struct PrompterOverlayView: View {
             screenshotSubmissionState = .idle
             beginScreenshotCapture(reset: false)
         case .capturing, .analyzing:
+            NSLog("[ScreenshotHotkey] ignored because capture is already %@", String(describing: screenshotCapture.captureMode))
             return
         }
     }
@@ -1820,13 +1842,16 @@ struct PrompterOverlayView: View {
         case .presetRegion:
             screenshotCapture.refreshPresetRegion()
             guard screenshotCapture.hasPresetRegion else {
+                NSLog("[ScreenshotHotkey] preset capture stopped because no preset region is configured")
                 showSetupRegionAlert = true
                 return
             }
+            NSLog("[ScreenshotHotkey] starting preset-region capture reset=%@", reset ? "true" : "false")
             Task { @MainActor in
                 await screenshotCapture.silentCaptureSegment(reset: reset)
             }
         case .manualSelect:
+            NSLog("[ScreenshotHotkey] starting manual selection reset=%@", reset ? "true" : "false")
             beginManualScreenshotCapture(reset: reset)
         }
     }
@@ -1904,6 +1929,7 @@ private extension View {
     func hotkeyReceivers(_ coordinator: ReceiverCoordinator, screenshotHandler: @escaping @MainActor () async -> Void) -> some View {
         #if os(macOS)
         self.onReceive(NotificationCenter.default.publisher(for: .screenshotHotkey)) { _ in
+            NSLog("[ScreenshotHotkey] .screenshotHotkey notification received")
             Task { await screenshotHandler() }
         }
         #else
