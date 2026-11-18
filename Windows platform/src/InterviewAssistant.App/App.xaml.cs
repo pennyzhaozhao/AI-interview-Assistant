@@ -28,6 +28,11 @@ public partial class App : Application
         base.OnStartup(e);
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
+        // Crashes off the UI thread (native/background) otherwise leave no trace in startup.log.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            WriteLog($"FATAL (non-UI thread, terminating={args.IsTerminating}):{Environment.NewLine}{args.ExceptionObject}");
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+            WriteLog($"Unobserved task exception:{Environment.NewLine}{args.Exception}");
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         try
@@ -36,13 +41,16 @@ public partial class App : Application
             await AppServices.Current.InitializeAsync();
             WriteLog($"Local data loaded from {AppServices.Current.DataStore.DataPath}.");
             LocalizationManager.Apply(AppServices.Current.DataStore.Data.Preferences.Language);
+            WriteLog("Language applied.");
             ThemeManager.Apply(AppServices.Current.DataStore.Data.Preferences.Theme);
+            WriteLog("Theme applied.");
 
             var window = new MainWindow
             {
                 Topmost = true
             };
 
+            WriteLog("Main window created.");
             MainWindow = window;
             ShutdownMode = ShutdownMode.OnMainWindowClose;
             window.ContentRendered += async (_, _) =>
