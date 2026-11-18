@@ -49,6 +49,7 @@ public partial class PrompterWindow : Window
     private bool _autoScroll;
     private bool _aiEnabled = true;
     private bool _captureWarningShown;
+    private bool _useRegionFallback;
 
     public PrompterWindow() : this(new InterviewSessionModel { Title = "Prompter preview", Role = "Interview preview" }, false) { }
 
@@ -70,7 +71,13 @@ public partial class PrompterWindow : Window
             CodeLanguagePopup.AllowsTransparency = false;
         }
         Loaded += PrompterWindow_Loaded;
-        SizeChanged += (_, _) => PositionAtTopCenter();
+        SizeChanged += (_, _) =>
+        {
+            PositionAtTopCenter();
+            UpdateFallbackRegion();
+        };
+        CodeLanguagePopup.Opened += (_, _) => PreparePopupWindow();
+        IsVisibleChanged += (_, _) => { if (IsVisible) ApplyCaptureExclusion(); };
         _waveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
         _waveTimer.Tick += (_, _) => AnimateWaveform();
         _waveTimer.Start();
@@ -110,7 +117,11 @@ public partial class PrompterWindow : Window
     {
         base.OnSourceInitialized(e);
         _windowHandle = new WindowInteropHelper(this).Handle;
-        if (!AllowsTransparency) CaptureExclusion.EnableDwmTransparency(_windowHandle);
+        if (!AllowsTransparency)
+        {
+            _useRegionFallback = !CaptureExclusion.EnableDwmTransparency(_windowHandle);
+            UpdateFallbackRegion();
+        }
         var extendedStyle = NativeMethods.GetWindowLong(_windowHandle, NativeMethods.GwlExStyle);
         _ = NativeMethods.SetWindowLong(_windowHandle, NativeMethods.GwlExStyle, extendedStyle | NativeMethods.WsExToolWindow | NativeMethods.WsExNoActivate);
         ApplyCaptureExclusion();
@@ -244,8 +255,10 @@ public partial class PrompterWindow : Window
         ApplyCaptureExclusion();
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ApplyCaptureExclusion));
         if (_audioMode == PrompterAudioMode.Microphone) _ = StartMicrophoneRecognitionAsync();
-        Opacity = 0;
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
+        // Window.Opacity only works on layered windows; in compatibility mode fade the content instead.
+        var fadeTarget = AllowsTransparency ? (UIElement)this : (UIElement)Content;
+        fadeTarget.Opacity = 0;
+        fadeTarget.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(240)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } });
     }
 
     private void ApplyCaptureExclusion()
@@ -282,6 +295,26 @@ public partial class PrompterWindow : Window
         if (CodeLanguagePopup.Child is null || PresentationSource.FromVisual(CodeLanguagePopup.Child) is not HwndSource source) return;
         _ = CaptureExclusion.Apply(source.Handle, _store.Data.Preferences.HidePrompterFromCapture, "CodeLanguagePopup");
     }
+
+    /// <summary>Compatibility mode: give the non-layered popup the same transparent rounded look.</summary>
+    private void PreparePopupWindow()
+    {
+        if (CodeLanguagePopup.AllowsTransparency || CodeLanguagePopup.Child is not FrameworkElement child
+            || PresentationSource.FromVisual(child) is not HwndSource source) return;
+        if (!CaptureExclusion.EnableDwmTransparency(source.Handle))
+            CaptureExclusion.ApplyRoundedRegion(source.Handle, child.ActualWidth, child.ActualHeight, 18, VisualTreeHelper.GetDpi(child).DpiScaleX);
+        ApplyPopupCaptureExclusion();
+    }
+
+    /// <summary>Only used when DWM transparency is unavailable: clip the window to the island's rounded shape.</summary>
+    private void UpdateFallbackRegion()
+    {
+        if (!_useRegionFallback || _windowHandle == nint.Zero) return;
+        var radius = _isCompact ? Math.Min(ActualHeight, ActualWidth) / 2 : ExpandedIsland.CornerRadius.TopLeft;
+        CaptureExclusion.ApplyRoundedRegion(_windowHandle, ActualWidth, ActualHeight, radius, VisualTreeHelper.GetDpi(this).DpiScaleX);
+    }
+
+    public void ShowNotice(string text) => ShowToast(text, TimeSpan.FromSeconds(6));
 
     private void StoreChanged()
     {

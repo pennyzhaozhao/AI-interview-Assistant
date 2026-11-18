@@ -106,12 +106,32 @@ internal static class CaptureExclusion
         }
     }
 
-    /// <summary>Per-pixel transparency for a non-layered window: composite through DWM instead of UpdateLayeredWindow.</summary>
-    internal static void EnableDwmTransparency(nint windowHandle)
+    /// <summary>
+    /// Per-pixel transparency for a non-layered window: DWM composites the client area with its alpha
+    /// channel, so the window looks exactly like the layered version (anti-aliased corners, translucent
+    /// background) while SetWindowDisplayAffinity works. Returns false if DWM refused, in which case the
+    /// caller clips the window with a rounded region instead.
+    /// </summary>
+    internal static bool EnableDwmTransparency(nint windowHandle)
     {
         if (HwndSource.FromHwnd(windowHandle) is { CompositionTarget: { } target }) target.BackgroundColor = Colors.Transparent;
         var margins = new NativeMethods.DwmMargins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        _ = NativeMethods.DwmExtendFrameIntoClientArea(windowHandle, ref margins);
+        var hr = NativeMethods.DwmExtendFrameIntoClientArea(windowHandle, ref margins);
+        WriteLogLine($"dwmTransparency hr=0x{hr:X8}");
+        return hr >= 0;
+    }
+
+    /// <summary>Clips a window to a rounded rectangle (fallback when DWM transparency is unavailable).</summary>
+    internal static void ApplyRoundedRegion(nint windowHandle, double widthDip, double heightDip, double radiusDip, double dpiScale)
+    {
+        if (windowHandle == nint.Zero || widthDip <= 0 || heightDip <= 0) return;
+        var width = (int)Math.Round(widthDip * dpiScale);
+        var height = (int)Math.Round(heightDip * dpiScale);
+        var diameter = (int)Math.Round(Math.Min(radiusDip * 2, Math.Min(widthDip, heightDip)) * dpiScale);
+        var region = NativeMethods.CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter);
+        if (region == nint.Zero) return;
+        // On success the system owns the region; delete it only if SetWindowRgn failed.
+        if (NativeMethods.SetWindowRgn(windowHandle, region, true) == 0) NativeMethods.DeleteObject(region);
     }
 
     internal static CaptureExclusionResult Apply(nint windowHandle, bool exclude, string windowName)

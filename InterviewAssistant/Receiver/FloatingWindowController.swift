@@ -241,7 +241,12 @@ enum InterviewWindowPresence {
         // so the main window does not flash back in between.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             MainActor.assumeIsolated {
-                if boards.isEmpty { restoreMainWindows() }
+                if boards.isEmpty {
+                    restoreMainWindows()
+                    // The screenshot hotkey is only held while a board is open, so the shortcut
+                    // (Cmd+Shift+S by default, "Save As" in many apps) goes back to other apps.
+                    HotkeyManager.shared.unregister(id: HotkeyManager.screenshotID)
+                }
             }
         }
     }

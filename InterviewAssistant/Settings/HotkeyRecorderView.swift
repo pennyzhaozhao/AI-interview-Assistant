@@ -38,6 +38,9 @@ struct HotkeyRecorderView: View {
             if hotkey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 hotkey = defaultHotkey
             }
+            // The screenshot hotkey is only held while a prompter is open (see PrompterOverlayView),
+            // so it does not take Cmd+Shift+S ("Save As") away from other apps the rest of the time.
+            guard hotkeyID != HotkeyManager.screenshotID else { return }
             HotkeyManager.shared.register(key: hotkey, id: hotkeyID) {
                 NotificationCenter.default.post(name: notificationName, object: nil)
             }
@@ -60,10 +63,17 @@ struct HotkeyRecorderView: View {
                 return nil
             }
             guard let recorded = HotkeyManager.hotkeyString(from: event) else { return nil }
+            guard HotkeyManager.isValidHotkey(recorded) else { NSSound.beep(); return nil }
+            guard HotkeyManager.shared.isAvailable(recorded, ignoring: hotkeyID) else {
+                NSSound.beep()
+                return nil
+            }
             hotkey = recorded
             UserDefaults.standard.set(recorded, forKey: preferenceKey)
-            HotkeyManager.shared.register(key: recorded, id: hotkeyID) {
-                NotificationCenter.default.post(name: notificationName, object: nil)
+            if hotkeyID != HotkeyManager.screenshotID || HotkeyManager.shared.isRegistered(id: hotkeyID) {
+                HotkeyManager.shared.register(key: recorded, id: hotkeyID) {
+                    NotificationCenter.default.post(name: notificationName, object: nil)
+                }
             }
             stopRecording()
             return nil
@@ -90,76 +100,64 @@ final class HotkeyManager {
     private var eventHotKeyRefs: [UInt32: EventHotKeyRef] = [:]
     private var eventHandlerRef: EventHandlerRef?
     private var actions: [UInt32: () -> Void] = [:]
-    private var screenshotMonitor: Any?
+    private var registeredKeys: [UInt32: (keyCode: UInt32, modifiers: UInt32)] = [:]
 
-    func register(key: String, id: UInt32 = manualTriggerID, action: @escaping () -> Void) {
-        if id == Self.screenshotID {
-            registerScreenshotHotkey(hotkey: key, action: action)
-            return
-        }
-
-        actions[id] = action
+    /// Registers a system-wide hotkey through Carbon. Unlike an NSEvent global monitor this needs no
+    /// Accessibility permission and also fires while this app is frontmost. Returns false when the
+    /// combination could not be registered (for example, another app already owns it).
+    @discardableResult
+    func register(key: String, id: UInt32 = manualTriggerID, action: @escaping () -> Void) -> Bool {
         unregister(id: id)
+        actions[id] = action
 
         let parsed = Self.parse(key)
+        guard Self.isValidHotkey(key) else { return false }
         let hotKeyID = EventHotKeyID(signature: Self.signature("IAHK"), id: id)
         var newRef: EventHotKeyRef?
         let status = RegisterEventHotKey(parsed.keyCode, parsed.modifiers, hotKeyID, GetApplicationEventTarget(), 0, &newRef)
-        guard status == noErr else { return }
+        guard status == noErr, let newRef else { return false }
         eventHotKeyRefs[id] = newRef
+        registeredKeys[id] = parsed
         installHandlerIfNeeded()
+        return true
     }
 
     func unregister(id: UInt32) {
-        if id == Self.screenshotID {
-            if let screenshotMonitor {
-                NSEvent.removeMonitor(screenshotMonitor)
-            }
-            screenshotMonitor = nil
-            actions[id] = nil
-            return
-        }
-
         if let eventHotKeyRef = eventHotKeyRefs[id] {
             UnregisterEventHotKey(eventHotKeyRef)
         }
         eventHotKeyRefs[id] = nil
+        registeredKeys[id] = nil
+        actions[id] = nil
     }
 
-    func registerScreenshotHotkey(hotkey: String, action: @escaping () -> Void) {
-        actions[Self.screenshotID] = action
-        unregister(id: Self.screenshotID)
-        actions[Self.screenshotID] = action
-
-        let parsed = Self.parse(hotkey)
-        let expectedModifiers = Self.eventModifierFlags(fromCarbonFlags: parsed.modifiers)
-        screenshotMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            let activeModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard activeModifiers == expectedModifiers else { return }
-            guard UInt32(event.keyCode) == parsed.keyCode else { return }
-            DispatchQueue.main.async {
-                action()
-            }
-        }
+    func isRegistered(id: UInt32) -> Bool {
+        eventHotKeyRefs[id] != nil
     }
 
-    func registerScreenshotHotkey(
-        key: String,
-        modifiers: NSEvent.ModifierFlags = [.command, .shift],
-        action: @escaping () -> Void
-    ) {
-        if let screenshotMonitor {
-            NSEvent.removeMonitor(screenshotMonitor)
+    /// True when `key` can be registered: not used by this app's other hotkey and not owned by another app.
+    func isAvailable(_ key: String, ignoring id: UInt32) -> Bool {
+        let parsed = Self.parse(key)
+        guard Self.isValidHotkey(key) else { return false }
+        for (otherID, other) in registeredKeys where otherID != id {
+            if other.keyCode == parsed.keyCode && other.modifiers == parsed.modifiers { return false }
         }
-        let expectedModifiers = modifiers.intersection([.command, .option, .control, .shift])
-        screenshotMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            let activeModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard activeModifiers == expectedModifiers else { return }
-            guard event.charactersIgnoringModifiers?.uppercased() == key.uppercased() else { return }
-            DispatchQueue.main.async {
-                action()
-            }
+        if let current = registeredKeys[id], current.keyCode == parsed.keyCode, current.modifiers == parsed.modifiers {
+            return true
         }
+        var probeRef: EventHotKeyRef?
+        let probeID = EventHotKeyID(signature: Self.signature("IAPR"), id: 99)
+        let status = RegisterEventHotKey(parsed.keyCode, parsed.modifiers, probeID, GetApplicationEventTarget(), 0, &probeRef)
+        if let probeRef { UnregisterEventHotKey(probeRef) }
+        return status == noErr
+    }
+
+    /// A hotkey needs a modifier, except the function keys F1–F12, which are safe on their own.
+    static func isValidHotkey(_ key: String) -> Bool {
+        let parsed = parse(key)
+        if parsed.modifiers != 0 { return true }
+        let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+        return functionKeyCodes.contains(parsed.keyCode)
     }
 
     private func installHandlerIfNeeded() {
@@ -232,15 +230,6 @@ final class HotkeyManager {
             }
         }
         return (keyCodeForString(key), modifiers)
-    }
-
-    private static func eventModifierFlags(fromCarbonFlags flags: UInt32) -> NSEvent.ModifierFlags {
-        var result: NSEvent.ModifierFlags = []
-        if flags & UInt32(cmdKey) != 0 { result.insert(.command) }
-        if flags & UInt32(optionKey) != 0 { result.insert(.option) }
-        if flags & UInt32(controlKey) != 0 { result.insert(.control) }
-        if flags & UInt32(shiftKey) != 0 { result.insert(.shift) }
-        return result
     }
 
     private static func normalizedKeyName(_ key: String) -> String {

@@ -1778,8 +1778,11 @@ struct PrompterOverlayView: View {
     }
 
     private func registerScreenshotHotkey() {
-        HotkeyManager.shared.register(key: screenshotHotkey, id: HotkeyManager.screenshotID) {
+        let registered = HotkeyManager.shared.register(key: screenshotHotkey, id: HotkeyManager.screenshotID) {
             NotificationCenter.default.post(name: .screenshotHotkey, object: nil)
+        }
+        if !registered {
+            NSLog("Screenshot hotkey %@ could not be registered (already used by another app?)", screenshotHotkey)
         }
     }
 

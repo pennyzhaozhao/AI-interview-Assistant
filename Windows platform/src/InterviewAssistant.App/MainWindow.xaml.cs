@@ -9,10 +9,8 @@ namespace InterviewAssistant;
 
 public partial class MainWindow : Window
 {
-    private const int ScreenshotHotkeyId = 0x4941;
     private PrompterWindow? _prompterWindow;
     private nint _windowHandle;
-    private string _registeredScreenshotHotkey = "";
     private int _activeInterviewWindows;
     private WindowState _stateBeforeInterview = WindowState.Normal;
     private Windows.MockInterviewWindow? _mockInterviewView;
@@ -27,6 +25,7 @@ public partial class MainWindow : Window
             viewModel.MockInterviewOptionsRequested += OpenMockInterviewOptions;
         }
         Services.AppServices.Current.DataStore.Changed += DataStore_Changed;
+        ScreenshotHotkey.Pressed += ScreenshotHotkey_Pressed;
     }
 
     private void OpenMockInterviewOptions()
@@ -101,18 +100,13 @@ public partial class MainWindow : Window
         _windowHandle = new WindowInteropHelper(this).Handle;
         var source = HwndSource.FromHwnd(_windowHandle);
         source?.AddHook(WindowMessageHook);
-        RegisterScreenshotHotkey();
+        // A re-created handle loses its extended styles: keep it out of the taskbar while an interview runs.
+        if (_activeInterviewWindows > 0) ApplyInterviewTaskbarStyle();
         ApplyRoundedCorners();
     }
 
     private nint WindowMessageHook(nint windowHandle, int message, nint wParam, nint lParam, ref bool handled)
     {
-        if (message == NativeMethods.WmHotkey && wParam.ToInt32() == ScreenshotHotkeyId)
-        {
-            if (_prompterWindow is not null) _ = _prompterWindow.CaptureAndAnalyzeScreenshotAsync();
-            handled = true;
-            return nint.Zero;
-        }
         if (message != NativeMethods.WmGetMinMaxInfo || lParam == nint.Zero) return nint.Zero;
         var monitor = NativeMethods.MonitorFromWindow(windowHandle, NativeMethods.MonitorDefaultToNearest);
         var info = new NativeMethods.MonitorInfo { Size = Marshal.SizeOf<NativeMethods.MonitorInfo>() };
@@ -127,38 +121,37 @@ public partial class MainWindow : Window
         return nint.Zero;
     }
 
-    private void RegisterScreenshotHotkey()
+    /// <summary>The visible prompt board the hotkey acts on: the interview board or the Director Mode host board.</summary>
+    private static PrompterWindow? ActivePrompter =>
+        Application.Current.Windows.OfType<PrompterWindow>().LastOrDefault(window => window.IsVisible);
+
+    private void ScreenshotHotkey_Pressed()
     {
-        var text = Services.AppServices.Current.DataStore.Data.Preferences.ScreenshotHotkey;
-        if (_windowHandle == nint.Zero || string.Equals(text, _registeredScreenshotHotkey, StringComparison.OrdinalIgnoreCase)) return;
-        _ = NativeMethods.UnregisterHotKey(_windowHandle, ScreenshotHotkeyId);
-        _registeredScreenshotHotkey = text;
-        var modifiers = 0u;
-        var key = Key.S;
-        foreach (var part in text.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        if (ActivePrompter is { } prompter) _ = prompter.CaptureAndAnalyzeScreenshotAsync();
+    }
+
+    /// <summary>Held only while a prompt board is open; reports a conflict on the board instead of a blocking dialog.</summary>
+    private void UpdateScreenshotHotkey()
+    {
+        if (_activeInterviewWindows == 0)
         {
-            if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) || part.Equals("Control", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModControl;
-            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModShift;
-            else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModAlt;
-            else if (part.Equals("Win", StringComparison.OrdinalIgnoreCase) || part.Equals("Windows", StringComparison.OrdinalIgnoreCase)) modifiers |= NativeMethods.ModWin;
-            else if (Enum.TryParse<Key>(part, true, out var parsed)) key = parsed;
-        }
-        if (modifiers == 0) modifiers = NativeMethods.ModControl | NativeMethods.ModShift;
-        if (NativeMethods.RegisterHotKey(_windowHandle, ScreenshotHotkeyId, modifiers, (uint)KeyInterop.VirtualKeyFromKey(key)))
-        {
+            ScreenshotHotkey.Unregister();
             return;
         }
-        else
-        {
-            MessageBox.Show(Services.LocalizationManager.Instance.IsChinese ? "截图全局快捷键注册失败，可能已被其他程序占用。" : "The screenshot hotkey is already used by another application.", "Interview AI", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        var text = Services.AppServices.Current.DataStore.Data.Preferences.ScreenshotHotkey;
+        if (ScreenshotHotkey.Register(text)) return;
+        var notice = Services.LocalizationManager.Instance.IsChinese
+            ? $"截图快捷键 {text} 已被其他程序占用，请在设置中更换，或点击截图按钮。"
+            : $"The screenshot shortcut {text} is used by another app. Change it in Settings or use the screenshot button.";
+        // Let the board finish appearing so the notice is visible.
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() => ActivePrompter?.ShowNotice(notice)));
     }
 
     private void DataStore_Changed()
     {
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            RegisterScreenshotHotkey();
+            UpdateScreenshotHotkey();
             if (_activeInterviewWindows > 0) MoveToBackground();
         }));
     }
@@ -175,6 +168,7 @@ public partial class MainWindow : Window
             _stateBeforeInterview = WindowState == WindowState.Minimized ? WindowState.Normal : WindowState;
         }
         MoveToBackground();
+        UpdateScreenshotHotkey();
     }
 
     /// <summary>The last prompt board closed: bring the main window back.</summary>
@@ -182,6 +176,8 @@ public partial class MainWindow : Window
     {
         _activeInterviewWindows = Math.Max(0, _activeInterviewWindows - 1);
         if (_activeInterviewWindows > 0) return;
+        UpdateScreenshotHotkey();
+        ClearInterviewTaskbarStyle();
         ShowInTaskbar = true;
         if (!IsVisible) Show();
         WindowState = _stateBeforeInterview;
@@ -200,15 +196,38 @@ public partial class MainWindow : Window
     {
         if (Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview)
         {
-            ShowInTaskbar = false;
             if (IsVisible) Hide();
+            ShowInTaskbar = false;
+            // ShowInTaskbar alone is not enough: once the window is brought back mid-interview
+            // (Knowledge Base / History) its button can reappear. A tool window never gets one.
+            ApplyInterviewTaskbarStyle();
         }
         else
         {
+            ClearInterviewTaskbarStyle();
             ShowInTaskbar = true;
             if (!IsVisible) Show();
             WindowState = WindowState.Minimized;
         }
+    }
+
+    private void ApplyInterviewTaskbarStyle()
+    {
+        if (_windowHandle == nint.Zero || !Services.AppServices.Current.DataStore.Data.Preferences.HideTaskbarIconDuringInterview) return;
+        var style = NativeMethods.GetWindowLong(_windowHandle, NativeMethods.GwlExStyle);
+        _ = NativeMethods.SetWindowLong(_windowHandle, NativeMethods.GwlExStyle, (style | NativeMethods.WsExToolWindow) & ~NativeMethods.WsExAppWindow);
+    }
+
+    private void ClearInterviewTaskbarStyle()
+    {
+        if (_windowHandle == nint.Zero) return;
+        var style = NativeMethods.GetWindowLong(_windowHandle, NativeMethods.GwlExStyle);
+        if ((style & NativeMethods.WsExToolWindow) == 0) return;
+        // The taskbar only re-reads the style when the window is shown, so hide while changing it.
+        var wasVisible = IsVisible;
+        if (wasVisible) Hide();
+        _ = NativeMethods.SetWindowLong(_windowHandle, NativeMethods.GwlExStyle, style & ~NativeMethods.WsExToolWindow);
+        if (wasVisible) Show();
     }
 
     private void ApplyRoundedCorners()
@@ -243,7 +262,8 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Services.AppServices.Current.DataStore.Changed -= DataStore_Changed;
-        if (_windowHandle != nint.Zero) _ = NativeMethods.UnregisterHotKey(_windowHandle, ScreenshotHotkeyId);
+        ScreenshotHotkey.Pressed -= ScreenshotHotkey_Pressed;
+        ScreenshotHotkey.Unregister();
         _prompterWindow?.Close();
         CloseEmbeddedMockInterview();
         base.OnClosed(e);
