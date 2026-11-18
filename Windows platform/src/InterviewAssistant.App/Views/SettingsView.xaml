@@ -39,7 +39,7 @@
             </Setter>
         </Style>
     </UserControl.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" infra:SmoothScrollBehavior.IsEnabled="True">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
         <Grid Margin="28,24,28,40" HorizontalAlignment="Stretch">
             <StackPanel x:Name="SettingsRootPanel">
                 <TextBlock Text="{loc:Loc Key=APPEARANCE}" Style="{StaticResource CaptionStyle}" FontWeight="SemiBold" Margin="6,0,0,10"/>

@@ -31,7 +31,10 @@
     <SolidColorBrush x:Key="PrompterBrush" Color="#F2111827" />
     <SolidColorBrush x:Key="TitleBarBrush" Color="#E6111827" />
     <SolidColorBrush x:Key="SidebarBrush" Color="#CC0B1020" />
-    <SolidColorBrush x:Key="AccentGlowBrush" Color="#146366F1" />
+    <RadialGradientBrush x:Key="AccentGlowBrush">
+        <GradientStop Color="#146366F1" Offset="0" />
+        <GradientStop Color="#006366F1" Offset="1" />
+    </RadialGradientBrush>
     <SolidColorBrush x:Key="DirectorBackgroundBrush" Color="#101116" />
     <SolidColorBrush x:Key="DirectorPanelBrush" Color="#1B1D24" />
     <SolidColorBrush x:Key="DirectorFieldBrush" Color="#282B34" />
