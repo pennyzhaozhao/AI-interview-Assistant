@@ -22,11 +22,11 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         var workArea = SystemParameters.WorkArea;
-        var minWidth = Math.Max(800, workArea.Width * 0.65);
+        var minWidth = Math.Max(800, workArea.Width * 0.75);
         var minHeight = Math.Max(560, workArea.Height * 0.7);
         MinWidth = minWidth;
         MinHeight = minHeight;
-        Width = Math.Min(workArea.Width, Math.Max(minWidth, workArea.Width * 0.7));
+        Width = Math.Min(workArea.Width, Math.Max(minWidth, workArea.Width * 0.85));
         Height = Math.Min(workArea.Height, Math.Max(minHeight, workArea.Height * 0.8));
 
         if (DataContext is ViewModels.MainViewModel viewModel)
