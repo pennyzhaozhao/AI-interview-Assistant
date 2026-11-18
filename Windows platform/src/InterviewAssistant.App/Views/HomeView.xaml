@@ -17,18 +17,17 @@
                             <TextBlock Text="{Binding KnowledgeCountText}" Foreground="{DynamicResource PrimaryBrush}" FontSize="12" FontWeight="SemiBold"/>
                         </Border>
                     </Grid>
-                    <Grid Grid.Row="2">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="360"/></Grid.ColumnDefinitions>
-                        <Button Command="{Binding StartInterviewCommand}" Style="{StaticResource PrimaryButtonStyle}"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE734;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Start Interview}"/></StackPanel></Button>
-                        <Button Grid.Column="1" Command="{Binding MockInterviewCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="12,0,0,0"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE720;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Mock Interview}"/></StackPanel></Button>
-                        <Button Grid.Column="3" Command="{Binding ChooseKnowledgeCommand}" Style="{StaticResource SecondaryButtonStyle}" Background="{DynamicResource InputBrush}" Height="62" Padding="14,8" HorizontalContentAlignment="Stretch">
-                            <Grid Width="330">
-                                <StackPanel Margin="32,0,28,0"><TextBlock Text="{Binding KnowledgePickerTitle}" FontSize="14" FontWeight="SemiBold"/><TextBlock Text="{Binding KnowledgeCountText}" Style="{StaticResource CaptionStyle}" FontSize="12" Margin="0,2,0,0"/></StackPanel>
+                    <WrapPanel Grid.Row="2">
+                        <Button Command="{Binding StartInterviewCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,12,12"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE734;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Start Interview}"/></StackPanel></Button>
+                        <Button Command="{Binding MockInterviewCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,12,12"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE720;" Style="{StaticResource FluentIconStyle}" FontSize="15" Margin="0,0,9,0"/><TextBlock Text="{loc:Loc Key=Mock Interview}"/></StackPanel></Button>
+                        <Button Command="{Binding ChooseKnowledgeCommand}" Style="{StaticResource SecondaryButtonStyle}" Background="{DynamicResource InputBrush}" Height="62" Padding="14,8" MinWidth="200" Margin="0,0,12,12" HorizontalContentAlignment="Stretch">
+                            <Grid>
+                                <StackPanel Margin="32,0,28,0"><TextBlock Text="{Binding KnowledgePickerTitle}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding KnowledgeCountText}" Style="{StaticResource CaptionStyle}" FontSize="12" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/></StackPanel>
                                 <TextBlock Text="&#xE8B7;" Style="{StaticResource FluentIconStyle}" Foreground="{DynamicResource PrimaryBrush}" HorizontalAlignment="Left"/>
                                 <TextBlock Text="&#xE76C;" Style="{StaticResource FluentIconStyle}" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
                             </Grid>
                         </Button>
-                    </Grid>
+                    </WrapPanel>
                 </Grid>
             </Border>
 
