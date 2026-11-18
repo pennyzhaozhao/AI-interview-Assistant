@@ -6,8 +6,6 @@
         xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
         Title="Interview AI"
         Icon="/InterviewAssistant;component/Assets/InterviewAssistant.ico"
-        Width="1280" Height="820"
-        MinWidth="980" MinHeight="680"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
