@@ -33,6 +33,7 @@ public partial class PrompterWindow : Window
     private nint _windowHandle;
     private int _turnIndex = -1;
     private bool _isCompact;
+    private bool _hasUserMoved;
     private PrompterAudioMode _audioMode = PrompterAudioMode.Microphone;
     private bool _isResizing;
     private double _expandedHeight = DefaultExpandedHeight;
@@ -84,6 +85,10 @@ public partial class PrompterWindow : Window
         _session = session;
         _isDirectorMode = directorMode || string.Equals(session.Kind, "director", StringComparison.OrdinalIgnoreCase);
         InitializeComponent();
+        _audioMode = Enum.TryParse<PrompterAudioMode>(_store.Data.Preferences.PrompterAudioMode, true, out var savedAudioMode)
+            ? savedAudioMode
+            : PrompterAudioMode.Microphone;
+        ApplyAudioModeVisuals();
         if (_store.Data.Preferences.HidePrompterFromCapture && !CaptureExclusion.LayeredWindowsSupported)
         {
             // Compatibility mode: layered windows cannot be hidden from capture on this PC.
@@ -279,7 +284,7 @@ public partial class PrompterWindow : Window
         PositionAtTopCenter();
         ApplyCaptureExclusion();
         Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(ApplyCaptureExclusion));
-        if (_audioMode == PrompterAudioMode.Microphone) _ = StartMicrophoneRecognitionAsync();
+        if (_audioMode != PrompterAudioMode.Muted) _ = _speechRecognition.StartAsync(SpeechLanguageCode(), _audioMode == PrompterAudioMode.SystemAudio);
         // Window.Opacity only works on layered windows; in compatibility mode fade the content instead.
         var fadeTarget = AllowsTransparency ? (UIElement)this : (UIElement)Content;
         fadeTarget.Opacity = 0;
@@ -360,8 +365,16 @@ public partial class PrompterWindow : Window
         else Dispatcher.BeginInvoke(new Action(ApplyCaptureExclusion));
     }
 
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        DragMove();
+        _hasUserMoved = true;
+    }
+
     private void PositionAtTopCenter()
     {
+        if (_hasUserMoved) return;
         var area = SystemParameters.WorkArea;
         Left = area.Left + Math.Max(0, (area.Width - ActualWidth) / 2);
         Top = area.Top;
@@ -712,16 +725,21 @@ public partial class PrompterWindow : Window
         });
     }
 
-    private void SetAudioMode(PrompterAudioMode mode)
+    private void ApplyAudioModeVisuals()
     {
-        _audioMode = mode;
-        AudioIcon.Text = mode switch
+        AudioIcon.Text = _audioMode switch
         {
             PrompterAudioMode.SystemAudio => "\uE767",
             PrompterAudioMode.Muted => "\uE74F",
             _ => "\uE720"
         };
-        AudioIcon.Foreground = (Brush)FindResource(mode == PrompterAudioMode.Muted ? "IslandSecondary" : "IslandYellow");
+        AudioIcon.Foreground = (Brush)FindResource(_audioMode == PrompterAudioMode.Muted ? "IslandSecondary" : "IslandYellow");
+    }
+
+    private void SetAudioMode(PrompterAudioMode mode)
+    {
+        _audioMode = mode;
+        ApplyAudioModeVisuals();
         AudioInputChanged?.Invoke(mode);
         if (mode != PrompterAudioMode.Muted) _ = _speechRecognition.StartAsync(SpeechLanguageCode(), mode == PrompterAudioMode.SystemAudio);
         else _speechRecognition.Stop();
@@ -731,6 +749,8 @@ public partial class PrompterWindow : Window
             // Drop a speech-connection error that was on screen; it no longer applies once muted.
             if (_showingError && PreparingPanel.Visibility != Visibility.Visible) RefreshTurns(showLatest: false);
         }
+        _store.Data.Preferences.PrompterAudioMode = _audioMode.ToString();
+        _store.ScheduleSave();
     }
 
     private void CodeButton_Click(object sender, RoutedEventArgs e)
@@ -833,8 +853,6 @@ public partial class PrompterWindow : Window
         if (!configured.Equals("followApp", StringComparison.OrdinalIgnoreCase)) return configured;
         return _store.Data.Preferences.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-Hans" : "en";
     }
-
-    private Task<bool> StartMicrophoneRecognitionAsync() => _speechRecognition.StartAsync(SpeechLanguageCode());
 
     private void SpeechRecognition_Recognized(string text)
     {
