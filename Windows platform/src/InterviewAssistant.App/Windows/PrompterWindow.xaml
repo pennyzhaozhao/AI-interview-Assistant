@@ -38,7 +38,7 @@
             <Grid Margin="16,8,16,0">
                 <Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition Height="*"/><RowDefinition Height="48"/><RowDefinition Height="8"/></Grid.RowDefinitions>
 
-                <Grid Grid.Row="0" Margin="10,0">
+                <Grid Grid.Row="0" Margin="10,0" Background="Transparent" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="130"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="QuestionText" Text="Waiting for interview question..." Foreground="{StaticResource IslandSecondary}" FontSize="12" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">

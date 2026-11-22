@@ -37,6 +37,7 @@ public sealed class AppPreferences
     public double ScreenshotRegionHeight { get; set; }
     public bool ScreenshotRegionUsesPhysicalPixels { get; set; }
     public string SpeechRecognitionEngine { get; set; } = "volcano";
+    public string PrompterAudioMode { get; set; } = "Microphone";
     public string SpeechResourceId { get; set; } = "volc.seedasr.sauc.duration";
     /// <summary>0…1, higher is stricter when deciding whether a speaker is the candidate (macOS default 0.5).</summary>
     public double SpeakerRecognitionSensitivity { get; set; } = 0.5;
