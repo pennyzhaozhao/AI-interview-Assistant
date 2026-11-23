@@ -114,28 +114,42 @@ final class SpeechEngine {
     }
 
     func requestPermissions() async -> Bool {
-        let speechOK = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            SFSpeechRecognizer.requestAuthorization { auth in
+        let speechOK = await Self.requestSpeechAuthorization()
+        guard audioSource == .microphone else { return speechOK }
+        let micOK = await Self.requestMicrophoneAccess()
+        return speechOK && micOK
+    }
+
+    /// TCC invokes these completion handlers on an arbitrary background queue.
+    /// They must be formed in a nonisolated context; a closure created inside this
+    /// @MainActor type inherits main-actor isolation and Swift 6 traps in
+    /// `_dispatch_assert_queue_fail` when the framework calls it off the main thread.
+    private nonisolated static func requestSpeechAuthorization() async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            SFSpeechRecognizer.requestAuthorization { @Sendable auth in
                 cont.resume(returning: auth == .authorized)
             }
         }
-        guard audioSource == .microphone else { return speechOK }
+    }
+
+    private nonisolated static func requestMicrophoneAccess() async -> Bool {
         #if os(iOS)
-        let micOK = await AVAudioApplication.requestRecordPermission()
+        return await AVAudioApplication.requestRecordPermission()
         #else
         let currentMicStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-        let micOK = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+        return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             switch currentMicStatus {
             case .authorized:
                 cont.resume(returning: true)
             case .notDetermined:
-                AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+                AVCaptureDevice.requestAccess(for: .audio) { @Sendable granted in
+                    cont.resume(returning: granted)
+                }
             default:
                 cont.resume(returning: false)
             }
         }
         #endif
-        return speechOK && micOK
     }
 
     func start() async -> Bool {
@@ -536,27 +550,24 @@ final class SpeechEngine {
         ]
         for buffer in buffers { request.append(buffer) }
         request.endAudio()
-        return await withCheckedContinuation { cont in
-            var finished = false
-            var bestPartial: String?
-            recognizer.recognitionTask(with: request) { result, error in
+        return await runRecognition(recognizer: recognizer, request: request)
+    }
+
+    /// Speech.framework may deliver results on its own background queue. Build the
+    /// result handler outside @MainActor so it is not tagged as main-actor isolated
+    /// (otherwise Swift 6 traps in `_dispatch_assert_queue_fail`), then hop to main.
+    private nonisolated static func runRecognition(
+        recognizer: SFSpeechRecognizer,
+        request: SFSpeechAudioBufferRecognitionRequest
+    ) async -> String? {
+        await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let state = RecognitionContinuationState(cont)
+            recognizer.recognitionTask(with: request) { @Sendable result, error in
+                let text = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal ?? false
+                let failed = error != nil
                 DispatchQueue.main.async {
-                    guard !finished else { return }
-                    if let result {
-                        let text = result.bestTranscription.formattedString
-                        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            bestPartial = text
-                        }
-                    }
-                    // Wait for isFinal on both platforms — endAudio() guarantees the
-                    // recognizer will finalize. Fall back to bestPartial on error.
-                    if let result, result.isFinal {
-                        finished = true
-                        cont.resume(returning: result.bestTranscription.formattedString)
-                    } else if error != nil {
-                        finished = true
-                        cont.resume(returning: bestPartial)
-                    }
+                    state.receive(text: text, isFinal: isFinal, failed: failed)
                 }
             }
         }
@@ -575,6 +586,33 @@ final class SpeechEngine {
         return await recognize(buffers: [buffer], languageCode: languageCode)
     }
 
+}
+
+/// Main-queue-confined bookkeeping for one recognition request.
+private final class RecognitionContinuationState: @unchecked Sendable {
+    private var continuation: CheckedContinuation<String?, Never>?
+    private var bestPartial: String?
+
+    init(_ continuation: CheckedContinuation<String?, Never>) {
+        self.continuation = continuation
+    }
+
+    /// Always called on the main queue.
+    func receive(text: String?, isFinal: Bool, failed: Bool) {
+        guard let continuation else { return }
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            bestPartial = text
+        }
+        // Wait for isFinal on both platforms — endAudio() guarantees the
+        // recognizer will finalize. Fall back to bestPartial on error.
+        if isFinal {
+            self.continuation = nil
+            continuation.resume(returning: text)
+        } else if failed {
+            self.continuation = nil
+            continuation.resume(returning: bestPartial)
+        }
+    }
 }
 
 // MARK: - SpeechAudioProcessor
