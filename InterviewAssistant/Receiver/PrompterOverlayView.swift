@@ -66,6 +66,7 @@ struct PrompterOverlayView: View {
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
     @StateObject private var screenshotCapture = ScreenshotCapture()
     @State private var showSetupRegionAlert = false
+    @Environment(PrompterDockState.self) private var dockState: PrompterDockState?
     #endif
     private let updateTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -89,16 +90,23 @@ struct PrompterOverlayView: View {
                 let currentHeight = collapsedHeight + (geometry.size.height - collapsedHeight) * islandExpansion
                 let currentTopInset = 8 + (16 - 8) * islandExpansion
                 let currentBottomRadius = 8 + (18 - 8) * islandExpansion
+                let islandShape = TextreamDynamicIslandShape(
+                    topInset: currentTopInset,
+                    bottomRadius: currentBottomRadius,
+                    dockProgress: showsIslandShape ? 1 : 0
+                )
 
                 ZStack(alignment: .top) {
-                    TextreamDynamicIslandShape(
-                        topInset: currentTopInset,
-                        bottomRadius: currentBottomRadius
-                    )
-                    .fill(Color.black.opacity(0.78))
+                    islandShape
+                        .fill(Color.black.opacity(0.78))
+                        .overlay {
+                            // Floating cards get a hairline so they read against any background.
+                            islandShape
+                                .stroke(Color.white.opacity(showsIslandShape ? 0 : 0.14), lineWidth: 1)
+                        }
 
                     VStack(spacing: 0) {
-                        Color.clear.frame(height: notchMenuBarHeight)
+                        Color.clear.frame(height: islandTopSpacing)
                         notchHeader
                         compactAnswerArea
                         islandToolbar
@@ -110,6 +118,13 @@ struct PrompterOverlayView: View {
                     .allowsHitTesting(islandContentVisible)
                     .accessibilityHidden(!islandContentVisible)
                 }
+                #if os(macOS)
+                .overlay {
+                    if islandContentVisible {
+                        islandEdgeDragRegions(sideInset: currentTopInset)
+                    }
+                }
+                #endif
                 .overlay(alignment: .bottom) {
                     islandResizeHandle
                         .opacity(islandContentVisible ? 1 : 0)
@@ -194,6 +209,37 @@ struct PrompterOverlayView: View {
     }
 
     #if os(macOS)
+    /// Docked: fused into the notch/menu bar. Floating: an all-round rounded card.
+    private var isDocked: Bool { dockState?.isDocked ?? true }
+    private var showsIslandShape: Bool { dockState?.showsIslandShape ?? true }
+
+    /// Docked content clears the menu bar/notch; a floating card only needs a small margin.
+    private var islandTopSpacing: CGFloat { isDocked ? notchMenuBarHeight : 4 }
+
+    /// Transparent drag handles along the top, left, right and bottom edges of the
+    /// expanded island. The middle stays free for content; the bottom centre is left
+    /// to the height-resize handle.
+    private func islandEdgeDragRegions(sideInset: CGFloat) -> some View {
+        let edgeThickness: CGFloat = 10
+        // Keep clear of the answer area's scroller on the right edge.
+        let sideWidth = sideInset + 8
+        return VStack(spacing: 0) {
+            PrompterTitleBarDragRegion()
+                .frame(height: max(islandTopSpacing, edgeThickness))
+            HStack(spacing: 0) {
+                PrompterTitleBarDragRegion().frame(width: sideWidth)
+                Color.clear.allowsHitTesting(false)
+                PrompterTitleBarDragRegion().frame(width: sideWidth)
+            }
+            HStack(spacing: 0) {
+                PrompterTitleBarDragRegion()
+                Color.clear.frame(width: 88).allowsHitTesting(false)
+                PrompterTitleBarDragRegion()
+            }
+            .frame(height: edgeThickness)
+        }
+    }
+
     private var notchMenuBarHeight: CGFloat {
         guard let screen = currentPrompterWindow()?.screen ?? NSScreen.main else { return 37 }
         return max(0, screen.frame.maxY - screen.visibleFrame.maxY)
@@ -212,6 +258,9 @@ struct PrompterOverlayView: View {
         )
     }
     #else
+    private var isDocked: Bool { true }
+    private var showsIslandShape: Bool { true }
+    private var islandTopSpacing: CGFloat { notchMenuBarHeight }
     private var notchMenuBarHeight: CGFloat { 37 }
     private func logPrompterGeometry(_ event: String) {}
     #endif
@@ -323,7 +372,17 @@ struct PrompterOverlayView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L.t("Restore"))
-        .padding(.top, notchMenuBarHeight + 2)
+        .background {
+            if !isDocked {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.black.opacity(0.78))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    )
+            }
+        }
+        .padding(.top, isDocked ? notchMenuBarHeight + 2 : 6)
         .frame(width: 80)
         .frame(maxHeight: .infinity, alignment: .top)
         .transition(.opacity)
@@ -391,8 +450,9 @@ struct PrompterOverlayView: View {
         } else {
             menuBarHeight = 37
         }
+        let minimizedHeight: CGFloat = isDocked ? max(54, menuBarHeight + 26) : 48
         (currentPrompterWindow() as? PrompterPanel)?.resizeIsland(
-            to: NSSize(width: 80, height: max(54, menuBarHeight + 26)),
+            to: NSSize(width: 80, height: minimizedHeight),
             animated: true
         )
         #endif
@@ -2268,15 +2328,22 @@ private struct DeleteCaptureDetailShape: Shape {
     }
 }
 
+/// The prompter body. At `dockProgress == 1` it is the notch island: flush with
+/// the screen top, concave "ears" flaring into the menu bar and rounded bottom
+/// corners. At `dockProgress == 0` it is a floating card with all four corners
+/// rounded. In between, the ears retract first and the top corners then round
+/// off, so the outline never self-intersects while it morphs.
 private struct TextreamDynamicIslandShape: Shape {
     var topInset: CGFloat = 16
     var bottomRadius: CGFloat = 18
+    var dockProgress: CGFloat = 1
 
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(topInset, bottomRadius) }
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat> {
+        get { AnimatablePair(AnimatablePair(topInset, bottomRadius), dockProgress) }
         set {
-            topInset = newValue.first
-            bottomRadius = newValue.second
+            topInset = newValue.first.first
+            bottomRadius = newValue.first.second
+            dockProgress = newValue.second
         }
     }
 
@@ -2284,28 +2351,36 @@ private struct TextreamDynamicIslandShape: Shape {
         let width = rect.width
         let height = rect.height
         let inset = min(topInset, width / 2)
-        let radius = max(0, min(bottomRadius, min(width / 2 - inset, height - inset)))
-        var path = Path()
+        let progress = min(max(dockProgress, 0), 1)
+        let bodyWidth = max(0, width - inset * 2)
+        let maxRadius = max(0, min(bodyWidth / 2, height / 2))
+        let bottom = min(bottomRadius, maxRadius)
+        // Ear size (concave, outward) and top corner radius (convex, inward);
+        // at most one of them is non-zero at any time.
+        let ear = min(inset, height / 2) * max(0, progress * 2 - 1)
+        let top = min(bottomRadius, maxRadius) * max(0, 1 - progress * 2)
 
-        path.move(to: CGPoint(x: 0, y: 0))
+        var path = Path()
+        path.move(to: CGPoint(x: inset + top - ear, y: 0))
+        path.addLine(to: CGPoint(x: width - inset - top + ear, y: 0))
         path.addQuadCurve(
-            to: CGPoint(x: inset, y: inset),
-            control: CGPoint(x: inset, y: 0)
+            to: CGPoint(x: width - inset, y: top + ear),
+            control: CGPoint(x: width - inset, y: 0)
         )
-        path.addLine(to: CGPoint(x: inset, y: height - radius))
+        path.addLine(to: CGPoint(x: width - inset, y: height - bottom))
         path.addQuadCurve(
-            to: CGPoint(x: inset + radius, y: height),
-            control: CGPoint(x: inset, y: height)
-        )
-        path.addLine(to: CGPoint(x: width - inset - radius, y: height))
-        path.addQuadCurve(
-            to: CGPoint(x: width - inset, y: height - radius),
+            to: CGPoint(x: width - inset - bottom, y: height),
             control: CGPoint(x: width - inset, y: height)
         )
-        path.addLine(to: CGPoint(x: width - inset, y: inset))
+        path.addLine(to: CGPoint(x: inset + bottom, y: height))
         path.addQuadCurve(
-            to: CGPoint(x: width, y: 0),
-            control: CGPoint(x: width - inset, y: 0)
+            to: CGPoint(x: inset, y: height - bottom),
+            control: CGPoint(x: inset, y: height)
+        )
+        path.addLine(to: CGPoint(x: inset, y: top + ear))
+        path.addQuadCurve(
+            to: CGPoint(x: inset + top - ear, y: 0),
+            control: CGPoint(x: inset, y: 0)
         )
         path.closeSubpath()
         return path

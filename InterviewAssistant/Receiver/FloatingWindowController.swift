@@ -2,11 +2,34 @@
 import AppKit
 import SwiftUI
 
+/// Visual docking state shared with the SwiftUI content of a prompter panel.
+/// `isDocked` drives the notch-island ⇄ floating-card morph; `isInSnapZone`
+/// previews the island shape while a floating panel is dragged near the top.
+@MainActor
+@Observable
+final class PrompterDockState {
+    var isDocked = true
+    var isInSnapZone = false
+
+    /// The island shape is shown when docked or about to dock.
+    var showsIslandShape: Bool { isDocked || isInSnapZone }
+}
+
 final class PrompterPanel: NSPanel {
     static weak var latestPanel: PrompterPanel?
+    /// Distance from the screen top at which a dragged panel snaps back into the notch.
+    private static let snapDistance: CGFloat = 36
+    private static let dragThreshold: CGFloat = 3
+
+    let dockState = PrompterDockState()
     private weak var notchScreen: NSScreen?
     private var isApplyingNotchFrame = false
+    /// True while the panel floats freely; false while it is fused into the notch.
     private(set) var hasUserMoved = false
+    private var dragStartMouse: NSPoint?
+    private var dragStartOrigin: NSPoint?
+    private var isDraggingPanel = false
+    private var dockGeneration = 0
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -45,10 +68,108 @@ final class PrompterPanel: NSPanel {
         }
     }
 
-    func beginUserDrag(with event: NSEvent) {
-        guard event.type == .leftMouseDown else { return }
+    // MARK: - Interactive drag (top, side and bottom edges)
+
+    func beginInteractiveDrag() {
+        dragStartMouse = NSEvent.mouseLocation
+        dragStartOrigin = frame.origin
+        isDraggingPanel = false
+    }
+
+    func continueInteractiveDrag() {
+        guard let startMouse = dragStartMouse, let startOrigin = dragStartOrigin else { return }
+        let mouse = NSEvent.mouseLocation
+        let dx = mouse.x - startMouse.x
+        let dy = mouse.y - startMouse.y
+        if !isDraggingPanel {
+            guard hypot(dx, dy) >= Self.dragThreshold else { return }
+            isDraggingPanel = true
+            NSCursor.closedHand.push()
+            undock()
+        }
+
+        let targetScreen = screen(containing: mouse)
+        var origin = NSPoint(x: startOrigin.x + dx, y: startOrigin.y + dy)
+        // The floating card may tuck under the menu bar, but never past the screen top.
+        origin.y = min(origin.y, targetScreen.frame.maxY - frame.height)
+        super.setFrameOrigin(origin)
+
+        let inSnapZone = isInSnapZone(on: targetScreen)
+        if inSnapZone != dockState.isInSnapZone {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                dockState.isInSnapZone = inSnapZone
+            }
+        }
+    }
+
+    func endInteractiveDrag() {
+        defer {
+            dragStartMouse = nil
+            dragStartOrigin = nil
+        }
+        guard isDraggingPanel else { return }
+        isDraggingPanel = false
+        NSCursor.pop()
+        let targetScreen = screen(containing: NSEvent.mouseLocation)
+        if isInSnapZone(on: targetScreen) {
+            dock(on: targetScreen)
+        } else if dockState.isInSnapZone {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                dockState.isInSnapZone = false
+            }
+        }
+    }
+
+    /// Detach from the notch: the frame stops being re-anchored and the
+    /// SwiftUI content morphs into an all-round rounded card.
+    private func undock() {
+        dockGeneration += 1
         hasUserMoved = true
-        performDrag(with: event)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            dockState.isDocked = false
+            dockState.isInSnapZone = false
+        }
+    }
+
+    /// Slide back to the top centre of `screen` and fuse with the notch.
+    func dock(on targetScreen: NSScreen) {
+        dockGeneration += 1
+        let generation = dockGeneration
+        notchScreen = targetScreen
+        let target = NSRect(
+            x: targetScreen.frame.midX - frame.width / 2,
+            y: targetScreen.frame.maxY - frame.height,
+            width: frame.width,
+            height: frame.height
+        )
+        let duration = 0.32
+        withAnimation(.spring(response: duration + 0.06, dampingFraction: 0.82)) {
+            dockState.isDocked = true
+            dockState.isInSnapZone = false
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            animator().setFrame(target, display: true)
+        }
+        // Re-enable notch anchoring once the slide has finished, unless the user
+        // grabbed the panel again in the meantime.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(Int((duration + 0.02) * 1_000)))
+            guard let self, self.dockGeneration == generation else { return }
+            self.hasUserMoved = false
+            self.anchorToNotch(on: targetScreen)
+        }
+    }
+
+    private func isInSnapZone(on targetScreen: NSScreen) -> Bool {
+        frame.maxY >= targetScreen.frame.maxY - Self.snapDistance
+    }
+
+    private func screen(containing point: NSPoint) -> NSScreen {
+        NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
+            ?? screen ?? NSScreen.main ?? NSScreen.screens[0]
     }
 
     func resizeIsland(to size: NSSize, animated: Bool = false) {
@@ -178,16 +299,38 @@ final class PrompterPanel: NSPanel {
     }
 }
 
-/// A transparent AppKit hit region that uses the native window-drag loop. It is
-/// installed only behind the expanded title row, so compact mode remains a
-/// click-to-restore control and is intentionally not draggable.
+/// A transparent AppKit hit region that moves the prompter panel. It is placed
+/// behind the title row and along the top, side and bottom edges of the
+/// expanded island. Dragging a docked panel detaches it into a floating card;
+/// releasing it near the top of a screen fuses it back into the notch.
+/// Compact (minimized) mode remains a click-to-restore control and is not draggable.
 struct PrompterTitleBarDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class DragView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            addCursorRect(bounds, cursor: .openHand)
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.invalidateCursorRects(for: self)
+        }
+
         override func mouseDown(with event: NSEvent) {
-            (window as? PrompterPanel)?.beginUserDrag(with: event)
+            (window as? PrompterPanel)?.beginInteractiveDrag()
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            (window as? PrompterPanel)?.continueInteractiveDrag()
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            (window as? PrompterPanel)?.endInteractiveDrag()
         }
     }
 }
@@ -215,7 +358,7 @@ final class FloatingWindowController<Content: View>: NSWindowController {
         panel.becomesKeyOnlyIfNeeded = true
         panel.setHiddenFromScreenCapture(UserDefaults.standard.bool(forKey: AppPreferenceKey.hiddenFromScreenCapture))
 
-        let hostingView = NSHostingView(rootView: rootView)
+        let hostingView = NSHostingView(rootView: rootView.environment(panel.dockState))
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }
