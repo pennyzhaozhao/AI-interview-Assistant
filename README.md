@@ -9,7 +9,7 @@
 
   语音识别 · 实时回答 · 个人知识库 · 截图问答 · 模拟面试 · 本地复盘
 
-  🌐 **官网：[pennyzhaozhao.github.io/AI-interview-Assistant](https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=zh)** · [下载最新版本](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest)
+  🌐 **官网：[AI-interview-Assistant](https://pennyzhaozhao.github.io/AI-interview-Assistant/?lang=zh)** · [下载最新版本](https://github.com/pennyzhaozhao/AI-interview-Assistant/releases/latest)
 
   [功能](#功能概览) · [下载安装](#快速开始) · [平台差异](#平台功能差异) · [模型配置](#选择-ai-模型) · [使用说明](#使用指南) · [数据与隐私](#数据存储与隐私) · [常见问题](#常见问题)
 </div>
@@ -162,40 +162,6 @@ AI 请求由应用直接发送到用户自己选择的模型服务商。
 
 > [!NOTE]
 > Windows 版目前没有代码签名证书。首次运行时如果出现“Windows 已保护你的电脑”，点击 **更多信息 → 仍要运行** 即可。
-
-开发者也可以按照以下步骤从源码构建 macOS 版；Windows 版见 [从源码构建 Windows 版](#从源码构建-windows-版)。
-
-### 1. 克隆仓库
-
-```bash
-git clone https://github.com/pennyzhaozhao/AI-interview-Assistant.git
-cd AI-interview-Assistant
-```
-
-### 2. 打开工程
-
-```bash
-open InterviewAssistant.xcodeproj
-```
-
-桌面客户端不包含 Firebase、Google Sign-In 或 Supabase SDK。可选的诊断日志接收端位于 `support-log-worker/`，客户端通过普通 HTTPS 调用，不依赖 Cloudflare SDK。
-
-### 3. 配置签名
-
-在 Xcode 中依次选择：
-
-1. `InterviewAssistant` Project；
-2. `InterviewAssistant` Target；
-3. `Signing & Capabilities`；
-4. 选择自己的 Development Team；
-5. 将默认的 `com.pennyzhaozhao.interviewassistant` 改成自己控制的唯一 Bundle Identifier。
-
-个人调试可以使用 Personal Team。准备公开分发时，应使用自己的 Apple Developer 身份完成签名和公证。
-
-### 4. 运行
-
-- 选择 `InterviewAssistant` Scheme 与 `My Mac`；
-- 按 `⌘R` 构建并运行。
 
 ### 从源码构建 Windows 版
 
@@ -508,7 +474,7 @@ Windows 版的对应位置：
 
 ### Windows 首次运行提示“Windows 已保护你的电脑”
 
-Windows 版暂未购买代码签名证书，SmartScreen 会对新下载的程序显示该提示。点击 **更多信息 → 仍要运行** 即可。请只从本仓库的 GitHub Releases 下载。
+点击 **更多信息 → 仍要运行** 即可。请只从本仓库的 GitHub Releases 下载。
 
 ### 截图快捷键无响应
 
@@ -529,7 +495,7 @@ Windows 版暂未购买代码签名证书，SmartScreen 会对新下载的程序
 
 - 确认选择目录时没有取消文件访问授权；
 - 等待应用显示复制成功；
-- 完全退出 InterviewAssistant，而不是只关闭窗口；
+- 完全退出 InterviewAssistant;
 - 重新启动后再检查“设置 → 数据存储”；
 - 不要在应用运行时手动移动 `.store`、`-wal` 或 `-shm` 文件。
 
@@ -585,79 +551,6 @@ macOS 实现使用固定版本 `sherpa-onnx 1.13.6`（Apache-2.0）及其 `onnxr
 └── README_EN.md                    # English documentation
 ```
 
-## 构建 macOS DMG
-
-macOS 版使用 Sparkle 2 提供应用内更新。首次准备发布前，需要完成一次密钥配置：
-
-1. 从 Sparkle 2.10.0 官方发布包的 `bin/` 目录运行 `generate_keys`。私钥默认保存在当前开发者账户的钥匙串中，不要导出或提交到仓库；
-2. 确认 `InterviewAssistant/Resources/Info.plist` 的 `SUPublicEDKey` 与 `generate_keys -p` 输出的公钥一致；
-3. 确认 Pages 已部署 `website/appcast.xml`，公开地址为 `https://pennyzhaozhao.github.io/AI-interview-Assistant/appcast.xml`。
-
-本地预览构建：
-
-```bash
-./scripts/build-dmg.sh
-```
-
-使用 Developer ID 正式签名并自动提交 Apple 公证：
-
-```bash
-SIGNED_RELEASE=1 \
-NOTARY_PROFILE=InterviewAssistant-notary \
-./scripts/build-dmg.sh
-```
-
-其中 `NOTARY_PROFILE` 是通过 `xcrun notarytool store-credentials` 保存到钥匙串的凭证名称。构建产物位于 `dist/`。公开分发前请确认：
-
-1. 使用自己的 Developer ID Application 证书；
-2. Apple Notary Service 返回 `Accepted`；
-3. 公证票据已成功 staple 和 validate；
-4. 在没有开发环境的 Mac 上测试安装和首次授权；
-5. 确认产物中没有 API Key、个人证书或本地数据库。
-
-### 发布 macOS 更新
-
-每次发布按以下顺序操作：
-
-1. 将 Xcode 工程里的 `MARKETING_VERSION` 改为与 GitHub tag 一致的版本号（例如 `1.2.0`），并将 `CURRENT_PROJECT_VERSION` **至少加 1**。Sparkle 使用 `CFBundleVersion`（即 `CURRENT_PROJECT_VERSION`）判断新旧，因此 build 号绝不能复用或降低；
-2. 使用 Xcode Archive，或运行上面的签名构建命令，完成 Developer ID 签名与 Apple 公证，再生成 DMG。Sparkle 自带的 `Installer.xpc`、`Downloader.xpc`、`Autoupdate` 和 `Updater.app` 必须按由内到外的顺序签名；不要使用 `--deep` 重签 Sparkle；
-3. 使用 Sparkle 的 `sign_update` 签名 DMG 并生成 appcast 条目：
-
-   ```bash
-   SIGN_UPDATE=/path/to/Sparkle/bin/sign_update \
-   ./scripts/release-mac-appcast.sh \
-     dist/InterviewAssistant-1.2.0-macOS.dmg 1.2.0 4
-   ```
-
-   `sign_update` 只会从钥匙串使用 `generate_keys` 保存的私钥；脚本不会读取或打印私钥。若 Xcode 的 SPM 产物位于 `build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update`，脚本会自动找到它；
-4. 创建或更新 GitHub Release `v1.2.0`，上传文件名完全一致的 DMG。Windows 的 Setup.exe/exe 继续放在同一个 Release；
-5. 提交并推送更新后的 `website/appcast.xml`，等待 GitHub Pages 部署；
-6. 用较低 build 的已安装版本验证完整流程：发现更新、应用内下载进度、安装并重新启动，以及启动后的“更新成功”提示。
-
-Sparkle 会每天自动检查一次。菜单栏和“关于”页的“检查更新”按钮也会立即启动标准 Sparkle 更新界面，用户不需要打开浏览器或 GitHub。
-
-## 发布 Windows 版
-
-仓库中的 GitHub Actions 流程 `.github/workflows/windows-release.yml` 会自动打包 Windows 版：
-
-- 在 GitHub 上发布新的 Release（tag 形如 `v1.2.0`）后，会自动构建安装版 `InterviewAssistant-<版本>-Windows-x64-Setup.exe`（Inno Setup，脚本见 `Windows platform/installer/`）和便携版 `InterviewAssistant-<版本>-Windows-x64.exe`，并上传到该 Release；
-- 也可以在 **Actions → Windows release → Run workflow** 中手动运行，为已有 tag 构建并上传；
-- 版本号取自 tag，应用内“检查更新”会据此比较版本。
-
-建议 macOS 的 DMG 与 Windows 的 exe 放在同一个 Release 中，两端的“检查更新”都会读取最新 Release。
-
-## 开发与安全说明
-
-- 新增外部请求时，必须明确记录数据会发送到哪里；
-- 不要提交 API Key、Token、证书、配置文件或个人数据库；
-- 新增模型服务商时，将 URL、鉴权和响应解析集中在 `AIService.swift`；
-- 修改 SwiftData 模型时，应设计已有用户的数据迁移方案；
-- 修改权限时，应同步更新 `Info.plist`、entitlements 和 README；
-- 提交前至少验证 macOS 与 Windows 构建；
-- `.gitignore` 已排除数据库、凭证、Xcode 用户数据和常见构建产物。
-
-如果发现凭证泄露、隐私数据暴露或其他安全问题，请不要把敏感内容粘贴到公开 Issue。可以先提交不含敏感细节的安全报告，再通过仓库维护者公开提供的安全渠道继续沟通。
-
 ## 贡献
 
 欢迎提交 Issue 和 Pull Request：
@@ -678,7 +571,7 @@ git push origin feature/your-feature
 
 ## 开源许可证
 
-本项目使用 [MIT License](./LICENSE)。你可以使用、复制、修改和分发代码，但软件按“原样”提供，不附带任何形式的担保。
+本项目使用 [MIT License](./LICENSE)。你可以使用、复制、修改和分发代码.
 
 ---
 
