@@ -137,6 +137,9 @@ public partial class PrompterWindow : Window
         // Like macOS: when a voice is selected in Settings › Voices, the candidate's own speech is ignored.
         _speechRecognition.FilterCandidateVoice = _audioMode == PrompterAudioMode.Microphone;
         _speechRecognition.CandidateSpeechDetected += SpeechRecognition_CandidateSpeechDetected;
+        // Content filter: also ignore microphone transcripts that read like the candidate's own answer.
+        _speechRecognition.SelfSpeechFiltered += SpeechRecognition_SelfSpeechFiltered;
+        _speechRecognition.AnswerTextProvider = CurrentAnswerForSpeechFilter;
         RefreshTurns(showLatest: true);
     }
 
@@ -172,6 +175,8 @@ public partial class PrompterWindow : Window
         _speechRecognition.PartialRecognized -= SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged -= SpeechRecognition_StatusChanged;
         _speechRecognition.CandidateSpeechDetected -= SpeechRecognition_CandidateSpeechDetected;
+        _speechRecognition.SelfSpeechFiltered -= SpeechRecognition_SelfSpeechFiltered;
+        _speechRecognition.AnswerTextProvider = null;
         _speechRecognition.Dispose();
         if (_windowHandle != nint.Zero) _ = NativeMethods.SetWindowDisplayAffinity(_windowHandle, 0);
         if (_session.EndedAt is null && _session.Turns.Count > 0)
@@ -971,6 +976,28 @@ public partial class PrompterWindow : Window
         if (_audioMode == PrompterAudioMode.Muted) return;
         _lastRecognizedSpeechAt = DateTimeOffset.UtcNow;
         Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = Localized("🙋 You are answering", "🙋 你在作答")));
+    }
+
+    private void SpeechRecognition_SelfSpeechFiltered(string text)
+    {
+        if (_audioMode == PrompterAudioMode.Muted) return;
+        _lastRecognizedSpeechAt = DateTimeOffset.UtcNow;
+        Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = Localized("🙋 Sounds like your answer — ignored", "🙋 内容像是你的回答，已忽略")));
+    }
+
+    /// <summary>Called from the speech thread; reads the visible answer defensively.</summary>
+    private string CurrentAnswerForSpeechFilter()
+    {
+        try
+        {
+            var turns = _session.Turns;
+            var index = _turnIndex;
+            return index >= 0 && index < turns.Count ? turns[index].Answer ?? "" : "";
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     private void SpeechRecognition_PartialRecognized(string text)
