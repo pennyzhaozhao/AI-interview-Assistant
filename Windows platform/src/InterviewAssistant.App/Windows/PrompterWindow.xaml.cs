@@ -885,6 +885,9 @@ public partial class PrompterWindow : Window
                 return;
             }
         }
+        // Once the protection window has elapsed and this is accepted as a real new
+        // question, remove any fragments that were held in the yellow confirmation bar.
+        ClearPendingInterrupt();
         _pendingSpeechQuestion = MergeSpeechFragments(_pendingSpeechQuestion, text);
         _speechDebounceTimer.Stop();
         _speechDebounceTimer.Start();
