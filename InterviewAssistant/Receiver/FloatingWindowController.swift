@@ -30,6 +30,7 @@ final class PrompterPanel: NSPanel {
     private var dragStartOrigin: NSPoint?
     private var isDraggingPanel = false
     private var dockGeneration = 0
+    private var dockAnimationTimer: Timer?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -84,7 +85,6 @@ final class PrompterPanel: NSPanel {
         if !isDraggingPanel {
             guard hypot(dx, dy) >= Self.dragThreshold else { return }
             isDraggingPanel = true
-            NSCursor.closedHand.push()
             undock()
         }
 
@@ -109,7 +109,6 @@ final class PrompterPanel: NSPanel {
         }
         guard isDraggingPanel else { return }
         isDraggingPanel = false
-        NSCursor.pop()
         let targetScreen = screen(containing: NSEvent.mouseLocation)
         if isInSnapZone(on: targetScreen) {
             dock(on: targetScreen)
@@ -124,6 +123,7 @@ final class PrompterPanel: NSPanel {
     /// SwiftUI content morphs into an all-round rounded card.
     private func undock() {
         dockGeneration += 1
+        stopDockAnimation()
         hasUserMoved = true
         withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
             dockState.isDocked = false
@@ -147,20 +147,57 @@ final class PrompterPanel: NSPanel {
             dockState.isDocked = true
             dockState.isInSnapZone = false
         }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            context.allowsImplicitAnimation = true
-            animator().setFrame(target, display: true)
+        startDockAnimation(to: target, duration: duration, generation: generation)
+    }
+
+    /// Slides the frame on the main run loop. `animator().setFrame` must not be
+    /// used here: the animator proxy re-enters this subclass's `setFrame`
+    /// overrides without valid Swift stored properties and crashes.
+    private func startDockAnimation(to target: NSRect, duration: TimeInterval, generation: Int) {
+        stopDockAnimation()
+        let start = frame
+        let startTime = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, self.dockGeneration == generation else {
+                    timer.invalidate()
+                    return
+                }
+                let linear = min(1, (CACurrentMediaTime() - startTime) / duration)
+                // Ease-in-out cubic.
+                let t = linear < 0.5
+                    ? 4 * linear * linear * linear
+                    : 1 - pow(-2 * linear + 2, 3) / 2
+                let rect = NSRect(
+                    x: start.minX + (target.minX - start.minX) * t,
+                    y: start.minY + (target.minY - start.minY) * t,
+                    width: start.width + (target.width - start.width) * t,
+                    height: start.height + (target.height - start.height) * t
+                )
+                self.applyAnimatedFrame(rect)
+                if linear >= 1 {
+                    self.finishDocking()
+                }
+            }
         }
-        // Re-enable notch anchoring once the slide has finished, unless the user
-        // grabbed the panel again in the meantime.
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(Int((duration + 0.02) * 1_000)))
-            guard let self, self.dockGeneration == generation else { return }
-            self.hasUserMoved = false
-            self.anchorToNotch(on: targetScreen)
-        }
+        // `.common` keeps the slide running during event tracking.
+        RunLoop.main.add(timer, forMode: .common)
+        dockAnimationTimer = timer
+    }
+
+    private func applyAnimatedFrame(_ rect: NSRect) {
+        super.setFrame(rect, display: true)
+    }
+
+    private func finishDocking() {
+        stopDockAnimation()
+        hasUserMoved = false
+        anchorToNotch(on: notchScreen)
+    }
+
+    private func stopDockAnimation() {
+        dockAnimationTimer?.invalidate()
+        dockAnimationTimer = nil
     }
 
     private func isInSnapZone(on targetScreen: NSScreen) -> Bool {
@@ -310,16 +347,6 @@ struct PrompterTitleBarDragRegion: NSViewRepresentable {
 
     private final class DragView: NSView {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-        override func resetCursorRects() {
-            super.resetCursorRects()
-            addCursorRect(bounds, cursor: .openHand)
-        }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            window?.invalidateCursorRects(for: self)
-        }
 
         override func mouseDown(with event: NSEvent) {
             (window as? PrompterPanel)?.beginInteractiveDrag()
