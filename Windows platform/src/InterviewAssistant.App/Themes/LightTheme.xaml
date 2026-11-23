@@ -142,6 +142,7 @@
         <Setter Property="CornerRadius" Value="20" />
         <Setter Property="Padding" Value="22" />
         <Setter Property="Margin" Value="0,0,0,18" />
+        <Setter Property="CacheMode" Value="BitmapCache" />
         <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#52677A" BlurRadius="24" ShadowDepth="7" Opacity="0.10"/></Setter.Value></Setter>
     </Style>
 

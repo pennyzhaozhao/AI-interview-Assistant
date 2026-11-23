@@ -14,8 +14,9 @@ public static class SpeechContentFilterLevels
 
     public static readonly string[] All = [Off, Relaxed, Standard, Strict];
 
-    public static string Current =>
-        Normalize(AppServices.Current.DataStore.Data.Preferences.SpeechContentFilterLevel);
+    // This safety filter is always strict. Values persisted by older builds are
+    // intentionally ignored now that the setting is no longer user-facing.
+    public static string Current => Strict;
 
     public static string Normalize(string? value) =>
         All.Contains(value ?? "", StringComparer.OrdinalIgnoreCase) ? value!.ToLowerInvariant() : Standard;

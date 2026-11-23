@@ -42,33 +42,45 @@ public partial class QuestionBankEditorWindow : Window
 
     private Border BuildPrimaryCard(QuestionBankPrimary item, int index)
     {
-        var expander = new Expander { IsExpanded = true };
-        var header = new Grid { Cursor = Cursors.SizeAll };
-        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var drag = new TextBlock { Text = "⋮⋮", FontSize = 18, Foreground = Brush("TextSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-        header.Children.Add(drag);
-        var title = new TextBlock { Text = string.IsNullOrWhiteSpace(item.Question) ? LocalizationManager.Text("Untitled primary question") : item.Question, FontSize = 15, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(title, 1); header.Children.Add(title);
-        var count = new TextBlock { Text = string.Format(LocalizationManager.Text("{0} follow-ups"), item.FollowUps.Count), Foreground = Brush("TextSecondaryBrush"), FontSize = 12, Margin = new Thickness(10, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
-        Grid.SetColumn(count, 2); header.Children.Add(count);
+        var expander = new Expander { IsExpanded = true, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        var header = new Grid { MinHeight = 44 };
+        header.ColumnDefinitions.Add(new());
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var titleStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        titleStack.Children.Add(new TextBlock { Text = $"{LocalizationManager.Text("Primary question")} {index + 1}", FontSize = 16, FontWeight = FontWeights.SemiBold });
+        var preview = new TextBlock { Text = item.Question, FontSize = 12.5, Foreground = Brush("TextSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 520, Margin = new Thickness(0, 3, 0, 0) };
+        titleStack.Children.Add(preview);
+        header.Children.Add(titleStack);
+        var addFollow = PillButton("＋  " + LocalizationManager.Text("Add follow-up"));
+        addFollow.Margin = new Thickness(12, 0, 8, 0);
+        addFollow.Click += (_, _) => { item.FollowUps.Add(new()); RenderQuestions(); };
+        Grid.SetColumn(addFollow, 1); header.Children.Add(addFollow);
+        var removePrimary = IconButton("\uE74D", danger: true);
+        removePrimary.Click += (_, _) => { _document.Questions.Remove(item); RenderQuestions(); };
+        Grid.SetColumn(removePrimary, 2); header.Children.Add(removePrimary);
+        var drag = new TextBlock { Text = "⋮⋮", FontSize = 19, Cursor = Cursors.SizeAll, Foreground = Brush("TextSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 2, 0), ToolTip = LocalizationManager.Text("Drag to reorder") };
+        Grid.SetColumn(drag, 3); header.Children.Add(drag);
         expander.Header = header;
 
-        var body = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
-        body.Children.Add(Label("Primary question"));
-        var question = Input(item.Question, false); question.TextChanged += (_, _) => { item.Question = question.Text; title.Text = question.Text.Length == 0 ? LocalizationManager.Text("Untitled primary question") : question.Text; };
-        body.Children.Add(question); body.Children.Add(Label("Answer"));
-        var answer = Input(item.Answer, true); answer.TextChanged += (_, _) => item.Answer = answer.Text; body.Children.Add(answer);
-        var followHeader = new Grid { Margin = new Thickness(0, 16, 0, 8) };
-        followHeader.Children.Add(new TextBlock { Text = LocalizationManager.Text("Follow-ups"), FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var addFollow = SmallButton(LocalizationManager.Text("Add follow-up")); addFollow.HorizontalAlignment = HorizontalAlignment.Right;
-        addFollow.Click += (_, _) => { item.FollowUps.Add(new()); RenderQuestions(); };
-        followHeader.Children.Add(addFollow); body.Children.Add(followHeader);
+        var body = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
+        body.Children.Add(FieldRow("Primary question", item.Question, false, value => { item.Question = value; preview.Text = value; }));
+        body.Children.Add(FieldRow("Answer", item.Answer, true, value => item.Answer = value));
         for (var followIndex = 0; followIndex < item.FollowUps.Count; followIndex++) body.Children.Add(BuildFollowUpCard(item, item.FollowUps[followIndex], index, followIndex));
+        if (item.FollowUps.Count == 0)
+        {
+            var emptyFollow = PillButton("＋  " + LocalizationManager.Text("Add follow-up"));
+            emptyFollow.HorizontalAlignment = HorizontalAlignment.Left;
+            emptyFollow.Margin = new Thickness(136, 8, 0, 0);
+            emptyFollow.Click += (_, _) => { item.FollowUps.Add(new()); RenderQuestions(); };
+            body.Children.Add(emptyFollow);
+        }
         expander.Content = body;
 
-        var card = new Border { Background = Brush("SurfaceBrush"), BorderBrush = Brush("BorderBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Padding = new Thickness(16), Margin = new Thickness(0, 0, 0, 12), Child = expander, AllowDrop = true, Tag = item.Id };
-        header.PreviewMouseLeftButtonDown += (_, e) => _dragStart = e.GetPosition(this);
-        header.PreviewMouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - _dragStart).Length > 6) DragDrop.DoDragDrop(header, new DataObject("QuestionBankPrimary", item.Id), DragDropEffects.Move); };
+        var card = new Border { Background = Brush("SurfaceBrush"), BorderBrush = Brush("BorderBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(20), Padding = new Thickness(20, 14, 20, 20), Margin = new Thickness(0, 0, 0, 14), Child = expander, AllowDrop = true, Tag = item.Id };
+        drag.PreviewMouseLeftButtonDown += (_, e) => _dragStart = e.GetPosition(this);
+        drag.PreviewMouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - _dragStart).Length > 6) DragDrop.DoDragDrop(drag, new DataObject("QuestionBankPrimary", item.Id), DragDropEffects.Move); };
         card.DragOver += (_, e) => { if (e.Data.GetDataPresent("QuestionBankPrimary")) e.Effects = DragDropEffects.Move; e.Handled = true; };
         card.Drop += (_, e) => { if (e.Data.GetData("QuestionBankPrimary") is Guid id) MovePrimary(id, item.Id); };
         return card;
@@ -76,16 +88,16 @@ public partial class QuestionBankEditorWindow : Window
 
     private Border BuildFollowUpCard(QuestionBankPrimary parent, QuestionBankFollowUp follow, int parentIndex, int followIndex)
     {
-        var grid = new Grid(); grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var drag = new TextBlock { Text = "⋮⋮", FontSize = 17, Cursor = Cursors.SizeAll, Foreground = Brush("TextSecondaryBrush"), Margin = new Thickness(0, 4, 10, 0) };
-        grid.Children.Add(drag);
-        var fields = new StackPanel(); fields.Children.Add(new TextBlock { Text = $"{LocalizationManager.Text("Follow-up")} {parentIndex + 1}.{followIndex + 1}", FontSize = 12, Foreground = Brush("TextSecondaryBrush"), Margin = new Thickness(0, 0, 0, 7) });
-        fields.Children.Add(Label("Follow-up question")); var question = Input(follow.Question, false); question.TextChanged += (_, _) => follow.Question = question.Text; fields.Children.Add(question);
-        fields.Children.Add(Label("Follow-up answer")); var answer = Input(follow.Answer, true); answer.TextChanged += (_, _) => follow.Answer = answer.Text; fields.Children.Add(answer);
-        Grid.SetColumn(fields, 1); grid.Children.Add(fields);
-        var remove = SmallButton("×"); remove.Width = 34; remove.Foreground = Brush("DangerBrush"); remove.Margin = new Thickness(10, 0, 0, 0); remove.VerticalAlignment = VerticalAlignment.Top;
-        remove.Click += (_, _) => { parent.FollowUps.Remove(follow); RenderQuestions(); }; Grid.SetColumn(remove, 2); grid.Children.Add(remove);
-        var card = new Border { Background = Brush("InputBrush"), CornerRadius = new CornerRadius(13), Padding = new Thickness(12), Margin = new Thickness(0, 0, 0, 9), Child = grid, AllowDrop = true };
+        var root = new StackPanel();
+        var followHeader = new Grid { MinHeight = 36, Margin = new Thickness(0, 0, 0, 10) };
+        followHeader.ColumnDefinitions.Add(new()); followHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); followHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        followHeader.Children.Add(new TextBlock { Text = $"{LocalizationManager.Text("Follow-up")} {parentIndex + 1}.{followIndex + 1}", FontSize = 14.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        var remove = IconButton("\uE74D", danger: true); remove.Click += (_, _) => { parent.FollowUps.Remove(follow); RenderQuestions(); }; Grid.SetColumn(remove, 1); followHeader.Children.Add(remove);
+        var drag = new TextBlock { Text = "⋮⋮", FontSize = 18, Cursor = Cursors.SizeAll, Foreground = Brush("TextSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 2, 0) }; Grid.SetColumn(drag, 2); followHeader.Children.Add(drag);
+        root.Children.Add(followHeader);
+        root.Children.Add(FieldRow("Follow-up question", follow.Question, false, value => follow.Question = value));
+        root.Children.Add(FieldRow("Follow-up answer", follow.Answer, true, value => follow.Answer = value));
+        var card = new Border { Background = Brush("InputBrush"), BorderBrush = Brush("BorderBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(16), Padding = new Thickness(16), Margin = new Thickness(54, 10, 0, 0), Child = root, AllowDrop = true };
         drag.PreviewMouseLeftButtonDown += (_, e) => _dragStart = e.GetPosition(this);
         drag.PreviewMouseMove += (_, e) => { if (e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - _dragStart).Length > 6) DragDrop.DoDragDrop(drag, new DataObject("QuestionBankFollowUp", $"{parent.Id}|{follow.Id}"), DragDropEffects.Move); };
         card.DragOver += (_, e) => { if (e.Data.GetDataPresent("QuestionBankFollowUp")) e.Effects = DragDropEffects.Move; e.Handled = true; };
@@ -93,14 +105,26 @@ public partial class QuestionBankEditorWindow : Window
         return card;
     }
 
-    private TextBlock Label(string key) => new() { Text = LocalizationManager.Text(key), FontSize = 12, Foreground = Brush("TextSecondaryBrush"), Margin = new Thickness(2, 7, 0, 5) };
-    private TextBox Input(string text, bool multiline)
+    private Grid FieldRow(string labelKey, string text, bool multiline, Action<string> changed)
     {
-        var box = new TextBox { Text = text, TextWrapping = TextWrapping.Wrap, AcceptsReturn = multiline, MinHeight = multiline ? 84 : 40, VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center, Padding = new Thickness(11, 7, 11, 7), BorderThickness = new Thickness(1), BorderBrush = Brush("BorderBrush"), Background = Brush("InputBrush"), Foreground = Brush("TextPrimaryBrush") };
+        var row = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        row.ColumnDefinitions.Add(new() { Width = new GridLength(124) }); row.ColumnDefinitions.Add(new());
+        var label = new TextBlock { Text = LocalizationManager.Text(labelKey), FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = Brush("TextSecondaryBrush"), Margin = new Thickness(4, 10, 14, 0), VerticalAlignment = VerticalAlignment.Top };
+        row.Children.Add(label);
+        var box = new TextBox { Text = text, TextWrapping = TextWrapping.Wrap, AcceptsReturn = multiline, MinHeight = multiline ? 92 : 42, VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center, Padding = new Thickness(13, 9, 13, 9), BorderThickness = new Thickness(0), Background = Brushes.Transparent, Foreground = Brush("TextPrimaryBrush") };
         if (multiline) box.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-        return box;
+        box.TextChanged += (_, _) => changed(box.Text);
+        var frame = new Border { Background = Brush("BackgroundBrush"), BorderBrush = Brush("BorderBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(13), Child = box };
+        Grid.SetColumn(frame, 1); row.Children.Add(frame);
+        return row;
     }
-    private Button SmallButton(string text) => new() { Content = text, Height = 34, Padding = new Thickness(12, 0, 12, 0), Style = (Style)FindResource("SecondaryButtonStyle") };
+    private Button PillButton(string text) => new() { Content = text, Height = 36, Padding = new Thickness(14, 0, 14, 0), Style = (Style)FindResource("SecondaryButtonStyle"), VerticalAlignment = VerticalAlignment.Center };
+    private Button IconButton(string glyph, bool danger = false)
+    {
+        var button = new Button { Width = 36, Height = 36, Padding = new Thickness(0), Style = (Style)FindResource(danger ? "DangerIconButtonStyle" : "IconButtonStyle"), VerticalAlignment = VerticalAlignment.Center };
+        button.Content = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 15, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        return button;
+    }
     private Brush Brush(string key) => (Brush)FindResource(key);
 
     private void MovePrimary(Guid source, Guid target)

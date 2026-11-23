@@ -115,8 +115,10 @@ enum SpeechContentFilterLevel: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 
     static var current: SpeechContentFilterLevel {
-        let raw = UserDefaults.standard.string(forKey: AppPreferenceKey.speechContentFilterLevel)
-        return raw.flatMap(SpeechContentFilterLevel.init(rawValue:)) ?? .standard
+        // Content filtering is always strict. Keeping the enum allows the
+        // classifier thresholds to remain explicit, but this is no longer a
+        // user-facing preference and ignores values saved by older builds.
+        .strict
     }
 
     /// Minimum `answerScore - questionScore` required to drop an utterance.

@@ -123,7 +123,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["Create primary questions and answers, then add ordered follow-ups under each one."] = "填写一级问题和答案，并在每个问题下添加可排序的追问。",
         ["Structured Q&A bank"] = "结构化问答题库", ["Batch paste import"] = "批量粘贴导入", ["Upload question file"] = "上传题库文件",
         ["Add primary question"] = "添加一级问题", ["Primary question"] = "一级问题", ["Untitled primary question"] = "未命名一级问题",
-        ["Follow-ups"] = "追问", ["Follow-up"] = "追问", ["Add follow-up"] = "添加追问", ["Follow-up question"] = "追问问题", ["Follow-up answer"] = "追问答案",
+        ["Follow-ups"] = "追问", ["Follow-up"] = "追问", ["Add follow-up"] = "添加追问", ["Follow-up question"] = "追问问题", ["Follow-up answer"] = "追问答案", ["Drag to reorder"] = "拖拽排序",
         ["{0} follow-ups"] = "{0} 个追问", ["No questions yet"] = "暂无问题", ["Add a primary question or paste a batch for AI to organize."] = "添加一级问题，或批量粘贴后让 AI 自动整理。",
         ["Paste questions and answers in any reasonable format. AI will identify primary questions, follow-ups, and their answers."] = "粘贴任意常见格式的问题和答案，AI 会识别一级问题、追问及其对应答案。",
         ["The AI did not return a valid question bank."] = "AI 没有返回有效的题库结构。", ["No questions were found in the imported text."] = "导入内容中没有识别到问题。",

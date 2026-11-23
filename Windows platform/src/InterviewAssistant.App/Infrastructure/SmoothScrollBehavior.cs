@@ -8,6 +8,10 @@ namespace InterviewAssistant.Infrastructure;
 
 public static class SmoothScrollBehavior
 {
+    private const double WheelDistanceFactor = 0.48;
+    private const double ResponsePerSecond = 13.0;
+    private static readonly TimeSpan MinimumFrameInterval = TimeSpan.FromMilliseconds(15);
+
     public static readonly DependencyProperty IsEnabledProperty = DependencyProperty.RegisterAttached(
         "IsEnabled", typeof(bool), typeof(SmoothScrollBehavior), new PropertyMetadata(false, OnIsEnabledChanged));
 
@@ -41,7 +45,7 @@ public static class SmoothScrollBehavior
         // Let nested scrollable content (multi-line text boxes, lists, code blocks) scroll first;
         // the page only takes over once the inner area has reached its top / bottom.
         if (InnerViewerCanScroll(args.OriginalSource as DependencyObject, viewer, args.Delta)) return;
-        state.Target = Math.Clamp(state.Target - args.Delta * 0.58, 0, viewer.ScrollableHeight);
+        state.Target = Math.Clamp(state.Target - args.Delta * WheelDistanceFactor, 0, viewer.ScrollableHeight);
         state.Start();
         args.Handled = true;
     }
@@ -105,7 +109,13 @@ public static class SmoothScrollBehavior
         private void OnRendering(object? sender, EventArgs args)
         {
             var now = _clock.Elapsed;
-            var seconds = Math.Clamp((now - _lastFrame).TotalSeconds, 1d / 240d, 1d / 20d);
+            // CompositionTarget follows the monitor refresh rate. On 120/144 Hz
+            // displays, scrolling a complex settings page at that same rate can
+            // force far more WPF layout passes than the UI thread can sustain.
+            // A steady ~60 Hz update is visually smoother than irregular dropped
+            // frames, while elapsed-time interpolation keeps the speed consistent.
+            if (_lastFrame != TimeSpan.Zero && now - _lastFrame < MinimumFrameInterval) return;
+            var seconds = Math.Clamp((now - _lastFrame).TotalSeconds, 1d / 120d, 1d / 20d);
             _lastFrame = now;
             var difference = Target - _viewer.VerticalOffset;
             if (Math.Abs(difference) < 0.35)
@@ -115,8 +125,12 @@ public static class SmoothScrollBehavior
                 return;
             }
 
-            var progress = 1 - Math.Exp(-seconds * 16.5);
-            _viewer.ScrollToVerticalOffset(_viewer.VerticalOffset + difference * progress);
+            var progress = 1 - Math.Exp(-seconds * ResponsePerSecond);
+            var next = _viewer.VerticalOffset + difference * progress;
+            if (Math.Abs(next - _viewer.VerticalOffset) >= 0.1)
+            {
+                _viewer.ScrollToVerticalOffset(next);
+            }
         }
     }
 }

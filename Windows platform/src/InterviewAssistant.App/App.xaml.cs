@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using InterviewAssistant.Services;
 
@@ -26,6 +27,14 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Keep hover text from appearing above screen shares and avoid a visual
+        // style the app does not use. Registering once at the application level
+        // also covers controls created later in code-behind and secondary windows.
+        EventManager.RegisterClassHandler(
+            typeof(FrameworkElement),
+            ToolTipService.ToolTipOpeningEvent,
+            new ToolTipEventHandler(SuppressToolTip));
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         // Crashes off the UI thread (native/background) otherwise leave no trace in startup.log.
@@ -71,6 +80,8 @@ public partial class App : Application
             Shutdown(-1);
         }
     }
+
+    private static void SuppressToolTip(object sender, ToolTipEventArgs e) => e.Handled = true;
 
     private static async Task AfterLaunchAsync(Window owner, string[] args)
     {

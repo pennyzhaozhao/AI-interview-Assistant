@@ -2212,16 +2212,14 @@ private struct QuestionBankEditorSheet: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(Array(document.questions.indices), id: \.self) { index in
-                            primaryRow(index)
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(Array(document.questions.indices), id: \.self) { index in
+                                primaryRow(index)
+                            }
                         }
-                        .onMove { source, destination in
-                            document.questions.move(fromOffsets: source, toOffset: destination)
-                        }
-                        .onDelete { document.questions.remove(atOffsets: $0) }
+                        .padding(.vertical, 2)
                     }
-                    .listStyle(.inset)
                 }
             }
             .padding(20)
@@ -2290,91 +2288,186 @@ private struct QuestionBankEditorSheet: View {
     @ViewBuilder
     private func primaryRow(_ index: Int) -> some View {
         let id = document.questions[index].id
-        DisclosureGroup(isExpanded: Binding(
-            get: { expanded.contains(id) },
-            set: { isExpanded in
-                if isExpanded { expanded.insert(id) } else { expanded.remove(id) }
-            }
-        )) {
-            VStack(alignment: .leading, spacing: 12) {
-                qaFields(
-                    questionLabel: L.t("Primary question"),
-                    answerLabel: L.t("Answer"),
-                    question: $document.questions[index].question,
-                    answer: $document.questions[index].answer
-                )
-                Divider().opacity(0.5)
-                HStack {
-                    Text(L.t("Follow-ups")).font(.appCaptionMedium)
-                    Spacer()
-                    Button { addFollowUp(to: index) } label: { Label(L.t("Add follow-up"), systemImage: "plus") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.appPrimary)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Button {
+                    if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+                } label: {
+                    Image(systemName: expanded.contains(id) ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 24, height: 32)
                 }
-                ForEach(Array(document.questions[index].followUps.indices), id: \.self) { followIndex in
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(L.t("Follow-up") + " \(index + 1).\(followIndex + 1)")
-                                .font(.appSmall).foregroundStyle(Color.appMuted)
-                            qaFields(
-                                questionLabel: L.t("Follow-up question"),
-                                answerLabel: L.t("Follow-up answer"),
-                                question: $document.questions[index].followUps[followIndex].question,
-                                answer: $document.questions[index].followUps[followIndex].answer
-                            )
-                        }
-                        VStack(spacing: 8) {
-                            Button { moveFollowUp(parent: index, from: followIndex, offset: -1) } label: { Image(systemName: "arrow.up") }
-                                .disabled(followIndex == 0)
-                            Button { moveFollowUp(parent: index, from: followIndex, offset: 1) } label: { Image(systemName: "arrow.down") }
-                                .disabled(followIndex == document.questions[index].followUps.count - 1)
-                            Button(role: .destructive) { document.questions[index].followUps.remove(at: followIndex) } label: { Image(systemName: "trash") }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(12)
-                    .background(Color.appField)
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                    .draggable("followup|\(id.uuidString)|\(document.questions[index].followUps[followIndex].id.uuidString)")
-                    .dropDestination(for: String.self) { values, _ in
-                        guard let token = values.first else { return false }
-                        return moveFollowUp(
-                            token: token,
-                            targetParentID: id,
-                            targetFollowUpID: document.questions[index].followUps[followIndex].id
-                        )
+                .buttonStyle(.plain)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L.t("Primary question") + " \(index + 1)")
+                        .font(.appCaptionMedium)
+                    if !expanded.contains(id), !document.questions[index].question.isEmpty {
+                        Text(document.questions[index].question)
+                            .font(.appSmall)
+                            .foregroundStyle(Color.appMuted)
+                            .lineLimit(1)
                     }
                 }
-            }
-            .padding(.top, 10)
-        } label: {
-            HStack {
-                Image(systemName: "line.3.horizontal")
+
+                Spacer(minLength: 12)
+
+                Button { addFollowUp(to: index) } label: {
+                    Label(L.t("Add follow-up"), systemImage: "plus")
+                }
+                .buttonStyle(AppButtonStyle())
+
+                Button(role: .destructive) {
+                    document.questions.remove(at: index)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Color.appDanger)
+                        .frame(width: 36, height: 36)
+                        .background(Color.appDanger.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Image(systemName: "circle.grid.2x3.fill")
+                    .font(.system(size: 15))
                     .foregroundStyle(Color.appMuted)
+                    .frame(width: 28, height: 36)
+                    .contentShape(Rectangle())
                     .draggable("primary|\(id.uuidString)")
-                Text(document.questions[index].question.isEmpty ? L.t("Untitled primary question") : document.questions[index].question)
-                    .font(.appCaptionMedium)
-                    .lineLimit(2)
-                Spacer()
-                Text(String(format: L.t("%ld follow-ups"), document.questions[index].followUps.count))
-                    .font(.appSmall).foregroundStyle(Color.appMuted)
-                Button(role: .destructive) { document.questions.remove(at: index) } label: { Image(systemName: "trash") }
-                    .buttonStyle(.plain)
+                    .help(L.t("Drag to reorder"))
             }
-            .dropDestination(for: String.self) { values, _ in
-                guard let token = values.first else { return false }
-                return movePrimary(token: token, targetID: id)
+
+            if expanded.contains(id) {
+                VStack(alignment: .leading, spacing: 16) {
+                    qaField(
+                        label: L.t("Primary question"),
+                        text: $document.questions[index].question,
+                        isAnswer: false
+                    )
+                    qaField(
+                        label: L.t("Answer"),
+                        text: $document.questions[index].answer,
+                        isAnswer: true
+                    )
+
+                    if !document.questions[index].followUps.isEmpty {
+                        HStack(alignment: .top, spacing: 14) {
+                            Rectangle()
+                                .fill(Color.appBorder)
+                                .frame(width: 2)
+                                .padding(.leading, 12)
+
+                            VStack(spacing: 12) {
+                                ForEach(Array(document.questions[index].followUps.indices), id: \.self) { followIndex in
+                                    followUpCard(parentIndex: index, followIndex: followIndex)
+                                }
+                            }
+                        }
+                    }
+
+                    Button { addFollowUp(to: index) } label: {
+                        Label(L.t("Add follow-up"), systemImage: "plus")
+                    }
+                    .buttonStyle(AppButtonStyle())
+                    .padding(.leading, document.questions[index].followUps.isEmpty ? 0 : 28)
+                }
+                .padding(.top, 18)
             }
         }
-        .padding(.vertical, 6)
+        .padding(18)
+        .background(Color.appSurface)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.appBorder, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .dropDestination(for: String.self) { values, _ in
+            guard let token = values.first else { return false }
+            return movePrimary(token: token, targetID: id)
+        }
     }
 
-    private func qaFields(questionLabel: String, answerLabel: String, question: Binding<String>, answer: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(questionLabel).font(.appSmall).foregroundStyle(Color.appMuted)
-            TextField(questionLabel, text: question, axis: .vertical).textFieldStyle(.plain).darkField()
-            Text(answerLabel).font(.appSmall).foregroundStyle(Color.appMuted)
-            TextEditor(text: answer).scrollContentBackground(.hidden).font(.appBody).frame(minHeight: 86).darkField()
+    private func followUpCard(parentIndex: Int, followIndex: Int) -> some View {
+        let parentID = document.questions[parentIndex].id
+        let followID = document.questions[parentIndex].followUps[followIndex].id
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Text(L.t("Follow-up") + " \(parentIndex + 1).\(followIndex + 1)")
+                    .font(.appCaptionMedium)
+                Spacer()
+                Button(role: .destructive) {
+                    document.questions[parentIndex].followUps.remove(at: followIndex)
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Color.appDanger)
+                        .frame(width: 34, height: 34)
+                        .background(Color.appDanger.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                Image(systemName: "circle.grid.2x3.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.appMuted)
+                    .frame(width: 26, height: 34)
+                    .contentShape(Rectangle())
+                    .draggable("followup|\(parentID.uuidString)|\(followID.uuidString)")
+                    .help(L.t("Drag to reorder"))
+            }
+
+            qaField(
+                label: L.t("Follow-up question"),
+                text: $document.questions[parentIndex].followUps[followIndex].question,
+                isAnswer: false
+            )
+            qaField(
+                label: L.t("Follow-up answer"),
+                text: $document.questions[parentIndex].followUps[followIndex].answer,
+                isAnswer: true
+            )
+        }
+        .padding(16)
+        .background(Color.appField.opacity(0.72))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.appBorder, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .dropDestination(for: String.self) { values, _ in
+            guard let token = values.first else { return false }
+            return moveFollowUp(token: token, targetParentID: parentID, targetFollowUpID: followID)
+        }
+    }
+
+    private func qaField(label: String, text: Binding<String>, isAnswer: Bool) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(label)
+                .font(.appSmall)
+                .foregroundStyle(Color.appMuted)
+                .frame(width: isCompact ? 112 : 150, alignment: .leading)
+                .padding(.top, 11)
+
+            Group {
+                if isAnswer {
+                    TextEditor(text: text)
+                        .scrollContentBackground(.hidden)
+                        .font(.appBody)
+                        .frame(minHeight: 96)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                } else {
+                    TextField(label, text: text, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.appBody)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                }
+            }
+            .background(Color.appBG.opacity(0.72))
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(Color.appBorder, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
     }
 
@@ -2387,12 +2480,6 @@ private struct QuestionBankEditorSheet: View {
     private func addFollowUp(to index: Int) {
         document.questions[index].followUps.append(.init())
         expanded.insert(document.questions[index].id)
-    }
-
-    private func moveFollowUp(parent: Int, from: Int, offset: Int) {
-        let target = from + offset
-        guard document.questions[parent].followUps.indices.contains(target) else { return }
-        document.questions[parent].followUps.swapAt(from, target)
     }
 
     private func movePrimary(token: String, targetID: UUID) -> Bool {

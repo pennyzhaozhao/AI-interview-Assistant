@@ -44,7 +44,7 @@ public sealed class AppPreferences
     /// <summary>Resume upload: "ask" each time, always "ai" (Markdown + summary + skills + projects) or "raw" (original text only).</summary>
     public string ResumeAIProcessing { get; set; } = ResumeAIModes.Ask;
     /// <summary>Microphone mode: drop transcripts that read like the candidate's own answer. off / relaxed / standard / strict.</summary>
-    public string SpeechContentFilterLevel { get; set; } = "standard";
+    public string SpeechContentFilterLevel { get; set; } = "strict";
 }
 
 public static class ResumeAIModes

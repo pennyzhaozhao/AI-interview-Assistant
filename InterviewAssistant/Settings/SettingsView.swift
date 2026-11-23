@@ -28,7 +28,6 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
     @AppStorage(AppPreferenceKey.hiddenFromScreenCapture) private var hiddenFromScreenCapture = true
     @AppStorage(AppPreferenceKey.hideDockIcon) private var hideDockIcon = false
-    @AppStorage(AppPreferenceKey.speechContentFilterLevel) private var speechContentFilterLevelRaw = SpeechContentFilterLevel.standard.rawValue
     @StateObject private var screenshotCapture = ScreenshotCapture()
     @State private var regionSetConfirmed = false
     #endif
@@ -163,7 +162,6 @@ struct SettingsView: View {
 
             settingsSection(L.t("Speaker Recognition")) {
                 VStack(alignment: .leading, spacing: 12) {
-                speechContentFilterCard
                 Button {
                     showingVoiceSettings = true
                 } label: {
@@ -350,25 +348,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(cardBackground(radius: 20))
-    }
-
-    private var speechContentFilterCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            preferenceRow(title: L.t("Filter My Own Speech by Content"), icon: "text.badge.xmark", tint: Color.appPrimary) {
-                PremiumMenuPicker(
-                    selection: $speechContentFilterLevelRaw,
-                    options: SpeechContentFilterLevel.allCases.map { ($0.rawValue, $0.title) },
-                    minWidth: preferencePickerWidth
-                )
-            }
-            Text(L.t("In microphone mode, transcripts that read like your own answer instead of an interviewer question are ignored. Works alongside voiceprints."))
-                .font(.system(size: 12))
-                .foregroundStyle(Color.appMuted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
         .background(cardBackground(radius: 20))
     }
 

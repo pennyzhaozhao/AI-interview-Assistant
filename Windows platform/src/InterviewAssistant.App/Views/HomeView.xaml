@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:infra="clr-namespace:InterviewAssistant.Infrastructure"
              xmlns:loc="clr-namespace:InterviewAssistant.Services">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" infra:SmoothScrollBehavior.IsEnabled="True">
         <StackPanel Margin="32" HorizontalAlignment="Stretch">
             <Border Style="{StaticResource CardStyle}" Padding="28" Margin="0,0,0,24">
                 <Grid>

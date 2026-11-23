@@ -820,6 +820,7 @@ enum L {
         "Add follow-up": "添加追问",
         "Follow-up question": "追问问题",
         "Follow-up answer": "追问答案",
+        "Drag to reorder": "拖拽排序",
         "%ld follow-ups": "%ld 个追问",
         "No questions yet": "暂无问题",
         "Add a primary question or paste a batch for AI to organize.": "添加一级问题，或批量粘贴后让 AI 自动整理。",
