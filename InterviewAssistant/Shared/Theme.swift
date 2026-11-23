@@ -93,6 +93,7 @@ enum AppPreferenceKey {
     static let migratedHiddenFromScreenCaptureDefault = "migrated_hidden_from_screen_capture_default_v1"
     static let hideDockIcon = "hide_dock_icon"
     static let speechHeuristicsEnabled = "speech_heuristics_enabled"
+    static let speechContentFilterLevel = "speech_content_filter_level"
     static let speakerRecognitionEnabled = "speaker_recognition_enabled"
     static let speakerRecognitionSensitivity = "speaker_recognition_sensitivity"
     static let speakerRecognitionDebugLogging = "speaker_recognition_debug_logging"
@@ -482,6 +483,12 @@ enum L {
         "Waiting for interview question...": "等待面试问题...",
         "New question detected · Tap to answer": "检测到新问题 · 点击回答",
         "🙋 You are answering": "🙋 你在作答",
+        "🙋 Sounds like your answer — ignored": "🙋 内容像是你的回答，已忽略",
+        "Filter My Own Speech by Content": "按内容过滤我说的话",
+        "In microphone mode, transcripts that read like your own answer instead of an interviewer question are ignored. Works alongside voiceprints.": "麦克风模式下，识别文本如果更像你自己的回答而不是面试官提问，会被忽略。可与声纹识别同时使用。",
+        "Relaxed": "宽松",
+        "Standard": "标准",
+        "Strict": "严格",
         "Speaker Recognition": "说话人识别",
         "Set Up Voices": "设置声音",
         "Back to Settings": "返回设置",

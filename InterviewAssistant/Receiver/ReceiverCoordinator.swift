@@ -326,6 +326,31 @@ final class ReceiverCoordinator {
             #endif
             return
         }
+        // Voiceprints can miss the candidate on some microphones; also drop text
+        // whose wording reads like the candidate answering rather than a question.
+        if audioSource == .microphone,
+           UtteranceIntentClassifier.shouldDrop(
+               clean,
+               currentAnswer: aiText,
+               speaker: utterance.speaker,
+               level: .current
+           ) {
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: AppPreferenceKey.speakerRecognitionDebugLogging) {
+                let assessment = UtteranceIntentClassifier.assess(clean, currentAnswer: aiText)
+                print(
+                    "[SpeechProtection] dropped self-speech by content " +
+                    "question=\(String(format: "%.2f", assessment.questionScore)) " +
+                    "answer=\(String(format: "%.2f", assessment.answerScore)) " +
+                    "speaker=\(utterance.speaker.rawValue)"
+                )
+            }
+            #endif
+            let status = L.t("🙋 Sounds like your answer — ignored")
+            speech.statusText = status
+            volcanoSpeech.statusText = status
+            return
+        }
         let strongSignal = utterance.speaker == .interviewer || SpeechProtectionPolicy.isStrongQuestionSignal(
                 clean,
                 gapSincePreviousUtterance: gap
