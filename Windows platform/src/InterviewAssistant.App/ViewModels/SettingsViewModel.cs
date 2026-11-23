@@ -108,6 +108,26 @@ public sealed class SettingsViewModel : PageViewModel
         }
     }
     public IReadOnlyList<string> ScreenshotModes { get; } = ["Preset region", "Select region each time"];
+    /// <summary>Microphone content filter: off / relaxed / standard / strict. Order matches SpeechContentFilterLevels.All.</summary>
+    public ObservableCollection<string> SpeechContentFilterNames { get; } = [];
+
+    public string SpeechContentFilter
+    {
+        get
+        {
+            var index = Array.IndexOf(SpeechContentFilterLevels.All, SpeechContentFilterLevels.Normalize(_store.Data.Preferences.SpeechContentFilterLevel));
+            return SpeechContentFilterNames.Count == 0 ? "" : SpeechContentFilterNames[Math.Max(0, index) % SpeechContentFilterNames.Count];
+        }
+        set
+        {
+            if (_refreshingSpeechLanguages || string.IsNullOrEmpty(value)) return;
+            var index = SpeechContentFilterNames.IndexOf(value);
+            if (index < 0 || SpeechContentFilterLevels.All[index] == _store.Data.Preferences.SpeechContentFilterLevel) return;
+            SavePreference(p => p.SpeechContentFilterLevel = SpeechContentFilterLevels.All[index]);
+            OnPropertyChanged();
+        }
+    }
+
     public ObservableCollection<string> SpeechRecognitionEngines { get; }
     public IReadOnlyList<string> SpeechResourceIds { get; } =
     [
@@ -190,10 +210,17 @@ public sealed class SettingsViewModel : PageViewModel
             ResumeAIModeNames.Clear();
             foreach (var mode in modes) ResumeAIModeNames.Add(mode);
         }
+        string[] filterLevels = chinese ? ["关闭", "宽松", "标准", "严格"] : ["Off", "Relaxed", "Standard", "Strict"];
+        if (!SpeechContentFilterNames.SequenceEqual(filterLevels))
+        {
+            SpeechContentFilterNames.Clear();
+            foreach (var level in filterLevels) SpeechContentFilterNames.Add(level);
+        }
         _refreshingSpeechLanguages = false;
         OnPropertyChanged(nameof(MockInterviewLanguage));
         OnPropertyChanged(nameof(InterviewerLanguage));
         OnPropertyChanged(nameof(ResumeAIMode));
+        OnPropertyChanged(nameof(SpeechContentFilter));
     }
 
     private string SpeechLanguageName(string code)

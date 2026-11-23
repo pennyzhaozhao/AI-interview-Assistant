@@ -43,6 +43,8 @@ public sealed class AppPreferences
     public double SpeakerRecognitionSensitivity { get; set; } = 0.5;
     /// <summary>Resume upload: "ask" each time, always "ai" (Markdown + summary + skills + projects) or "raw" (original text only).</summary>
     public string ResumeAIProcessing { get; set; } = ResumeAIModes.Ask;
+    /// <summary>Microphone mode: drop transcripts that read like the candidate's own answer. off / relaxed / standard / strict.</summary>
+    public string SpeechContentFilterLevel { get; set; } = "standard";
 }
 
 public static class ResumeAIModes

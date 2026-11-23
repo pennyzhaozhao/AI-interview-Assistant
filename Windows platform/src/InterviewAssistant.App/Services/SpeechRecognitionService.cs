@@ -26,6 +26,12 @@ public sealed class SpeechRecognitionService : IDisposable
     /// </summary>
     public bool FilterCandidateVoice { get; set; }
 
+    /// <summary>Raised instead of <see cref="Recognized"/> when the transcript's wording reads like the candidate answering.</summary>
+    public event Action<string>? SelfSpeechFiltered;
+
+    /// <summary>Returns the answer currently shown on the prompter; used to spot the candidate reading it aloud. May be called off the UI thread.</summary>
+    public Func<string>? AnswerTextProvider { get; set; }
+
     public async Task<bool> StartAsync(string languageCode, bool systemAudio = false)
     {
         int generation;
@@ -170,7 +176,7 @@ public sealed class SpeechRecognitionService : IDisposable
         if (!FilterCandidateVoice || !SpeakerVerificationService.IsActive)
         {
             if (FilterCandidateVoice) takeAudio();
-            Recognized?.Invoke(text);
+            Route(text, SpeakerLabel.Unknown);
             return;
         }
         var audio = takeAudio();
@@ -178,8 +184,28 @@ public sealed class SpeechRecognitionService : IDisposable
         {
             var result = SpeakerVerificationService.Classify(audio);
             if (result?.Label == SpeakerLabel.Candidate) CandidateSpeechDetected?.Invoke(text);
-            else Recognized?.Invoke(text);
+            else Route(text, result?.Label ?? SpeakerLabel.Unknown);
         });
+    }
+
+    /// <summary>
+    /// Voiceprints can miss the candidate on some microphones, so in microphone mode also drop
+    /// text whose wording reads like the candidate answering rather than an interviewer question.
+    /// </summary>
+    private void Route(string text, SpeakerLabel label)
+    {
+        if (FilterCandidateVoice)
+        {
+            string answer;
+            try { answer = AnswerTextProvider?.Invoke() ?? ""; }
+            catch { answer = ""; }
+            if (UtteranceIntentClassifier.ShouldDrop(text, answer, label, SpeechContentFilterLevels.Current))
+            {
+                SelfSpeechFiltered?.Invoke(text);
+                return;
+            }
+        }
+        Recognized?.Invoke(text);
     }
 
     private static float[] ReadRecognizedAudio(RecognizedAudio? audio)
