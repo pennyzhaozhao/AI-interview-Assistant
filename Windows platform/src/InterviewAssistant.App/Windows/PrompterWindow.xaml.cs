@@ -879,7 +879,7 @@ public partial class PrompterWindow : Window
         if (_answerVisibleSince is { } answerSince)
         {
             var strongQuestion = gap >= TimeSpan.FromSeconds(3.5) && LooksLikeInterviewerQuestion(text);
-            if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(20))
+            if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(10))
             {
                 ShowPendingInterrupt(text);
                 return;

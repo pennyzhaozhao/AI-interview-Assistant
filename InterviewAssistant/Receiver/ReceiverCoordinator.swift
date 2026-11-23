@@ -58,7 +58,7 @@ final class ReceiverCoordinator {
     private let quickSpeechQuestionDebounceSeconds: TimeInterval = 0.35
     private let unfinishedSpeechQuestionDebounceSeconds: TimeInterval = 1.5
     private let speechContinuationMergeWindow: TimeInterval = 10.0
-    private let suspiciousQuestionProtectionWindow: TimeInterval = 20.0
+    private let suspiciousQuestionProtectionWindow: TimeInterval = 10.0
     var canGeneratePendingCode: Bool { !pendingCodeRawQuestion.isEmpty && !isGeneratingCode }
     var isCodeGenerationRunning: Bool { isGeneratingCode }
     var isSpeechListening: Bool {

@@ -9,6 +9,7 @@ namespace InterviewAssistant.Services;
 
 internal sealed class DoubaoSpeechRecognitionService : IDisposable
 {
+    private static readonly Guid IeeeFloatSubFormat = new("00000003-0000-0010-8000-00AA00389B71");
     private ClientWebSocket? _socket;
     private IWaveIn? _capture;
     private CancellationTokenSource? _cancellation;
@@ -173,9 +174,12 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     {
         var channels = Math.Max(1, format.Channels);
         var sourceRate = Math.Max(1, format.SampleRate);
-        var frameBytes = format.BitsPerSample / 8 * channels;
+        var frameBytes = format.BlockAlign;
         if (frameBytes <= 0) return [];
         var frames = source.Length / frameBytes;
+        var bytesPerChannel = frameBytes / channels;
+        var floatSamples = format.Encoding == WaveFormatEncoding.IeeeFloat
+            || format is WaveFormatExtensible extensible && extensible.SubFormat == IeeeFloatSubFormat;
         var ratio = sourceRate / 16000d;
         var samples = new List<short>((int)(frames / ratio) + 1);
         while (_resamplePosition < frames)
@@ -184,19 +188,39 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             double mono = 0;
             for (var channel = 0; channel < channels; channel++)
             {
-                var offset = frame * frameBytes + channel * format.BitsPerSample / 8;
-                mono += format.Encoding == WaveFormatEncoding.IeeeFloat
-                    ? BitConverter.ToSingle(source.Slice(offset, 4))
-                    : BitConverter.ToInt16(source.Slice(offset, 2)) / 32768d;
+                var offset = frame * frameBytes + channel * bytesPerChannel;
+                mono += ReadNormalizedSample(source, offset, format.BitsPerSample, floatSamples);
             }
             mono /= channels;
-            samples.Add((short)Math.Clamp(mono * short.MaxValue, short.MinValue, short.MaxValue));
+            if (double.IsFinite(mono))
+                samples.Add((short)Math.Clamp(mono * short.MaxValue, short.MinValue, short.MaxValue));
             _resamplePosition += ratio;
         }
         _resamplePosition -= frames;
         var bytes = new byte[samples.Count * 2];
         Buffer.BlockCopy(samples.ToArray(), 0, bytes, 0, bytes.Length);
         return bytes;
+    }
+
+    private static double ReadNormalizedSample(ReadOnlySpan<byte> source, int offset, int bitsPerSample, bool isFloat)
+    {
+        if (isFloat && bitsPerSample == 32 && offset + 4 <= source.Length)
+            return Math.Clamp(BitConverter.ToSingle(source.Slice(offset, 4)), -1f, 1f);
+        if (isFloat && bitsPerSample == 64 && offset + 8 <= source.Length)
+            return Math.Clamp(BitConverter.ToDouble(source.Slice(offset, 8)), -1d, 1d);
+        if (bitsPerSample == 8 && offset < source.Length)
+            return (source[offset] - 128) / 128d;
+        if (bitsPerSample == 16 && offset + 2 <= source.Length)
+            return BitConverter.ToInt16(source.Slice(offset, 2)) / 32768d;
+        if (bitsPerSample == 24 && offset + 3 <= source.Length)
+        {
+            var value = source[offset] | source[offset + 1] << 8 | source[offset + 2] << 16;
+            if ((value & 0x800000) != 0) value |= unchecked((int)0xFF000000);
+            return value / 8388608d;
+        }
+        if (bitsPerSample == 32 && offset + 4 <= source.Length)
+            return BitConverter.ToInt32(source.Slice(offset, 4)) / 2147483648d;
+        return 0;
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)

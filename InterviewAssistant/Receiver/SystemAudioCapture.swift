@@ -4,7 +4,8 @@ import AVFoundation
 import ScreenCaptureKit
 
 /// Captures system audio via ScreenCaptureKit and vends AVAudioPCMBuffer callbacks.
-/// Uses mono float32 at 44100 Hz to match the VAD/recognition pipeline.
+/// Requests ScreenCaptureKit's native 48 kHz stereo format and mixes it to mono
+/// before handing buffers to the recognition pipeline.
 final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
     /// Called on an internal background queue for each captured audio chunk.
@@ -42,8 +43,11 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
         let config = SCStreamConfiguration()
         config.capturesAudio            = true
         config.excludesCurrentProcessAudio = true   // don't feed our own audio back
-        config.sampleRate               = 44100
-        config.channelCount             = 1         // mono – simplifies conversion
+        // 48 kHz stereo is the most consistently supported ScreenCaptureKit system-audio
+        // format across built-in speakers, HDMI displays, AirPods and virtual call devices.
+        // Requesting 44.1 kHz mono can start successfully yet deliver no audio on some routes.
+        config.sampleRate               = 48_000
+        config.channelCount             = 2
         // Minimise video overhead (video output is not used)
         config.width                    = 2
         config.height                   = 2

@@ -40,7 +40,10 @@ public sealed class SpeechRecognitionService : IDisposable
             generation = ++_startGeneration;
             StopCurrent();
         }
-        if (AppServices.Current.DataStore.Data.Preferences.SpeechRecognitionEngine == "volcano")
+        // Windows' built-in recognizer only accepts the microphone in this app. System-audio
+        // mode must use the streaming recognizer even when the user previously selected the
+        // Windows engine, otherwise switching the prompter to system audio silently hears nothing.
+        if (systemAudio || AppServices.Current.DataStore.Data.Preferences.SpeechRecognitionEngine == "volcano")
         {
             var doubao = new DoubaoSpeechRecognitionService();
             lock (_lifecycleGate)
