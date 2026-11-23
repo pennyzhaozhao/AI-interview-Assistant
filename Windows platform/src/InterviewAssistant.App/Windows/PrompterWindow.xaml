@@ -59,11 +59,16 @@
                         </StackPanel>
                     </Grid>
                     <Button x:Name="NextButton" Grid.Column="2" Style="{StaticResource IslandButton}" Width="30" Height="30" Background="#14FFFFFF" Click="NextButton_Click" IsEnabled="False" VerticalAlignment="Center"><TextBlock Text="&#xE76C;" Style="{StaticResource IslandIcon}" Foreground="{StaticResource IslandYellow}"/></Button>
+                    <Button x:Name="PendingQuestionButton" Grid.Column="1" Panel.ZIndex="20" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="8,2" Padding="12,7" Background="#F21E2430" BorderBrush="#B0FFF200" BorderThickness="1" Foreground="{StaticResource IslandPrimary}" Click="PendingQuestionButton_Click">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8BD;" Style="{StaticResource IslandIcon}" Foreground="{StaticResource IslandYellow}" Margin="0,0,7,0"/><TextBlock x:Name="PendingQuestionText" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="420"/></StackPanel>
+                    </Button>
                 </Grid>
 
                 <Grid Grid.Row="2" Margin="0,5,0,3">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Button x:Name="ScreenshotButton" Style="{StaticResource IslandButton}" Width="36" Height="34" Click="ScreenshotButton_Click" ToolTip="Screenshot"><TextBlock Text="&#xE722;" Style="{StaticResource IslandIcon}" Foreground="{StaticResource IslandYellow}"/></Button>
+                    <!-- Do not attach a WPF ToolTip here. ToolTips are separate native windows and can
+                         briefly appear in a screen share even while the prompter itself is excluded. -->
+                    <Button x:Name="ScreenshotButton" Style="{StaticResource IslandButton}" Width="36" Height="34" Click="ScreenshotButton_Click" AutomationProperties.Name="Screenshot"><TextBlock Text="&#xE722;" Style="{StaticResource IslandIcon}" Foreground="{StaticResource IslandYellow}"/></Button>
                     <StackPanel x:Name="AiOnlyTools" Grid.Column="1" Orientation="Horizontal">
                         <Button x:Name="CodeButton" Style="{StaticResource IslandButton}" Height="34" Margin="7,0,0,0" Padding="11,0" Click="CodeButton_Click" ToolTip="Code language"><StackPanel Orientation="Horizontal"><TextBlock Text="&lt;/&gt;" Foreground="{StaticResource IslandYellow}" FontSize="13" FontWeight="Bold"/><TextBlock x:Name="CodeLanguageText" Text="python" Foreground="{StaticResource IslandYellow}" FontSize="12" FontWeight="SemiBold" Margin="7,0,0,0" VerticalAlignment="Center"/></StackPanel></Button>
                     </StackPanel>

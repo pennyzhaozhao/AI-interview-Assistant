@@ -49,7 +49,7 @@ public sealed class SpeakerVerifierException(string key) : Exception(Localizatio
 public static class SpeakerModelManager
 {
     public const string ModelId = "3dspeaker-campplus-zh-cn-16k-common";
-    public const string ExpectedSha256 = "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11";
+    public const string ExpectedSha256 = "e6af4d4c444f3dab01d991bb9b7d5af98eb979e329f6c8880a19d5553561ed25";
     public const string ModelVersion = "sha256:" + ExpectedSha256;
     private const string FileName = "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx";
     private static readonly Uri DownloadUri = new("https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx");

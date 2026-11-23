@@ -84,6 +84,7 @@ public partial class SettingsView : UserControl
         ApiKeyBox.Password = viewModel.ApiKey;
         SpeechTokenBox.Password = viewModel.SpeechAccessToken;
         UpdateThemeToggle(viewModel.Theme, animate: false);
+        BuildFeedbackHistory();
         _isLoadingPassword = false;
         if (ReferenceEquals(_subscribedViewModel, viewModel)) return;
         _subscribedViewModel = viewModel;
@@ -197,6 +198,97 @@ public partial class SettingsView : UserControl
         {
             await viewModel.ClearLocalDataAsync();
             ThemeManager.Apply(viewModel.Theme.ToLowerInvariant(), animate: true);
+        }
+    }
+
+    private void ShowFeedbackComposer_Click(object sender, RoutedEventArgs e)
+    {
+        FeedbackValidationText.Visibility = Visibility.Collapsed;
+        FeedbackComposerCard.Visibility = Visibility.Visible;
+        FeedbackIssueBox.Focus();
+    }
+
+    private void CancelFeedback_Click(object sender, RoutedEventArgs e)
+    {
+        FeedbackComposerCard.Visibility = Visibility.Collapsed;
+        FeedbackValidationText.Visibility = Visibility.Collapsed;
+    }
+
+    private async void SubmitFeedback_Click(object sender, RoutedEventArgs e)
+    {
+        var issue = FeedbackIssueBox.Text.Trim();
+        if (issue.Length == 0)
+        {
+            FeedbackValidationText.Text = LocalizationManager.Text("FeedbackIssueRequired");
+            FeedbackValidationText.Visibility = Visibility.Visible;
+            return;
+        }
+        FeedbackValidationText.Visibility = Visibility.Collapsed;
+        SubmitFeedbackButton.IsEnabled = false;
+        ReportIssueButton.IsEnabled = false;
+        try
+        {
+            var record = await SupportLogUploader.SubmitFeedbackAsync(issue, IncludeFeedbackLogsCheckBox.IsChecked == true);
+            Clipboard.SetText(record.Code);
+            FeedbackIssueBox.Clear();
+            IncludeFeedbackLogsCheckBox.IsChecked = true;
+            FeedbackComposerCard.Visibility = Visibility.Collapsed;
+            BuildFeedbackHistory();
+            Windows.AppDialog.Show(
+                Window.GetWindow(this),
+                LocalizationManager.Text("Feedback"),
+                string.Format(LocalizationManager.Text("FeedbackSubmitted"), record.Code),
+                Windows.DialogTone.Success);
+        }
+        catch (Exception exception)
+        {
+            Windows.AppDialog.Show(
+                Window.GetWindow(this),
+                LocalizationManager.Text("Feedback"),
+                string.Format(LocalizationManager.Text("FeedbackFailed"), exception.Message),
+                Windows.DialogTone.Warning);
+        }
+        finally
+        {
+            SubmitFeedbackButton.IsEnabled = true;
+            ReportIssueButton.IsEnabled = true;
+        }
+    }
+
+    private async void RefreshFeedback_Click(object sender, RoutedEventArgs e)
+    {
+        try { await SupportLogUploader.RefreshHistoryAsync(); }
+        finally { BuildFeedbackHistory(); }
+    }
+
+    private void BuildFeedbackHistory()
+    {
+        var records = SupportLogUploader.LoadHistory();
+        FeedbackHistoryPanel.Children.Clear();
+        FeedbackHistorySection.Visibility = records.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        for (var index = 0; index < records.Count; index++)
+        {
+            if (index > 0) FeedbackHistoryPanel.Children.Add(Separator());
+            var record = records[index];
+            var grid = new Grid { MinHeight = 72, Margin = new Thickness(16, 5, 16, 5) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            var issue = new TextBlock { Text = record.Issue, FontSize = 13, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, MaxWidth = 650 };
+            issue.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+            var meta = new TextBlock { Text = $"{record.Code} · {record.CreatedAt.ToLocalTime():g}", FontSize = 11, Margin = new Thickness(0, 4, 0, 0), FontFamily = new System.Windows.Media.FontFamily("Consolas") };
+            meta.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
+            text.Children.Add(issue);
+            text.Children.Add(meta);
+            grid.Children.Add(text);
+            var status = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 5, 10, 5), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
+            status.SetResourceReference(Border.BackgroundProperty, record.Status == "review" ? "WarningSoftBrush" : "InputBrush");
+            var statusText = new TextBlock { Text = LocalizationManager.Text(record.Status switch { "review" => "Under Review", "resolved" => "Resolved", _ => "New" }), FontSize = 11, FontWeight = FontWeights.SemiBold };
+            statusText.SetResourceReference(TextBlock.ForegroundProperty, record.Status switch { "review" => "WarningBrush", "resolved" => "SuccessBrush", _ => "PrimaryBrush" });
+            status.Child = statusText;
+            Grid.SetColumn(status, 1);
+            grid.Children.Add(status);
+            FeedbackHistoryPanel.Children.Add(grid);
         }
     }
 

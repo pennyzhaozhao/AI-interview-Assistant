@@ -96,6 +96,7 @@ enum AppPreferenceKey {
     static let speakerRecognitionEnabled = "speaker_recognition_enabled"
     static let speakerRecognitionSensitivity = "speaker_recognition_sensitivity"
     static let speakerRecognitionDebugLogging = "speaker_recognition_debug_logging"
+    static let prompterAudioMode = "prompter_audio_mode"
     /// Resume upload: "ask" each time, always "ai", or "raw" (original text only). See ResumeAIMode.
     static let resumeAIProcessing = "resume_ai_processing"
 }
@@ -419,6 +420,25 @@ enum L {
         "Starting...": "正在开始...",
         "Stored locally in Keychain.": "已本地存储在 Keychain。",
         "Support": "支持",
+        "Report a Problem": "反馈问题",
+        "Describe the issue, optionally attach diagnostic logs, and track its progress.": "描述遇到的问题，可选择附加诊断日志，并查看处理进度。",
+        "Feedback": "问题反馈",
+        "Feedback History": "反馈记录",
+        "Refresh Status": "刷新状态",
+        "New": "新反馈",
+        "Under Review": "处理中",
+        "Resolved": "已解决",
+        "Tell us what happened. You can follow the review status from Settings.": "请告诉我们发生了什么。提交后可在设置中查看处理状态。",
+        "What went wrong?": "遇到了什么问题？",
+        "Attach Diagnostic Logs": "附加诊断日志",
+        "Logs are redacted before upload. API keys, voiceprints, resumes, screenshots, and interview history are not included.": "日志会在上传前脱敏，不包含 API 密钥、声纹、简历、截图或面试历史。",
+        "Submit Feedback": "提交反馈",
+        "Submitting...": "正在提交...",
+        "Feedback Could Not Be Sent": "反馈提交失败",
+        "Feedback submitted. Your tracking code is %@.": "反馈已提交，查询编号为 %@。",
+        "Please describe the problem before submitting.": "请先描述问题再提交。",
+        "The feedback service returned an invalid response.": "反馈服务返回了无效响应。",
+        "The feedback service returned error %d.": "反馈服务返回错误 %d。",
         "Switch to Wi-Fi and try again.": "建议切换到 Wi-Fi 后重试。",
         "System": "系统",
         "System Audio": "系统音频",
@@ -439,6 +459,16 @@ enum L {
         "Upload PDF": "上传 PDF",
         "Upload failed": "上传失败",
         "Upload success.": "上传成功。",
+        "Upload Diagnostic Logs": "上传诊断日志",
+        "Upload Diagnostic Logs?": "上传诊断日志？",
+        "Upload Logs": "上传日志",
+        "Diagnostic Logs": "诊断日志",
+        "Upload redacted recent diagnostics and receive a report code for support.": "上传经过脱敏的近期诊断信息，并获取用于联系客服的报告编号。",
+        "Recent app diagnostics and device/version information will be redacted and uploaded. API keys, voiceprints, resumes, screenshots, and interview history are not included.": "近期应用诊断信息与设备/版本信息会在脱敏后上传；不会包含 API 密钥、声纹、简历、截图或面试历史。",
+        "Upload complete. Your report code is %@. Send this code to support.": "上传完成。你的报告编号是 %@，请将该编号告诉客服。",
+        "Log upload failed: %@": "日志上传失败：%@",
+        "The log service returned an invalid response.": "日志服务返回了无效响应。",
+        "The log service returned error %d.": "日志服务返回错误 %d。",
         "Uploading...": "正在上传...",
         "Please set a screenshot region in Settings before using preset region capture.": "请在设置中设置好截图区域后，再使用预设区域截图。",
         "Choose whether screenshots use a preset region for silent capture during interviews.": "选择面试中截图是否使用预设区域静默捕获",

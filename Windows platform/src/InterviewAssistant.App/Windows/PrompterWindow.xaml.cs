@@ -43,6 +43,9 @@ public partial class PrompterWindow : Window
     private string _codeLanguage = "python";
     private bool _showingError;
     private string _pendingSpeechQuestion = "";
+    private string _pendingInterruptQuestion = "";
+    private DateTimeOffset? _answerVisibleSince;
+    private DateTimeOffset? _lastRecognizedSpeechAt;
     private CancellationTokenSource? _answerCancellation;
     private DateTimeOffset _lastStreamPaint = DateTimeOffset.MinValue;
     private readonly List<(string Path, string Text)> _screenshotSegments = [];
@@ -132,7 +135,7 @@ public partial class PrompterWindow : Window
         _speechRecognition.PartialRecognized += SpeechRecognition_PartialRecognized;
         _speechRecognition.StatusChanged += SpeechRecognition_StatusChanged;
         // Like macOS: when a voice is selected in Settings › Voices, the candidate's own speech is ignored.
-        _speechRecognition.FilterCandidateVoice = true;
+        _speechRecognition.FilterCandidateVoice = _audioMode == PrompterAudioMode.Microphone;
         _speechRecognition.CandidateSpeechDetected += SpeechRecognition_CandidateSpeechDetected;
         RefreshTurns(showLatest: true);
     }
@@ -205,6 +208,8 @@ public partial class PrompterWindow : Window
         _session.UpdatedAt = DateTimeOffset.Now;
         _turnIndex = _session.Turns.Count - 1;
         var turnIndex = _turnIndex;
+        _answerVisibleSince = null;
+        ClearPendingInterrupt();
         ShowPreparing(question);
         _store.ScheduleSave();
         _answerCancellation?.Cancel();
@@ -222,6 +227,7 @@ public partial class PrompterWindow : Window
                 {
                     if (_turnIndex != turnIndex) return;
                     turn.Answer = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
+                    if (!string.IsNullOrWhiteSpace(turn.Answer)) _answerVisibleSince ??= DateTimeOffset.UtcNow;
                     QuestionText.Text = turn.Question;
                     PreparingPanel.Visibility = Visibility.Collapsed;
                     AnswerScroller.Visibility = Visibility.Visible;
@@ -739,6 +745,7 @@ public partial class PrompterWindow : Window
     private void SetAudioMode(PrompterAudioMode mode)
     {
         _audioMode = mode;
+        _speechRecognition.FilterCandidateVoice = mode == PrompterAudioMode.Microphone;
         ApplyAudioModeVisuals();
         AudioInputChanged?.Invoke(mode);
         if (mode != PrompterAudioMode.Muted) _ = _speechRecognition.StartAsync(SpeechLanguageCode(), mode == PrompterAudioMode.SystemAudio);
@@ -862,10 +869,51 @@ public partial class PrompterWindow : Window
             DirectorQuestionCaptured?.Invoke(text);
             return;
         }
-        if (LooksLikeAnswerEcho(text)) return;
+        var now = DateTimeOffset.UtcNow;
+        var gap = _lastRecognizedSpeechAt is { } previous ? now - previous : TimeSpan.MaxValue;
+        _lastRecognizedSpeechAt = now;
+        if (_audioMode == PrompterAudioMode.Microphone && LooksLikeAnswerEcho(text)) return;
+        if (_answerVisibleSince is { } answerSince)
+        {
+            var strongQuestion = gap >= TimeSpan.FromSeconds(5) && LooksLikeInterviewerQuestion(text);
+            if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(20))
+            {
+                ShowPendingInterrupt(text);
+                return;
+            }
+        }
         _pendingSpeechQuestion = MergeSpeechFragments(_pendingSpeechQuestion, text);
         _speechDebounceTimer.Stop();
         _speechDebounceTimer.Start();
+    }
+
+    private void ShowPendingInterrupt(string text)
+    {
+        _pendingInterruptQuestion = MergeSpeechFragments(_pendingInterruptQuestion, text);
+        PendingQuestionText.Text = Localized("New question detected · click to answer: ", "检测到新问题 · 点击回答：") + _pendingInterruptQuestion;
+        PendingQuestionButton.Visibility = Visibility.Visible;
+    }
+
+    private void ClearPendingInterrupt()
+    {
+        _pendingInterruptQuestion = "";
+        PendingQuestionButton.Visibility = Visibility.Collapsed;
+    }
+
+    private async void PendingQuestionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var question = _pendingInterruptQuestion.Trim();
+        ClearPendingInterrupt();
+        if (question.Length > 0) await SubmitRecognizedQuestionAsync(question);
+    }
+
+    private static bool LooksLikeInterviewerQuestion(string text)
+    {
+        var clean = text.Trim();
+        if (clean.EndsWith('?') || clean.EndsWith('？')) return true;
+        var lower = clean.ToLowerInvariant();
+        string[] patterns = ["请", "能不能", "介绍一下", "为什么", "怎么", "如何", "说说", "讲讲", "可以", "what", "how", "why", "tell me", "can you", "could you", "walk me through"];
+        return patterns.Any(lower.Contains);
     }
 
     private async Task SubmitRecognizedQuestionAsync(string text)
@@ -921,6 +969,7 @@ public partial class PrompterWindow : Window
     private void SpeechRecognition_CandidateSpeechDetected(string text)
     {
         if (_audioMode == PrompterAudioMode.Muted) return;
+        _lastRecognizedSpeechAt = DateTimeOffset.UtcNow;
         Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = Localized("🙋 You are answering", "🙋 你在作答")));
     }
 

@@ -14,7 +14,7 @@
 
 - `sherpa-onnx 1.13.6` via Swift Package Manager, Apache-2.0.
 - `onnxruntime-libs 1.27.1`, transitive runtime dependency; upstream ONNX Runtime is MIT.
-- `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx`, 28.3 MB, from the Apache-2.0 3D-Speaker project, downloaded only when requested and verified with SHA-256 `f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11`.
+- `3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx`, 28.3 MB, from the Apache-2.0 3D-Speaker project, downloaded only when requested and verified with SHA-256 `e6af4d4c444f3dab01d991bb9b7d5af98eb979e329f6c8880a19d5553561ed25`.
 - The newer sherpa-onnx 1.13.8 was evaluated, but its current macOS ONNX Runtime archive contains framework symlinks rejected by Xcode's archive safety validation. Pinning 1.13.6 keeps both iOS and macOS buildable.
 
 This is a 1:1 verification problem, so a direct speaker-embedding extractor is smaller and more focused than FluidAudio's full diarization pipeline. All inference is local.

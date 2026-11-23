@@ -36,7 +36,9 @@ struct RecognizedUtterance: Sendable {
 
 enum SpeechProtectionPolicy {
     static let answerOverlapThreshold = 0.35
-    static let strongQuestionMinimumGap: TimeInterval = 1.5
+    /// Require a real five-second pause before an unknown speaker can be
+    /// treated as a new interviewer question while an answer is on screen.
+    static let strongQuestionMinimumGap: TimeInterval = 5.0
 
     /// Phase-one behavior can be disabled independently while tuning in production.
     static var heuristicsEnabled: Bool {

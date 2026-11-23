@@ -22,6 +22,11 @@ struct SettingsView: View {
     @State private var storageRefreshID = UUID()
     @State private var showingVoiceSettings = false
     #if os(macOS)
+    @State private var showingFeedbackComposer = false
+    @State private var showingLogUploadResult = false
+    @State private var logUploadResult = ""
+    @State private var feedbackRecords: [SupportFeedbackRecord] = []
+    @State private var isRefreshingFeedback = false
     @AppStorage(AppPreferenceKey.screenshotHotkey) private var screenshotHotkey = HotkeyManager.screenshotDefaultHotkey
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
     @AppStorage(AppPreferenceKey.hiddenFromScreenCapture) private var hiddenFromScreenCapture = true
@@ -79,6 +84,24 @@ struct SettingsView: View {
         } message: {
             Text(storageMessage)
         }
+        #if os(macOS)
+        .sheet(isPresented: $showingFeedbackComposer) {
+            FeedbackComposerView { record in
+                feedbackRecords = SupportLogUploader.history()
+                logUploadResult = String(format: L.t("Feedback submitted. Your tracking code is %@."), record.code)
+                showingLogUploadResult = true
+            }
+        }
+        .alert(L.t("Feedback"), isPresented: $showingLogUploadResult) {
+            Button(L.t("OK"), role: .cancel) {}
+        } message: {
+            Text(logUploadResult)
+        }
+        .task {
+            feedbackRecords = SupportLogUploader.history()
+            await refreshFeedbackHistory()
+        }
+        #endif
     }
 
     private var settingsGroups: some View {
@@ -171,6 +194,41 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
 
+            #if os(macOS)
+            settingsSection(L.t("Support")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        showingFeedbackComposer = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            iconTile("exclamationmark.bubble.fill", tint: Color.appPrimary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L.t("Report a Problem"))
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.appText)
+                                Text(L.t("Describe the issue, optionally attach diagnostic logs, and track its progress."))
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.appMuted)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.appMuted)
+                        }
+                        .frame(minHeight: 72)
+                        .padding(.horizontal, 16)
+                        .background(cardBackground(radius: 20))
+                    }
+                    .buttonStyle(.plain)
+
+                    if !feedbackRecords.isEmpty {
+                        feedbackHistoryCard
+                    }
+                }
+            }
+            #endif
+
             settingsSection(L.t("About")) {
                 SettingsCardLink(
                     title: L.t("About"),
@@ -262,6 +320,70 @@ struct SettingsView: View {
         }
         showingStorageMessage = true
     }
+
+    #if os(macOS)
+    private var feedbackHistoryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(L.t("Feedback History"))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.appText)
+                Spacer()
+                Button {
+                    Task { await refreshFeedbackHistory() }
+                } label: {
+                    if isRefreshingFeedback { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "arrow.clockwise") }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRefreshingFeedback)
+                .help(L.t("Refresh Status"))
+            }
+            .padding(16)
+
+            ForEach(Array(feedbackRecords.enumerated()), id: \.element.id) { index, record in
+                if index > 0 { Divider().overlay(Color.appBorder) }
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(record.issue)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.appText)
+                            .lineLimit(2)
+                        Text("\(record.code) · \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.appMuted)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 10)
+                    Text(record.status.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(feedbackStatusColor(record.status))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(feedbackStatusColor(record.status).opacity(0.13), in: Capsule())
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+        }
+        .background(cardBackground(radius: 20))
+    }
+
+    private func refreshFeedbackHistory() async {
+        guard !isRefreshingFeedback else { return }
+        isRefreshingFeedback = true
+        feedbackRecords = await SupportLogUploader.refreshHistory()
+        isRefreshingFeedback = false
+    }
+
+    private func feedbackStatusColor(_ status: SupportFeedbackStatus) -> Color {
+        switch status {
+        case .new: return Color.appPrimary
+        case .review: return Color.appYellow
+        case .resolved: return Color.appGreen
+        }
+    }
+    #endif
 
     private var preferenceCard: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -477,6 +599,109 @@ struct SettingsView: View {
         }
     }
 }
+
+#if os(macOS)
+private struct FeedbackComposerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var issue = ""
+    @State private var includeLogs = true
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+    let onSubmitted: (SupportFeedbackRecord) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L.t("Report a Problem"))
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(Color.appText)
+                    Text(L.t("Tell us what happened. You can follow the review status from Settings."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.appMuted)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .disabled(isSubmitting)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L.t("What went wrong?"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.appText)
+                TextEditor(text: $issue)
+                    .font(.system(size: 14))
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
+                    .frame(minHeight: 150)
+                    .background(Color.appBG.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.appBorder))
+                Text("\(issue.count)/2000")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.appMuted)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            Toggle(isOn: $includeLogs) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L.t("Attach Diagnostic Logs"))
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(L.t("Logs are redacted before upload. API keys, voiceprints, resumes, screenshots, and interview history are not included."))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.appMuted)
+                }
+            }
+            .toggleStyle(.switch)
+
+            HStack {
+                Button(L.t("Cancel")) { dismiss() }
+                    .buttonStyle(AppButtonStyle())
+                    .disabled(isSubmitting)
+                Spacer()
+                Button {
+                    submit()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSubmitting { ProgressView().controlSize(.small) }
+                        Text(isSubmitting ? L.t("Submitting...") : L.t("Submit Feedback"))
+                    }
+                }
+                .buttonStyle(AppButtonStyle(prominent: true))
+                .disabled(isSubmitting || issue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || issue.count > 2_000)
+            }
+        }
+        .padding(26)
+        .frame(width: 560)
+        .background(Color.appSurface)
+        .alert(L.t("Feedback Could Not Be Sent"), isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button(L.t("OK"), role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func submit() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        Task {
+            do {
+                let record = try await SupportLogUploader.submitFeedback(issue: issue, includeLogs: includeLogs)
+                onSubmitted(record)
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                isSubmitting = false
+            }
+        }
+    }
+}
+#endif
 
 private struct SettingsCardLink<Destination: View>: View {
     let title: String

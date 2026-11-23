@@ -3,6 +3,13 @@ import Foundation
 import Observation
 import zlib
 
+/// AVAudioNodeTapBlock is designed to run on AVFAudio's realtime queue but is
+/// not annotated Sendable by the SDK. This wrapper documents and contains that
+/// intentional cross-queue handoff.
+private struct SendableAudioTap: @unchecked Sendable {
+    let block: AVAudioNodeTapBlock
+}
+
 enum ASRProvider: String, CaseIterable, Identifiable {
     case apple
     case volcano
@@ -257,39 +264,16 @@ final class VolcanoASREngine {
         }
         #endif
 
-        let startResult: Result<Void, Error> = await withCheckedContinuation { [audioEngine] cont in
-            DispatchQueue.global(qos: .userInitiated).async { [self, audioEngine] in
-                let input = audioEngine.inputNode
-                // Hardware format of the current device (AirPods in call mode report 16/24 kHz mono).
-                let inputFormat = input.inputFormat(forBus: 0)
-                guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
-                    cont.resume(returning: .failure(NSError(
-                        domain: "InterviewAssistant.Audio",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")]
-                    )))
-                    return
-                }
-                input.removeTap(onBus: 0)
-                input.installTap(
-                    onBus: 0,
-                    bufferSize: AVAudioFrameCount(max(1_024, inputFormat.sampleRate * 0.2)),
-                    // nil = the node's own format, so the tap never disagrees with the device's
-                    // sample rate (a mismatch raises an uncatchable exception after switching mics).
-                    format: nil
-                ) { [weak self] buffer, _ in
-                    self?.processCapturedBuffer(buffer)
-                }
-                audioEngine.prepare()
-                do {
-                    try audioEngine.start()
-                    cont.resume(returning: .success(()))
-                } catch {
-                    input.removeTap(onBus: 0)
-                    cont.resume(returning: .failure(error))
-                }
-            }
-        }
+        // Do not carry this @MainActor instance into AVFAudio's worker queue.
+        // With actor data-race checks enabled, a closure that captures `self`
+        // here traps in `_dispatch_assert_queue_fail` as soon as the board opens.
+        let tap = SendableAudioTap(block: Self.makeMicrophoneTap(engine: self))
+        let unavailableInputMessage = L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")
+        let startResult = await Self.startAudioEngine(
+            audioEngine,
+            tap: tap,
+            unavailableInputMessage: unavailableInputMessage
+        )
 
         switch startResult {
         case .success:
@@ -303,27 +287,57 @@ final class VolcanoASREngine {
         }
     }
 
-    private func startSystemAudioCapture() async -> Bool {
-        #if os(macOS)
-        let capture = SystemAudioCapture()
-        capture.onBuffer = { [weak self] buffer in
-            self?.processCapturedBuffer(buffer)
+    /// AVAudioEngine invokes this block on its own realtime queue. Declaring the
+    /// factory nonisolated prevents the closure from inheriting @MainActor.
+    private nonisolated static func makeMicrophoneTap(engine: VolcanoASREngine) -> AVAudioNodeTapBlock {
+        { [weak engine] buffer, _ in
+            engine?.processCapturedBuffer(buffer)
         }
-        capture.onStopped = { [weak self, weak capture] error in
-            Task { @MainActor in
-                guard let self,
-                      let capture,
-                      self.systemAudioCapture === capture,
-                      self.isListening,
-                      self.audioSource == .system else { return }
-                self.systemAudioCapture = nil
-                self.statusText = L.t("⚠️ The system-audio route changed. Reconnecting…")
-                try? await Task.sleep(for: .milliseconds(350))
-                if !(await self.startSystemAudioCapture()) {
-                    self.lastErrorText = String(format: L.t("System-audio capture was interrupted: %@"), error.localizedDescription)
+    }
+
+    /// The dispatch block must be formed outside MainActor isolation because
+    /// AVAudioEngine performs its setup on a worker queue.
+    private nonisolated static func startAudioEngine(
+        _ audioEngine: AVAudioEngine,
+        tap: SendableAudioTap,
+        unavailableInputMessage: String
+    ) async -> Result<Void, Error> {
+        await withCheckedContinuation { cont in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let input = audioEngine.inputNode
+                let inputFormat = input.inputFormat(forBus: 0)
+                guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+                    cont.resume(returning: .failure(NSError(
+                        domain: "InterviewAssistant.Audio",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: unavailableInputMessage]
+                    )))
+                    return
+                }
+                input.removeTap(onBus: 0)
+                input.installTap(
+                    onBus: 0,
+                    bufferSize: AVAudioFrameCount(max(1_024, inputFormat.sampleRate * 0.2)),
+                    format: nil,
+                    block: tap.block
+                )
+                audioEngine.prepare()
+                do {
+                    try audioEngine.start()
+                    cont.resume(returning: .success(()))
+                } catch {
+                    input.removeTap(onBus: 0)
+                    cont.resume(returning: .failure(error))
                 }
             }
         }
+    }
+
+    private func startSystemAudioCapture() async -> Bool {
+        #if os(macOS)
+        let capture = SystemAudioCapture()
+        capture.onBuffer = Self.makeSystemAudioBufferHandler(engine: self)
+        capture.onStopped = Self.makeSystemAudioStoppedHandler(engine: self, capture: capture)
         systemAudioCapture = capture
         do {
             try await capture.start()
@@ -340,6 +354,39 @@ final class VolcanoASREngine {
         return false
         #endif
     }
+
+    #if os(macOS)
+    /// ScreenCaptureKit invokes these handlers on its sample/delegate queues.
+    /// Build them from a nonisolated context so they do not inherit @MainActor.
+    private nonisolated static func makeSystemAudioBufferHandler(
+        engine: VolcanoASREngine
+    ) -> @Sendable (SendablePCMBuffer) -> Void {
+        { [weak engine] buffer in
+            engine?.processCapturedBuffer(buffer.buffer)
+        }
+    }
+
+    private nonisolated static func makeSystemAudioStoppedHandler(
+        engine: VolcanoASREngine,
+        capture: SystemAudioCapture
+    ) -> @Sendable (Error) -> Void {
+        { [weak engine, weak capture] error in
+            Task { @MainActor in
+                guard let engine,
+                      let capture,
+                      engine.systemAudioCapture === capture,
+                      engine.isListening,
+                      engine.audioSource == .system else { return }
+                engine.systemAudioCapture = nil
+                engine.statusText = L.t("⚠️ The system-audio route changed. Reconnecting…")
+                try? await Task.sleep(for: .milliseconds(350))
+                if !(await engine.startSystemAudioCapture()) {
+                    engine.lastErrorText = String(format: L.t("System-audio capture was interrupted: %@"), error.localizedDescription)
+                }
+            }
+        }
+    }
+    #endif
 
     func stop() {
         guard isListening || isConnected else { return }
@@ -374,10 +421,13 @@ final class VolcanoASREngine {
     }
 
     private func stopMicrophoneEngineOnly() {
-        let engineRef = audioEngine
+        Self.stopAudioEngineInBackground(audioEngine)
+    }
+
+    private nonisolated static func stopAudioEngineInBackground(_ audioEngine: AVAudioEngine) {
         DispatchQueue.global(qos: .userInitiated).async {
-            engineRef.inputNode.removeTap(onBus: 0)
-            engineRef.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
         }
     }
 
@@ -460,18 +510,28 @@ final class VolcanoASREngine {
             sequence: seq,
             payload: compressedPayload
         )
-        webSocketTask?.send(.data(frame)) { _ in }
+        guard let task = webSocketTask else { return }
+        Task { @MainActor [weak self] in
+            do {
+                try await task.send(.data(frame))
+            } catch {
+                guard let self, self.webSocketTask === task, self.isConnected else { return }
+                self.lastErrorText = error.localizedDescription
+                self.isConnected = false
+                self.isListening = false
+                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+                self.stopAudioEngine()
+            }
+        }
     }
 
     private func sendFrame(_ data: Data) async -> (success: Bool, message: String) {
-        await withCheckedContinuation { cont in
-            webSocketTask?.send(.data(data)) { error in
-                if let error {
-                    cont.resume(returning: (false, error.localizedDescription))
-                } else {
-                    cont.resume(returning: (true, "OK"))
-                }
-            }
+        guard let task = webSocketTask else { return (false, "WebSocket is unavailable") }
+        do {
+            try await task.send(.data(data))
+            return (true, "OK")
+        } catch {
+            return (false, error.localizedDescription)
         }
     }
 
@@ -499,11 +559,12 @@ final class VolcanoASREngine {
     }
 
     private func receiveLoop() {
-        webSocketTask?.receive { [weak self] result in
+        guard let task = webSocketTask else { return }
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            Task { @MainActor in
-                switch result {
-                case .success(let message):
+            do {
+                while self.isConnected, self.webSocketTask === task {
+                    let message = try await task.receive()
                     switch message {
                     case .data(let data):
                         self.handleResponse(data)
@@ -514,16 +575,14 @@ final class VolcanoASREngine {
                     @unknown default:
                         break
                     }
-                    if self.isConnected {
-                        self.receiveLoop()
-                    }
-                case .failure(let error):
-                    self.lastErrorText = error.localizedDescription
-                    self.isConnected = false
-                    self.isListening = false
-                    self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
-                    self.stopAudioEngine()
                 }
+            } catch {
+                guard self.webSocketTask === task, self.isConnected else { return }
+                self.lastErrorText = error.localizedDescription
+                self.isConnected = false
+                self.isListening = false
+                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+                self.stopAudioEngine()
             }
         }
     }

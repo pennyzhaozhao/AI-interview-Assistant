@@ -49,6 +49,7 @@ final class ReceiverCoordinator {
     private var activeSpeechQuestion = ""
     private var activeSpeechQuestionStartedAt: Date?
     private var activeSpeechAnswerHasStarted = false
+    private var activeSpeechAnswerStartedAt: Date?
     private var activeSpeechSpeaker: SpeakerLabel = .unknown
     private var lastSpeechUtteranceEndedAt: Date?
     var pendingInterruptQuestion: String?
@@ -57,6 +58,7 @@ final class ReceiverCoordinator {
     private let quickSpeechQuestionDebounceSeconds: TimeInterval = 0.35
     private let unfinishedSpeechQuestionDebounceSeconds: TimeInterval = 1.5
     private let speechContinuationMergeWindow: TimeInterval = 10.0
+    private let suspiciousQuestionProtectionWindow: TimeInterval = 20.0
     var canGeneratePendingCode: Bool { !pendingCodeRawQuestion.isEmpty && !isGeneratingCode }
     var isCodeGenerationRunning: Bool { isGeneratingCode }
     var isSpeechListening: Bool {
@@ -174,6 +176,7 @@ final class ReceiverCoordinator {
         activeSpeechQuestion = ""
         activeSpeechQuestionStartedAt = nil
         activeSpeechAnswerHasStarted = false
+        activeSpeechAnswerStartedAt = nil
         activeSpeechSpeaker = .unknown
         lastSpeechUtteranceEndedAt = nil
         // Pre-build mock memory once at session start so AI calls don't hit SwiftData every time
@@ -199,6 +202,7 @@ final class ReceiverCoordinator {
         activeSpeechQuestion = ""
         activeSpeechQuestionStartedAt = nil
         activeSpeechAnswerHasStarted = false
+        activeSpeechAnswerStartedAt = nil
         activeSpeechSpeaker = .unknown
         lastSpeechUtteranceEndedAt = nil
         speech.stop()
@@ -285,6 +289,7 @@ final class ReceiverCoordinator {
         activeSpeechQuestion = ""
         activeSpeechQuestionStartedAt = nil
         activeSpeechAnswerHasStarted = false
+        activeSpeechAnswerStartedAt = nil
         activeSpeechSpeaker = .unknown
         speech.stop()
         volcanoSpeech.stop()
@@ -301,15 +306,14 @@ final class ReceiverCoordinator {
     private func enqueueSpeechQuestion(_ utterance: RecognizedUtterance) {
         let clean = utterance.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return }
-        guard utterance.speaker != .candidate else {
-            speech.statusText = L.t("🙋 You are answering")
-            return
-        }
-
         let previousEnd = lastSpeechUtteranceEndedAt
         lastSpeechUtteranceEndedAt = utterance.endedAt
         let utteranceStart = utterance.endedAt.addingTimeInterval(-utterance.durationSeconds)
         let gap = previousEnd.map { max(0, utteranceStart.timeIntervalSince($0)) } ?? .infinity
+        guard utterance.speaker != .candidate else {
+            speech.statusText = L.t("🙋 You are answering")
+            return
+        }
         let isMicrophoneHeuristicEnabled = audioSource == .microphone && SpeechProtectionPolicy.heuristicsEnabled
         if isMicrophoneHeuristicEnabled,
            utterance.speaker == .unknown,
@@ -322,12 +326,10 @@ final class ReceiverCoordinator {
             #endif
             return
         }
-        let strongSignal = utterance.speaker == .interviewer || (
-            isMicrophoneHeuristicEnabled && SpeechProtectionPolicy.isStrongQuestionSignal(
+        let strongSignal = utterance.speaker == .interviewer || SpeechProtectionPolicy.isStrongQuestionSignal(
                 clean,
                 gapSincePreviousUtterance: gap
             )
-        )
         if pendingSpeechQuestion.isEmpty {
             pendingSpeechQuestion = clean
         } else if !pendingSpeechQuestion.localizedCaseInsensitiveContains(clean) {
@@ -335,7 +337,7 @@ final class ReceiverCoordinator {
         }
         pendingSpeechHasStrongQuestionSignal = pendingSpeechHasStrongQuestionSignal || strongSignal
         if utterance.speaker == .interviewer { pendingSpeechSpeaker = .interviewer }
-        if audioSource == .system || !activeSpeechAnswerHasStarted {
+        if !activeSpeechAnswerHasStarted {
             // Keep the overlay subtitle live while the utterance is still being debounced.
             prompterText = pendingSpeechQuestion
             lastQuestion = pendingSpeechQuestion
@@ -370,9 +372,11 @@ final class ReceiverCoordinator {
             publishDirectorQuestion(question)
             return
         }
-        if audioSource == .microphone,
-           activeSpeechAnswerHasStarted,
-           !strongQuestionSignal {
+        let answerAge = activeSpeechAnswerStartedAt.map { Date().timeIntervalSince($0) } ?? .infinity
+        let shouldProtectVisibleAnswer = activeSpeechAnswerHasStarted
+            && speaker != .interviewer
+            && (!strongQuestionSignal || answerAge < suspiciousQuestionProtectionWindow)
+        if shouldProtectVisibleAnswer {
             pendingInterruptQuestion = question
             pendingInterruptSpeaker = speaker
             return
@@ -395,6 +399,7 @@ final class ReceiverCoordinator {
         activeSpeechSpeaker = speaker
         activeSpeechQuestionStartedAt = .now
         activeSpeechAnswerHasStarted = false
+        activeSpeechAnswerStartedAt = nil
         activeSpeechAnswerTask = Task { [weak self] in
             await self?.askAI(question: finalQuestion)
             await MainActor.run {
@@ -412,6 +417,7 @@ final class ReceiverCoordinator {
         pendingInterruptSpeaker = .unknown
         activeSpeechAnswerTask?.cancel()
         activeSpeechAnswerHasStarted = false
+        activeSpeechAnswerStartedAt = nil
         submitSpeechQuestion(question, strongQuestionSignal: true, speaker: speaker)
     }
 
@@ -785,6 +791,9 @@ final class ReceiverCoordinator {
                     if isApproachForPendingCode && self.isGeneratingCode { return }
                     streamingAnswer += token
                     if self.activeSpeechQuestion == cleanQuestion, !token.isEmpty {
+                        if !self.activeSpeechAnswerHasStarted {
+                            self.activeSpeechAnswerStartedAt = .now
+                        }
                         self.activeSpeechAnswerHasStarted = true
                     }
                     let now = Date()

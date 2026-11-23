@@ -6,6 +6,7 @@ final class PrompterPanel: NSPanel {
     static weak var latestPanel: PrompterPanel?
     private weak var notchScreen: NSScreen?
     private var isApplyingNotchFrame = false
+    private(set) var hasUserMoved = false
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -39,9 +40,15 @@ final class PrompterPanel: NSPanel {
     func setPinned(_ pinned: Bool) {
         level = pinned ? .screenSaver : .normal
         isFloatingPanel = pinned
-        if pinned {
+        if pinned && !hasUserMoved {
             anchorToNotch()
         }
+    }
+
+    func beginUserDrag(with event: NSEvent) {
+        guard event.type == .leftMouseDown else { return }
+        hasUserMoved = true
+        performDrag(with: event)
     }
 
     func resizeIsland(to size: NSSize, animated: Bool = false) {
@@ -50,12 +57,23 @@ final class PrompterPanel: NSPanel {
             width: max(64, min(size.width, targetScreen.frame.width)),
             height: max(48, min(size.height, targetScreen.frame.height))
         )
-        let targetFrame = NSRect(
-            x: targetScreen.frame.midX - clampedSize.width / 2,
-            y: targetScreen.frame.maxY - clampedSize.height,
-            width: clampedSize.width,
-            height: clampedSize.height
-        )
+        let targetFrame: NSRect
+        if hasUserMoved {
+            // Preserve the panel's top-left corner while its expanded height changes.
+            targetFrame = NSRect(
+                x: frame.minX,
+                y: frame.maxY - clampedSize.height,
+                width: clampedSize.width,
+                height: clampedSize.height
+            )
+        } else {
+            targetFrame = NSRect(
+                x: targetScreen.frame.midX - clampedSize.width / 2,
+                y: targetScreen.frame.maxY - clampedSize.height,
+                width: clampedSize.width,
+                height: clampedSize.height
+            )
+        }
         if animated {
             setFrame(targetFrame, display: true, animate: true)
         } else {
@@ -93,10 +111,10 @@ final class PrompterPanel: NSPanel {
 
     override func orderFrontRegardless() {
         Self.latestPanel = self
-        anchorToNotch()
+        if !hasUserMoved { anchorToNotch() }
         sharingType = Self.persistedSharingType
         super.orderFrontRegardless()
-        anchorToNotch()
+        if !hasUserMoved { anchorToNotch() }
         sharingType = Self.persistedSharingType
     }
 
@@ -105,7 +123,8 @@ final class PrompterPanel: NSPanel {
     }
 
     func anchorToNotch(on screen: NSScreen? = nil) {
-        guard !isApplyingNotchFrame,
+        guard !hasUserMoved,
+              !isApplyingNotchFrame,
               let targetScreen = screen ?? notchScreen ?? self.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
         notchScreen = targetScreen
         isApplyingNotchFrame = true
@@ -141,6 +160,7 @@ final class PrompterPanel: NSPanel {
     }
 
     private func notchAnchoredFrame(for proposedFrame: NSRect, on explicitScreen: NSScreen? = nil) -> NSRect {
+        if hasUserMoved { return proposedFrame }
         guard let targetScreen = explicitScreen ?? notchScreen ?? self.screen ?? NSScreen.main ?? NSScreen.screens.first else {
             return proposedFrame
         }
@@ -155,6 +175,20 @@ final class PrompterPanel: NSPanel {
 
     private static var persistedSharingType: NSWindow.SharingType {
         UserDefaults.standard.bool(forKey: AppPreferenceKey.hiddenFromScreenCapture) ? .none : .readOnly
+    }
+}
+
+/// A transparent AppKit hit region that uses the native window-drag loop. It is
+/// installed only behind the expanded title row, so compact mode remains a
+/// click-to-restore control and is intentionally not draggable.
+struct PrompterTitleBarDragRegion: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override func mouseDown(with event: NSEvent) {
+            (window as? PrompterPanel)?.beginUserDrag(with: event)
+        }
     }
 }
 

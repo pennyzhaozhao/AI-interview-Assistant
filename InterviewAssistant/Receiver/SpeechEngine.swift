@@ -97,20 +97,29 @@ final class SpeechEngine {
     }
 
     init() {
-        audioProcessor.onProcessedBuffer = { [weak self] copied, rms, voiceRatio, generation in
-            DispatchQueue.main.async {
-                guard let self, self.processingGeneration == generation, self.isListening else { return }
-                self.handle(buffer: copied.buffer, rms: rms, voiceRatio: voiceRatio)
+        audioProcessor.onProcessedBuffer = Self.makeProcessedBufferHandler(engine: self)
+    }
+
+    private nonisolated static func makeProcessedBufferHandler(
+        engine: SpeechEngine
+    ) -> @Sendable (SendablePCMBuffer, Float, Float, Int) -> Void {
+        { [weak engine] copied, rms, voiceRatio, generation in
+            Task { @MainActor in
+                guard let engine,
+                      engine.processingGeneration == generation,
+                      engine.isListening else { return }
+                engine.handle(buffer: copied.buffer, rms: rms, voiceRatio: voiceRatio)
             }
         }
     }
 
-    nonisolated func requestPermissions() async -> Bool {
+    func requestPermissions() async -> Bool {
         let speechOK = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { auth in
                 cont.resume(returning: auth == .authorized)
             }
         }
+        guard audioSource == .microphone else { return speechOK }
         #if os(iOS)
         let micOK = await AVAudioApplication.requestRecordPermission()
         #else
@@ -132,7 +141,9 @@ final class SpeechEngine {
     func start() async -> Bool {
         guard !isListening else { return true }
         guard await requestPermissions() else {
-            statusText = L.t("Microphone and speech-recognition permission required")
+            statusText = audioSource == .system
+                ? L.t("Speech-recognition permission required")
+                : L.t("Microphone and speech-recognition permission required")
             return false
         }
 
@@ -150,9 +161,10 @@ final class SpeechEngine {
         #if os(macOS)
         if audioSource == .system {
             let capture = SystemAudioCapture()
-            capture.onBuffer = { [weak processor] buffer in
-                processor?.process(buffer: buffer, generation: generation)
-            }
+            capture.onBuffer = Self.makeSystemAudioBufferHandler(
+                processor: processor,
+                generation: generation
+            )
             systemAudioCapture = capture
             do {
                 try await capture.start()
@@ -190,7 +202,22 @@ final class SpeechEngine {
     private func startMicrophoneEngine(generation: Int, processor: SpeechAudioProcessor) async -> Result<Void, Error> {
         let freshEngine = AVAudioEngine()
         engine = freshEngine
-        return await withCheckedContinuation { [freshEngine] cont in
+        let message = L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")
+        return await Self.startMicrophoneEngineInBackground(
+            freshEngine,
+            generation: generation,
+            processor: processor,
+            unavailableInputMessage: message
+        )
+    }
+
+    private nonisolated static func startMicrophoneEngineInBackground(
+        _ freshEngine: AVAudioEngine,
+        generation: Int,
+        processor: SpeechAudioProcessor,
+        unavailableInputMessage: String
+    ) async -> Result<Void, Error> {
+        await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 let input = freshEngine.inputNode
                 // Hardware format of the current device (AirPods in call mode report 16/24 kHz mono).
@@ -199,7 +226,7 @@ final class SpeechEngine {
                     cont.resume(returning: .failure(NSError(
                         domain: "InterviewAssistant.Audio",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")]
+                        userInfo: [NSLocalizedDescriptionKey: unavailableInputMessage]
                     )))
                     return
                 }
@@ -224,6 +251,17 @@ final class SpeechEngine {
         }
     }
 
+    #if os(macOS)
+    private nonisolated static func makeSystemAudioBufferHandler(
+        processor: SpeechAudioProcessor,
+        generation: Int
+    ) -> @Sendable (SendablePCMBuffer) -> Void {
+        { [weak processor] buffer in
+            processor?.process(buffer: buffer.buffer, generation: generation)
+        }
+    }
+    #endif
+
     /// Restart capture when the input device or its format changes mid-interview
     /// (AirPods connected, switched to call mode, or unplugged).
     private func installConfigurationObserver() {
@@ -240,10 +278,7 @@ final class SpeechEngine {
                 #endif
                 self.statusText = L.t("⚠️ The microphone changed. Reconnecting…")
                 let oldEngine = self.engine
-                DispatchQueue.global(qos: .userInitiated).async {
-                    oldEngine.inputNode.removeTap(onBus: 0)
-                    oldEngine.stop()
-                }
+                Self.stopMicrophoneEngineInBackground(oldEngine)
                 try? await Task.sleep(for: .milliseconds(300))
                 guard self.isListening else { return }
                 self.resetVAD()
@@ -294,11 +329,7 @@ final class SpeechEngine {
         }
         #endif
 
-        let engineRef = engine
-        DispatchQueue.global(qos: .userInitiated).async {
-            engineRef.inputNode.removeTap(onBus: 0)
-            engineRef.stop()
-        }
+        Self.stopMicrophoneEngineInBackground(engine)
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
@@ -316,6 +347,13 @@ final class SpeechEngine {
         generation: Int
     ) -> AVAudioNodeTapBlock {
         { buffer, _ in processor.process(buffer: buffer, generation: generation) }
+    }
+
+    private nonisolated static func stopMicrophoneEngineInBackground(_ engine: AVAudioEngine) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
     }
 
     // MARK: - VAD handler

@@ -178,7 +178,7 @@ cd AI-interview-Assistant
 open InterviewAssistant.xcodeproj
 ```
 
-The project does not include Firebase, Google Sign-In, Supabase, or Cloudflare Workers and does not require their SDKs.
+The desktop clients do not include Firebase, Google Sign-In, or Supabase SDKs. The optional diagnostic-log receiver lives in `support-log-worker/`; clients call it over plain HTTPS and do not depend on a Cloudflare SDK.
 
 ### 3. Configure Signing
 
@@ -455,6 +455,7 @@ When selecting a new location:
 | Imported PDF preview copies | Local Application Support directory | When PDF content is included in an external model request |
 | Language, theme, and shortcuts | UserDefaults | Not actively uploaded |
 | Microphone / system audio | Recognition pipeline memory | Sent to the selected provider when external ASR is used |
+| Recent diagnostics, app version, and OS version | Local system log / `%LOCALAPPDATA%` | Redacted and uploaded only after the user confirms “Upload Diagnostic Logs” in Settings; automatically deleted after 30 days |
 
 On Windows, the equivalent locations are:
 
@@ -463,6 +464,7 @@ On Windows, the equivalent locations are:
 | API keys and ASR credentials | Windows Credential Manager |
 | Interview history, knowledge bases, preferences | `%LOCALAPPDATA%\InterviewAssistant\Data` (movable from Settings) |
 | Imported PDF preview copies | `ImportedPDFs` inside the data directory |
+| Startup and crash diagnostics | `%LOCALAPPDATA%\InterviewAssistant\Logs` |
 | Voiceprints | `%LOCALAPPDATA%\InterviewAssistant\voiceprints.dat`, encrypted with Windows Data Protection (DPAPI) |
 | Speaker model | `%LOCALAPPDATA%\InterviewAssistant\SpeakerModels` |
 

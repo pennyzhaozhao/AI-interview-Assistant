@@ -358,8 +358,8 @@ enum SpeakerProfileStore {
 
 enum SpeakerModelManager {
     static let modelID = "3dspeaker-campplus-zh-cn-16k-common"
-    static let modelVersion = "sha256:f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11"
-    static let expectedSHA256 = "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11"
+    static let modelVersion = "sha256:e6af4d4c444f3dab01d991bb9b7d5af98eb979e329f6c8880a19d5553561ed25"
+    static let expectedSHA256 = "e6af4d4c444f3dab01d991bb9b7d5af98eb979e329f6c8880a19d5553561ed25"
     static let downloadURL = URL(string: "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx")!
 
     static var modelURL: URL {

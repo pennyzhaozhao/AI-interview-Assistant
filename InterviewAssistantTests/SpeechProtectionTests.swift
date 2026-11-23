@@ -3,10 +3,10 @@ import XCTest
 
 final class SpeechProtectionTests: XCTestCase {
     func testStrongQuestionRequiresWordingAndPause() {
-        XCTAssertTrue(SpeechProtectionPolicy.isStrongQuestionSignal("可以介绍一下这个项目吗？", gapSincePreviousUtterance: 1.6))
-        XCTAssertFalse(SpeechProtectionPolicy.isStrongQuestionSignal("可以介绍一下这个项目吗？", gapSincePreviousUtterance: 0.8))
-        XCTAssertFalse(SpeechProtectionPolicy.isStrongQuestionSignal("然后我负责完成了交付", gapSincePreviousUtterance: 3.0))
-        XCTAssertTrue(SpeechProtectionPolicy.isStrongQuestionSignal("Could you walk me through the design", gapSincePreviousUtterance: 2.0))
+        XCTAssertTrue(SpeechProtectionPolicy.isStrongQuestionSignal("可以介绍一下这个项目吗？", gapSincePreviousUtterance: 5.1))
+        XCTAssertFalse(SpeechProtectionPolicy.isStrongQuestionSignal("可以介绍一下这个项目吗？", gapSincePreviousUtterance: 3.0))
+        XCTAssertFalse(SpeechProtectionPolicy.isStrongQuestionSignal("然后我负责完成了交付", gapSincePreviousUtterance: 6.0))
+        XCTAssertTrue(SpeechProtectionPolicy.isStrongQuestionSignal("Could you walk me through the design", gapSincePreviousUtterance: 5.5))
     }
 
     func testChineseBigramAndEnglishWordOverlap() {

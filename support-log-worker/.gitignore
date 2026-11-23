@@ -1,0 +1,4 @@
+.dev.vars
+.admin-token
+.wrangler/
+node_modules/

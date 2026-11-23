@@ -8,10 +8,10 @@ import ScreenCaptureKit
 final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
     /// Called on an internal background queue for each captured audio chunk.
-    var onBuffer: ((AVAudioPCMBuffer) -> Void)?
+    var onBuffer: (@Sendable (SendablePCMBuffer) -> Void)?
     /// Called when macOS stops the capture unexpectedly (for example after an
     /// output-device or conferencing-app audio route change).
-    var onStopped: ((Error) -> Void)?
+    var onStopped: (@Sendable (Error) -> Void)?
 
     private var stream: SCStream?
     private var stopRequested = false
@@ -118,7 +118,7 @@ extension SystemAudioCapture: SCStreamOutput {
                 of type: SCStreamOutputType) {
         guard type == .audio, !isStopRequested else { return }
         if let pcm = Self.convertToPCM(sampleBuffer) {
-            onBuffer?(pcm)
+            onBuffer?(SendablePCMBuffer(pcm))
         }
     }
 

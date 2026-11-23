@@ -28,7 +28,7 @@ private enum DensityMode: String, CaseIterable, Identifiable {
     }
 }
 
-private enum OverlayAudioMode: CaseIterable {
+private enum OverlayAudioMode: String, CaseIterable {
     case microphone, system, muted
 }
 
@@ -50,6 +50,7 @@ struct PrompterOverlayView: View {
     @State private var showCodeLanguageEditor = false
     @State private var showJumpToLatest = false
     @State private var audioMode: OverlayAudioMode = .microphone
+    @AppStorage(AppPreferenceKey.prompterAudioMode) private var storedAudioMode = OverlayAudioMode.microphone.rawValue
     @State private var screenshotSubmissionState: ScreenshotSubmissionState = .idle
     @State private var islandExpansion: CGFloat = 0
     @State private var islandContentVisible = false
@@ -125,11 +126,19 @@ struct PrompterOverlayView: View {
         .onAppear {
             applyDensity(.balanced)
             syncPinnedState()
-            audioMode = coordinator.audioSource == .system ? .system : .microphone
+            let restoredAudioMode = OverlayAudioMode(rawValue: storedAudioMode) ?? .microphone
+            audioMode = restoredAudioMode
+            if restoredAudioMode == .system {
+                coordinator.setAudioSource(.system)
+            } else {
+                coordinator.setAudioSource(.microphone)
+            }
             #if os(macOS)
             updateScreenShareVisibility()
             registerScreenshotHotkey()
-            if !coordinator.aiEnabled {
+            if restoredAudioMode == .muted {
+                coordinator.disableAI()
+            } else if !coordinator.aiEnabled {
                 Task { @MainActor in await coordinator.toggleAI() }
             }
             #endif
@@ -222,6 +231,9 @@ struct PrompterOverlayView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 44)
+        #if os(macOS)
+        .background(PrompterTitleBarDragRegion())
+        #endif
     }
 
     private var compactAnswerArea: some View {
@@ -592,13 +604,16 @@ struct PrompterOverlayView: View {
         case .microphone:
             coordinator.disableAI()
             audioMode = .system
+            storedAudioMode = audioMode.rawValue
             coordinator.setAudioSource(.system)
             await coordinator.toggleAI()
         case .system:
             audioMode = .muted
+            storedAudioMode = audioMode.rawValue
             coordinator.disableAI()
         case .muted:
             audioMode = .microphone
+            storedAudioMode = audioMode.rawValue
             coordinator.setAudioSource(.microphone)
             if !coordinator.aiEnabled { await coordinator.toggleAI() }
         }
@@ -1761,7 +1776,13 @@ struct PrompterOverlayView: View {
     }
 
     private func setAudio(_ source: AudioSource) {
-        coordinator.setAudioSource(source)
+        Task { @MainActor in
+            coordinator.disableAI()
+            audioMode = source == .system ? .system : .microphone
+            storedAudioMode = audioMode.rawValue
+            coordinator.setAudioSource(source)
+            await coordinator.toggleAI()
+        }
     }
 
     private func copyAnswer() {

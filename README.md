@@ -178,7 +178,7 @@ cd AI-interview-Assistant
 open InterviewAssistant.xcodeproj
 ```
 
-项目不包含 Firebase、Google Sign-In、Supabase 或 Cloudflare Workers，也不需要安装这些服务的 SDK。
+桌面客户端不包含 Firebase、Google Sign-In 或 Supabase SDK。可选的诊断日志接收端位于 `support-log-worker/`，客户端通过普通 HTTPS 调用，不依赖 Cloudflare SDK。
 
 ### 3. 配置签名
 
@@ -455,6 +455,7 @@ Windows 版只需要在“设置 → 隐私和安全性 → 麦克风”中允�
 | 导入 PDF 的预览副本 | 本机 Application Support | PDF 内容参与外部模型请求时 |
 | 语言、主题、快捷键 | UserDefaults | 不主动上传 |
 | 麦克风 / 系统音频 | 识别流程内存 | 使用外部 ASR 时发送给对应服务商 |
+| 近期诊断日志、应用版本和系统版本 | 本机系统日志 / `%LOCALAPPDATA%` | 仅在用户于设置页确认“上传诊断日志”后，脱敏并上传到支持服务；30 天后自动删除 |
 
 Windows 版的对应位置：
 
@@ -463,6 +464,7 @@ Windows 版的对应位置：
 | API Key、ASR 凭证 | Windows 凭据管理器 |
 | 面试历史、知识库、偏好设置 | `%LOCALAPPDATA%\InterviewAssistant\Data`（可在设置中迁移） |
 | 导入 PDF 的预览副本 | 数据目录下的 `ImportedPDFs` |
+| 启动与崩溃诊断日志 | `%LOCALAPPDATA%\InterviewAssistant\Logs` |
 | 声纹 | `%LOCALAPPDATA%\InterviewAssistant\voiceprints.dat`，使用 Windows 数据保护（DPAPI）加密 |
 | 声纹模型 | `%LOCALAPPDATA%\InterviewAssistant\SpeakerModels` |
 
