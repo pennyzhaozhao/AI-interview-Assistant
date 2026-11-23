@@ -7,9 +7,9 @@
     <ApplicationIcon>Assets\InterviewAssistant.ico</ApplicationIcon>
     <AssemblyName>InterviewAssistant</AssemblyName>
     <RootNamespace>InterviewAssistant</RootNamespace>
-    <Version>1.2.1</Version>
-    <AssemblyVersion>1.2.1.0</AssemblyVersion>
-    <FileVersion>1.2.1.0</FileVersion>
+    <Version>1.3.0</Version>
+    <AssemblyVersion>1.3.0.0</AssemblyVersion>
+    <FileVersion>1.3.0.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InterviewAssistant.Rag\InterviewAssistant.Rag.csproj" />
