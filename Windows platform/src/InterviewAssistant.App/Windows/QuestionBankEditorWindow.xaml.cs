@@ -96,7 +96,7 @@ public partial class QuestionBankEditorWindow : Window
     private TextBlock Label(string key) => new() { Text = LocalizationManager.Text(key), FontSize = 12, Foreground = Brush("TextSecondaryBrush"), Margin = new Thickness(2, 7, 0, 5) };
     private TextBox Input(string text, bool multiline)
     {
-        var box = new TextBox { Text = text, TextWrapping = TextWrapping.Wrap, AcceptsReturn = multiline, MinHeight = multiline ? 84 : 40, VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center, Padding = new Thickness(11, 7), BorderThickness = new Thickness(1), BorderBrush = Brush("BorderBrush"), Background = Brush("InputBrush"), Foreground = Brush("TextPrimaryBrush") };
+        var box = new TextBox { Text = text, TextWrapping = TextWrapping.Wrap, AcceptsReturn = multiline, MinHeight = multiline ? 84 : 40, VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center, Padding = new Thickness(11, 7, 11, 7), BorderThickness = new Thickness(1), BorderBrush = Brush("BorderBrush"), Background = Brush("InputBrush"), Foreground = Brush("TextPrimaryBrush") };
         if (multiline) box.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         return box;
     }
