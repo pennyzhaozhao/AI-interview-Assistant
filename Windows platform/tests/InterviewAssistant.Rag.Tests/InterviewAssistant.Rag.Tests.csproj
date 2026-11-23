@@ -5,6 +5,7 @@
     <IsPackable>false</IsPackable>
     <RootNamespace>InterviewAssistant.Rag.Tests</RootNamespace>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <DefineConstants>$(DefineConstants);QUESTION_BANK_CORE_ONLY</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3" Version="3.2.2" />
@@ -20,6 +21,7 @@
     <Compile Include="..\..\src\InterviewAssistant.App\Services\AIService.cs" Link="AppSources\AIService.cs" />
     <Compile Include="..\..\src\InterviewAssistant.App\Services\InterviewPromptBuilder.cs" Link="AppSources\InterviewPromptBuilder.cs" />
     <Compile Include="..\..\src\InterviewAssistant.App\Services\KnowledgeContextFormatter.cs" Link="AppSources\KnowledgeContextFormatter.cs" />
+    <Compile Include="..\..\src\InterviewAssistant.App\Services\QuestionBankService.cs" Link="AppSources\QuestionBankService.cs" />
     <Compile Include="..\..\src\InterviewAssistant.App\Services\RagPromptContext.cs" Link="AppSources\RagPromptContext.cs" />
   </ItemGroup>
   <ItemGroup>

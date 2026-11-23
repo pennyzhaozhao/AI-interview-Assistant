@@ -58,6 +58,7 @@ public static class QuestionBankService
         return builder.ToString().Trim();
     }
 
+#if !QUESTION_BANK_CORE_ONLY
     public static string PreviewText(string? content)
     {
         var items = Decode(content).Questions.Take(3).Select(item => $"Q: {item.Question}\nA: {item.Answer}").ToList();
@@ -114,4 +115,5 @@ public static class QuestionBankService
         var end = trimmed.LastIndexOf('}');
         return start >= 0 && end > start ? trimmed[start..(end + 1)] : trimmed;
     }
+#endif
 }
