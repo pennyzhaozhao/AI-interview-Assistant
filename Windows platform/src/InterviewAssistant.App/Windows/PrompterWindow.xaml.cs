@@ -88,6 +88,9 @@ public partial class PrompterWindow : Window
         _session = session;
         _isDirectorMode = directorMode || string.Equals(session.Kind, "director", StringComparison.OrdinalIgnoreCase);
         InitializeComponent();
+        // A WPF tooltip owns a separate native popup window, which can leak into screen sharing even
+        // when this prompter window is capture-excluded. Never open tooltips anywhere in the panel.
+        AddHandler(ToolTipService.ToolTipOpeningEvent, new ToolTipEventHandler((_, args) => args.Handled = true));
         _audioMode = Enum.TryParse<PrompterAudioMode>(_store.Data.Preferences.PrompterAudioMode, true, out var savedAudioMode)
             ? savedAudioMode
             : PrompterAudioMode.Microphone;
@@ -97,11 +100,6 @@ public partial class PrompterWindow : Window
             // Compatibility mode: layered windows cannot be hidden from capture on this PC.
             AllowsTransparency = false;
             CodeLanguagePopup.AllowsTransparency = false;
-            // Tooltip popups are layered and could not be hidden on this PC, so do not show them while hiding.
-            AddHandler(ToolTipService.ToolTipOpeningEvent, new ToolTipEventHandler((_, args) =>
-            {
-                if (_store.Data.Preferences.HidePrompterFromCapture) args.Handled = true;
-            }));
         }
         Loaded += PrompterWindow_Loaded;
         SizeChanged += (_, _) =>
@@ -851,9 +849,9 @@ public partial class PrompterWindow : Window
     {
         AiOnlyTools.Visibility = _isDirectorMode ? Visibility.Collapsed : Visibility.Visible;
         AiKnowledgeButton.Visibility = _isDirectorMode ? Visibility.Collapsed : Visibility.Visible;
-        ModeButton.ToolTip = _isDirectorMode
+        System.Windows.Automation.AutomationProperties.SetName(ModeButton, _isDirectorMode
             ? Localized("Switch to AI mode", "切换到 AI 模式")
-            : Localized("Switch to Director mode", "切换到导演模式");
+            : Localized("Switch to Director mode", "切换到导演模式"));
         if (_audioMode == PrompterAudioMode.Muted) _speechRecognition.Stop();
         else if (IsLoaded) _ = _speechRecognition.StartAsync(SpeechLanguageCode(), _audioMode == PrompterAudioMode.SystemAudio);
         if (refreshContent) RefreshTurns(showLatest: true);
@@ -880,7 +878,7 @@ public partial class PrompterWindow : Window
         if (_audioMode == PrompterAudioMode.Microphone && LooksLikeAnswerEcho(text)) return;
         if (_answerVisibleSince is { } answerSince)
         {
-            var strongQuestion = gap >= TimeSpan.FromSeconds(5) && LooksLikeInterviewerQuestion(text);
+            var strongQuestion = gap >= TimeSpan.FromSeconds(3.5) && LooksLikeInterviewerQuestion(text);
             if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(20))
             {
                 ShowPendingInterrupt(text);

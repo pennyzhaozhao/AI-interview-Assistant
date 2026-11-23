@@ -183,10 +183,29 @@ public partial class KnowledgeView : UserControl
     private void EditEntry_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: KnowledgeEntryViewModel entry }) return;
+        if (entry.Kind == KnowledgeEntryKinds.QuestionBank)
+        {
+            var questionBank = new Windows.QuestionBankEditorWindow(entry.Title, entry.Content) { Owner = Owner };
+            if (questionBank.ShowDialog() == true) { entry.Title = questionBank.EntryTitle; entry.Content = questionBank.EntryContent; }
+            return;
+        }
         var dialog = new Windows.KnowledgeEntryEditorWindow(entry.Title, entry.Content, isNew: false, pdfPath: entry.PdfPath) { Owner = Owner };
         if (dialog.ShowDialog() != true) return;
         entry.Title = dialog.EntryTitle;
         entry.Content = dialog.EntryContent;
+    }
+
+    private void AddQuestionBank_Click(object sender, RoutedEventArgs e)
+    {
+        if (Page is not { SelectedKnowledgeBase: { } knowledgeBase }) return;
+        var entry = knowledgeBase.AddEntry(
+            LocalizationManager.Text("Interview Q&A Bank"),
+            QuestionBankService.Encode(new QuestionBankDocument()),
+            "question-bank",
+            KnowledgeEntryKinds.QuestionBank);
+        var dialog = new Windows.QuestionBankEditorWindow(entry.Title, entry.Content) { Owner = Owner };
+        if (dialog.ShowDialog() == true) { entry.Title = dialog.EntryTitle; entry.Content = dialog.EntryContent; }
+        else knowledgeBase.RemoveEntry(entry.Model);
     }
 
     private void EditProject_Click(object sender, RoutedEventArgs e)

@@ -22,11 +22,8 @@ struct SettingsView: View {
     @State private var storageRefreshID = UUID()
     @State private var showingVoiceSettings = false
     #if os(macOS)
-    @State private var showingFeedbackComposer = false
-    @State private var showingLogUploadResult = false
-    @State private var logUploadResult = ""
+    @State private var showingFeedbackCenter = false
     @State private var feedbackRecords: [SupportFeedbackRecord] = []
-    @State private var isRefreshingFeedback = false
     @AppStorage(AppPreferenceKey.screenshotHotkey) private var screenshotHotkey = HotkeyManager.screenshotDefaultHotkey
     @AppStorage(AppPreferenceKey.screenshotMode) private var screenshotModeRaw = ScreenshotMode.presetRegion.rawValue
     @AppStorage(AppPreferenceKey.hiddenFromScreenCapture) private var hiddenFromScreenCapture = true
@@ -86,21 +83,11 @@ struct SettingsView: View {
             Text(storageMessage)
         }
         #if os(macOS)
-        .sheet(isPresented: $showingFeedbackComposer) {
-            FeedbackComposerView { record in
-                feedbackRecords = SupportLogUploader.history()
-                logUploadResult = String(format: L.t("Feedback submitted. Your tracking code is %@."), record.code)
-                showingLogUploadResult = true
-            }
-        }
-        .alert(L.t("Feedback"), isPresented: $showingLogUploadResult) {
-            Button(L.t("OK"), role: .cancel) {}
-        } message: {
-            Text(logUploadResult)
+        .sheet(isPresented: $showingFeedbackCenter) {
+            FeedbackHistoryView(records: $feedbackRecords)
         }
         .task {
             feedbackRecords = SupportLogUploader.history()
-            await refreshFeedbackHistory()
         }
         #endif
     }
@@ -202,7 +189,8 @@ struct SettingsView: View {
             settingsSection(L.t("Support")) {
                 VStack(alignment: .leading, spacing: 12) {
                     Button {
-                        showingFeedbackComposer = true
+                        feedbackRecords = SupportLogUploader.history()
+                        showingFeedbackCenter = true
                     } label: {
                         HStack(spacing: 14) {
                             iconTile("exclamationmark.bubble.fill", tint: Color.appPrimary)
@@ -225,10 +213,6 @@ struct SettingsView: View {
                         .background(cardBackground(radius: 20))
                     }
                     .buttonStyle(.plain)
-
-                    if !feedbackRecords.isEmpty {
-                        feedbackHistoryCard
-                    }
                 }
             }
             #endif
@@ -324,70 +308,6 @@ struct SettingsView: View {
         }
         showingStorageMessage = true
     }
-
-    #if os(macOS)
-    private var feedbackHistoryCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(L.t("Feedback History"))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.appText)
-                Spacer()
-                Button {
-                    Task { await refreshFeedbackHistory() }
-                } label: {
-                    if isRefreshingFeedback { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.clockwise") }
-                }
-                .buttonStyle(.plain)
-                .disabled(isRefreshingFeedback)
-                .help(L.t("Refresh Status"))
-            }
-            .padding(16)
-
-            ForEach(Array(feedbackRecords.enumerated()), id: \.element.id) { index, record in
-                if index > 0 { Divider().overlay(Color.appBorder) }
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(record.issue)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.appText)
-                            .lineLimit(2)
-                        Text("\(record.code) · \(record.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.appMuted)
-                            .textSelection(.enabled)
-                    }
-                    Spacer(minLength: 10)
-                    Text(record.status.title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(feedbackStatusColor(record.status))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(feedbackStatusColor(record.status).opacity(0.13), in: Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-        }
-        .background(cardBackground(radius: 20))
-    }
-
-    private func refreshFeedbackHistory() async {
-        guard !isRefreshingFeedback else { return }
-        isRefreshingFeedback = true
-        feedbackRecords = await SupportLogUploader.refreshHistory()
-        isRefreshingFeedback = false
-    }
-
-    private func feedbackStatusColor(_ status: SupportFeedbackStatus) -> Color {
-        switch status {
-        case .new: return Color.appPrimary
-        case .review: return Color.appYellow
-        case .resolved: return Color.appGreen
-        }
-    }
-    #endif
 
     private var preferenceCard: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -624,12 +544,155 @@ struct SettingsView: View {
 }
 
 #if os(macOS)
+private struct FeedbackHistoryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var records: [SupportFeedbackRecord]
+    @State private var showingComposer = false
+    @State private var isRefreshing = false
+    @State private var resultMessage = ""
+    @State private var showingResult = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help(L.t("Close"))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L.t("Feedback History"))
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(Color.appText)
+                    Text(L.t("Track the progress of problems you have reported."))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.appMuted)
+                }
+                Spacer()
+                Button {
+                    Task { await refresh() }
+                } label: {
+                    if isRefreshing { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "arrow.clockwise") }
+                }
+                .buttonStyle(AppButtonStyle())
+                .disabled(isRefreshing)
+                .help(L.t("Refresh Status"))
+
+                Button {
+                    showingComposer = true
+                } label: {
+                    Label(L.t("New Feedback"), systemImage: "plus")
+                }
+                .buttonStyle(AppButtonStyle(prominent: true))
+            }
+            .padding(22)
+
+            Divider().overlay(Color.appBorder)
+
+            if records.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "bubble.left.and.exclamationmark.bubble.right")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.appMuted)
+                    Text(L.t("No feedback yet."))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.appText)
+                    Text(L.t("New reports and their review status will appear here."))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.appMuted)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(records) { record in
+                            HStack(alignment: .top, spacing: 14) {
+                                Image(systemName: record.hasImage == true ? "photo.fill" : "text.bubble.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color.appPrimary)
+                                    .frame(width: 38, height: 38)
+                                    .background(Color.appPrimary.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(record.issue)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Color.appText)
+                                        .lineLimit(3)
+                                    HStack(spacing: 7) {
+                                        Text(record.code)
+                                        Text("·")
+                                        Text(record.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                        if record.hasImage == true {
+                                            Text("·")
+                                            Label(L.t("Image attached"), systemImage: "photo")
+                                        }
+                                    }
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.appMuted)
+                                    .textSelection(.enabled)
+                                }
+                                Spacer(minLength: 10)
+                                Text(record.status.title)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(statusColor(record.status))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(statusColor(record.status).opacity(0.13), in: Capsule())
+                            }
+                            .padding(15)
+                            .background(cardBackground(radius: 16))
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+        }
+        .frame(width: 720, height: 540)
+        .background(Color.appBG)
+        .sheet(isPresented: $showingComposer) {
+            FeedbackComposerView { record in
+                records = SupportLogUploader.history()
+                resultMessage = String(format: L.t("Feedback submitted. Your tracking code is %@."), record.code)
+                showingResult = true
+            }
+        }
+        .alert(L.t("Feedback"), isPresented: $showingResult) {
+            Button(L.t("OK"), role: .cancel) {}
+        } message: {
+            Text(resultMessage)
+        }
+        .task {
+            records = SupportLogUploader.history()
+            await refresh()
+        }
+    }
+
+    private func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        records = await SupportLogUploader.refreshHistory()
+        isRefreshing = false
+    }
+
+    private func statusColor(_ status: SupportFeedbackStatus) -> Color {
+        switch status {
+        case .new: return Color.appPrimary
+        case .review: return Color.appYellow
+        case .resolved: return Color.appGreen
+        }
+    }
+}
+
 private struct FeedbackComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var issue = ""
     @State private var includeLogs = true
     @State private var isSubmitting = false
     @State private var errorMessage: String?
+    @State private var image: SupportFeedbackImage?
+    @State private var imagePreview: NSImage?
+    @State private var showingImageImporter = false
     let onSubmitted: (SupportFeedbackRecord) -> Void
 
     var body: some View {
@@ -679,6 +742,41 @@ private struct FeedbackComposerView: View {
             }
             .toggleStyle(.switch)
 
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L.t("Attach an Image"))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.appText)
+                        Text(L.t("Optional. The image is compressed before upload."))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.appMuted)
+                    }
+                    Spacer()
+                    if image == nil {
+                        Button(L.t("Choose Image")) { showingImageImporter = true }
+                            .buttonStyle(AppButtonStyle())
+                            .disabled(isSubmitting)
+                    } else {
+                        Button(L.t("Remove"), role: .destructive) {
+                            image = nil
+                            imagePreview = nil
+                        }
+                        .buttonStyle(AppButtonStyle())
+                        .disabled(isSubmitting)
+                    }
+                }
+                if let imagePreview {
+                    Image(nsImage: imagePreview)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 150)
+                        .background(Color.appBG.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.appBorder))
+                }
+            }
+
             HStack {
                 Button(L.t("Cancel")) { dismiss() }
                     .buttonStyle(AppButtonStyle())
@@ -699,6 +797,19 @@ private struct FeedbackComposerView: View {
         .padding(26)
         .frame(width: 560)
         .background(Color.appSurface)
+        .fileImporter(
+            isPresented: $showingImageImporter,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: false
+        ) { result in
+            do {
+                guard let url = try result.get().first else { return }
+                image = try SupportLogUploader.prepareImage(from: url)
+                imagePreview = NSImage(data: image?.data ?? Data())
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
         .alert(L.t("Feedback Could Not Be Sent"), isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -714,7 +825,11 @@ private struct FeedbackComposerView: View {
         isSubmitting = true
         Task {
             do {
-                let record = try await SupportLogUploader.submitFeedback(issue: issue, includeLogs: includeLogs)
+                let record = try await SupportLogUploader.submitFeedback(
+                    issue: issue,
+                    includeLogs: includeLogs,
+                    image: image
+                )
                 onSubmitted(record)
                 dismiss()
             } catch {

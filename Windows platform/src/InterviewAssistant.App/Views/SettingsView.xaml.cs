@@ -13,6 +13,7 @@ public partial class SettingsView : UserControl
     private bool _isLoadingPassword;
     private bool _isChangingTheme;
     private ViewModels.SettingsViewModel? _subscribedViewModel;
+    private SupportFeedbackImage? _feedbackImage;
 
     public SettingsView() => InitializeComponent();
 
@@ -201,6 +202,22 @@ public partial class SettingsView : UserControl
         }
     }
 
+    private void ShowFeedbackHistory_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsRootPanel.Visibility = Visibility.Collapsed;
+        ApiConfigPanel.Visibility = Visibility.Collapsed;
+        FeedbackPanel.Visibility = Visibility.Visible;
+        FeedbackComposerCard.Visibility = Visibility.Collapsed;
+        BuildFeedbackHistory();
+    }
+
+    private void BackFromFeedback_Click(object sender, RoutedEventArgs e)
+    {
+        FeedbackPanel.Visibility = Visibility.Collapsed;
+        FeedbackComposerCard.Visibility = Visibility.Collapsed;
+        SettingsRootPanel.Visibility = Visibility.Visible;
+    }
+
     private void ShowFeedbackComposer_Click(object sender, RoutedEventArgs e)
     {
         FeedbackValidationText.Visibility = Visibility.Collapsed;
@@ -212,6 +229,38 @@ public partial class SettingsView : UserControl
     {
         FeedbackComposerCard.Visibility = Visibility.Collapsed;
         FeedbackValidationText.Visibility = Visibility.Collapsed;
+    }
+
+    private void ChooseFeedbackImage_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = LocalizationManager.Text("Choose Image"),
+            Filter = "Image files|*.jpg;*.jpeg;*.png|JPEG|*.jpg;*.jpeg|PNG|*.png",
+            Multiselect = false
+        };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            _feedbackImage = SupportLogUploader.PrepareImage(dialog.FileName);
+            FeedbackImageNameText.Text = _feedbackImage.FileName;
+            RemoveFeedbackImageButton.Visibility = Visibility.Visible;
+            ChooseFeedbackImageButton.Visibility = Visibility.Collapsed;
+            FeedbackValidationText.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception exception)
+        {
+            FeedbackValidationText.Text = exception.Message;
+            FeedbackValidationText.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void RemoveFeedbackImage_Click(object sender, RoutedEventArgs e)
+    {
+        _feedbackImage = null;
+        FeedbackImageNameText.Text = "";
+        RemoveFeedbackImageButton.Visibility = Visibility.Collapsed;
+        ChooseFeedbackImageButton.Visibility = Visibility.Visible;
     }
 
     private async void SubmitFeedback_Click(object sender, RoutedEventArgs e)
@@ -228,10 +277,14 @@ public partial class SettingsView : UserControl
         ReportIssueButton.IsEnabled = false;
         try
         {
-            var record = await SupportLogUploader.SubmitFeedbackAsync(issue, IncludeFeedbackLogsCheckBox.IsChecked == true);
+            var record = await SupportLogUploader.SubmitFeedbackAsync(
+                issue,
+                IncludeFeedbackLogsCheckBox.IsChecked == true,
+                _feedbackImage);
             Clipboard.SetText(record.Code);
             FeedbackIssueBox.Clear();
             IncludeFeedbackLogsCheckBox.IsChecked = true;
+            RemoveFeedbackImage_Click(this, new RoutedEventArgs());
             FeedbackComposerCard.Visibility = Visibility.Collapsed;
             BuildFeedbackHistory();
             Windows.AppDialog.Show(
@@ -265,7 +318,9 @@ public partial class SettingsView : UserControl
     {
         var records = SupportLogUploader.LoadHistory();
         FeedbackHistoryPanel.Children.Clear();
-        FeedbackHistorySection.Visibility = records.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        FeedbackHistoryCard.Visibility = records.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        FeedbackEmptyCard.Visibility = records.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        FeedbackEmptyText.Visibility = records.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         for (var index = 0; index < records.Count; index++)
         {
             if (index > 0) FeedbackHistoryPanel.Children.Add(Separator());
@@ -280,6 +335,12 @@ public partial class SettingsView : UserControl
             meta.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
             text.Children.Add(issue);
             text.Children.Add(meta);
+            if (record.HasImage)
+            {
+                var attachment = new TextBlock { Text = LocalizationManager.Text("Image attached"), FontSize = 11, Margin = new Thickness(0, 3, 0, 0) };
+                attachment.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryBrush");
+                text.Children.Add(attachment);
+            }
             grid.Children.Add(text);
             var status = new Border { CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 5, 10, 5), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
             status.SetResourceReference(Border.BackgroundProperty, record.Status == "review" ? "WarningSoftBrush" : "InputBrush");
@@ -296,6 +357,7 @@ public partial class SettingsView : UserControl
     {
         SettingsRootPanel.Visibility = Visibility.Collapsed;
         ApiConfigPanel.Visibility = Visibility.Collapsed;
+        FeedbackPanel.Visibility = Visibility.Collapsed;
         AboutPanel.Visibility = Visibility.Visible;
         AboutVersionText.Text = UpdateChecker.CurrentVersion;
         AboutBuildText.Text = UpdateChecker.BuildNumber;

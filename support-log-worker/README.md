@@ -1,6 +1,6 @@
 # Support log service
 
-This Worker accepts user feedback from the macOS and Windows apps, optionally stores privacy-redacted diagnostic logs, and returns a short tracking code plus a private tracking token. Reports are stored in Workers KV for 30 days. `/admin` is protected by HTTP Basic authentication using the `ADMIN_TOKEN` secret.
+This Worker accepts user feedback from the macOS and Windows apps, optionally stores privacy-redacted diagnostic logs and one compressed image, and returns a short tracking code plus a private tracking token. Reports and image objects are stored under separate Workers KV keys for 30 days. `/admin` is protected by HTTP Basic authentication using the `ADMIN_TOKEN` secret.
 
 Deployment:
 
@@ -10,7 +10,7 @@ Deployment:
 4. Run `npm run deploy`.
 5. The production endpoint is `https://interview-assistant-log-upload.zhaopeiyu1507288.workers.dev`; keep the centralized endpoints in `SupportLogUploader.swift` and `SupportLogUploader.cs` in sync if it changes.
 
-Open `https://<worker-url>/admin`; the browser asks for a username and password. The username can be anything and the password is `ADMIN_TOKEN`. The dashboard lists real submissions and supports issue/log search, status filtering, detail inspection, log copy/download, CSV export, and status updates.
+Open `https://<worker-url>/admin`; the browser asks for a username and password. The username can be anything and the password is `ADMIN_TOKEN`. The dashboard lists real submissions and supports issue/log search, status filtering, detail inspection, protected image preview/download, log copy/download, CSV export, and status updates.
 
 Public app API:
 

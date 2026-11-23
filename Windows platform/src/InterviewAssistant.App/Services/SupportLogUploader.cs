@@ -9,6 +9,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace InterviewAssistant.Services;
 
@@ -21,6 +23,14 @@ public sealed class SupportFeedbackRecord
     public string Status { get; set; } = "new";
     public DateTimeOffset UpdatedAt { get; set; }
     public bool HasLogs { get; set; }
+    public bool HasImage { get; set; }
+}
+
+public sealed class SupportFeedbackImage
+{
+    public string FileName { get; set; } = "feedback-image.jpg";
+    public string MimeType { get; set; } = "image/jpeg";
+    public byte[] Data { get; set; } = [];
 }
 
 public static partial class SupportLogUploader
@@ -35,6 +45,7 @@ public static partial class SupportLogUploader
     public static async Task<SupportFeedbackRecord> SubmitFeedbackAsync(
         string issue,
         bool includeLogs,
+        SupportFeedbackImage? image = null,
         CancellationToken cancellationToken = default)
     {
         var cleanIssue = issue.Trim();
@@ -50,9 +61,15 @@ public static partial class SupportLogUploader
             createdAt = createdAt.ToString("O"),
             issue = cleanIssue,
             includeLogs,
-            logs = includeLogs ? Redact(ReadLogTail()) : ""
+            logs = includeLogs ? Redact(ReadLogTail()) : "",
+            image = image is null ? null : new
+            {
+                fileName = image.FileName,
+                mimeType = image.MimeType,
+                base64 = Convert.ToBase64String(image.Data)
+            }
         };
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         using var response = await client.PostAsync(Endpoint, content, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -70,7 +87,8 @@ public static partial class SupportLogUploader
             CreatedAt = createdAt,
             Status = result.Status,
             UpdatedAt = DateTimeOffset.TryParse(result.UpdatedAt, out var updated) ? updated : createdAt,
-            HasLogs = includeLogs
+            HasLogs = includeLogs,
+            HasImage = result.HasImage || image is not null
         };
         var history = LoadHistory().Where(item => item.Code != record.Code).ToList();
         history.Insert(0, record);
@@ -106,6 +124,7 @@ public static partial class SupportLogUploader
                 var status = JsonSerializer.Deserialize<StatusResponse>(body, JsonOptions);
                 if (status is null) continue;
                 item.Status = status.Status;
+                item.HasImage = status.HasImage || item.HasImage;
                 if (DateTimeOffset.TryParse(status.UpdatedAt, out var updated)) item.UpdatedAt = updated;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { }
@@ -113,6 +132,37 @@ public static partial class SupportLogUploader
         }
         SaveHistory(history);
         return history;
+    }
+
+    public static SupportFeedbackImage PrepareImage(string path)
+    {
+        using var sourceStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var decoder = BitmapDecoder.Create(sourceStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var source = decoder.Frames.FirstOrDefault() ?? throw new InvalidOperationException("The selected image could not be read.");
+        foreach (var maximumDimension in new[] { 1600d, 1280d, 1024d })
+        {
+            var scale = Math.Min(1d, maximumDimension / Math.Max(source.PixelWidth, source.PixelHeight));
+            BitmapSource resized = scale < 1
+                ? new TransformedBitmap(source, new ScaleTransform(scale, scale))
+                : source;
+            foreach (var quality in new[] { 82, 68, 52 })
+            {
+                var encoder = new JpegBitmapEncoder { QualityLevel = quality };
+                encoder.Frames.Add(BitmapFrame.Create(resized));
+                using var output = new MemoryStream();
+                encoder.Save(output);
+                if (output.Length <= 4 * 1024 * 1024)
+                {
+                    return new SupportFeedbackImage
+                    {
+                        FileName = Path.GetFileNameWithoutExtension(path) + ".jpg",
+                        MimeType = "image/jpeg",
+                        Data = output.ToArray()
+                    };
+                }
+            }
+        }
+        throw new InvalidOperationException(LocalizationManager.Text("FeedbackImageTooLarge"));
     }
 
     private static void SaveHistory(IEnumerable<SupportFeedbackRecord> history)
@@ -155,12 +205,14 @@ public static partial class SupportLogUploader
         public string TrackingToken { get; set; } = "";
         public string Status { get; set; } = "new";
         public string UpdatedAt { get; set; } = "";
+        public bool HasImage { get; set; }
     }
 
     private sealed class StatusResponse
     {
         public string Status { get; set; } = "new";
         public string UpdatedAt { get; set; } = "";
+        public bool HasImage { get; set; }
     }
 
     [GeneratedRegex(@"(?i)(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,;]+")]

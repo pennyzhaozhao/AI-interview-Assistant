@@ -267,6 +267,7 @@
                         <WrapPanel>
                             <Button Click="UploadFile_Click" Style="{StaticResource SmallButton}" Margin="0,0,8,8"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE898;" Style="{StaticResource FluentIconStyle}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="{loc:Loc Key=Upload File}"/></StackPanel></Button>
                             <Button Click="AddMainContent_Click" Style="{StaticResource SmallButton}" Margin="0,0,8,8"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE70B;" Style="{StaticResource FluentIconStyle}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="{loc:Loc Key=New note}"/></StackPanel></Button>
+                            <Button Click="AddQuestionBank_Click" Style="{StaticResource SmallButton}" Margin="0,0,8,8"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE897;" Style="{StaticResource FluentIconStyle}" FontSize="13" Margin="0,0,7,0"/><TextBlock Text="{loc:Loc Key='New Q&amp;A bank'}"/></StackPanel></Button>
                         </WrapPanel>
                         <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}" Margin="0,2,0,0">
                             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

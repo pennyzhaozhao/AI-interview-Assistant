@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import OSLog
+import AppKit
 
 enum SupportFeedbackStatus: String, Codable, Sendable {
     case new
@@ -25,6 +26,13 @@ struct SupportFeedbackRecord: Codable, Identifiable, Sendable {
     var status: SupportFeedbackStatus
     var updatedAt: Date
     let hasLogs: Bool
+    var hasImage: Bool?
+}
+
+struct SupportFeedbackImage: Sendable {
+    let fileName: String
+    let mimeType: String
+    let data: Data
 }
 
 @MainActor
@@ -40,6 +48,13 @@ enum SupportLogUploader {
         let issue: String
         let includeLogs: Bool
         let logs: String
+        let image: ImageUpload?
+    }
+
+    private struct ImageUpload: Encodable {
+        let fileName: String
+        let mimeType: String
+        let base64: String
     }
 
     private struct UploadResponse: Decodable {
@@ -47,15 +62,21 @@ enum SupportLogUploader {
         let trackingToken: String
         let status: SupportFeedbackStatus
         let updatedAt: String
+        let hasImage: Bool?
     }
 
     private struct StatusResponse: Decodable {
         let code: String
         let status: SupportFeedbackStatus
         let updatedAt: String
+        let hasImage: Bool?
     }
 
-    static func submitFeedback(issue: String, includeLogs: Bool) async throws -> SupportFeedbackRecord {
+    static func submitFeedback(
+        issue: String,
+        includeLogs: Bool,
+        image: SupportFeedbackImage? = nil
+    ) async throws -> SupportFeedbackRecord {
         let cleanIssue = issue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanIssue.isEmpty else { throw UploadError.emptyIssue }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
@@ -68,13 +89,16 @@ enum SupportLogUploader {
             createdAt: ISO8601DateFormatter().string(from: createdAt),
             issue: String(cleanIssue.prefix(2_000)),
             includeLogs: includeLogs,
-            logs: includeLogs ? try recentProcessLogs() : ""
+            logs: includeLogs ? try recentProcessLogs() : "",
+            image: image.map {
+                ImageUpload(fileName: $0.fileName, mimeType: $0.mimeType, base64: $0.data.base64EncodedString())
+            }
         )
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(payload)
-        request.timeoutInterval = 30
+        request.timeoutInterval = 60
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw UploadError.invalidResponse }
         guard http.statusCode == 201 else { throw UploadError.server(http.statusCode) }
@@ -86,7 +110,8 @@ enum SupportLogUploader {
             createdAt: createdAt,
             status: result.status,
             updatedAt: parseDate(result.updatedAt) ?? createdAt,
-            hasLogs: includeLogs
+            hasLogs: includeLogs,
+            hasImage: result.hasImage ?? (image != nil)
         )
         var records = history()
         records.removeAll { $0.code == record.code }
@@ -114,9 +139,42 @@ enum SupportLogUploader {
                   let status = try? JSONDecoder().decode(StatusResponse.self, from: data) else { continue }
             records[index].status = status.status
             records[index].updatedAt = parseDate(status.updatedAt) ?? records[index].updatedAt
+            records[index].hasImage = status.hasImage ?? records[index].hasImage
         }
         saveHistory(records)
         return records
+    }
+
+    static func prepareImage(from url: URL) throws -> SupportFeedbackImage {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        guard let source = NSImage(contentsOf: url), source.isValid else { throw UploadError.invalidImage }
+        let targetLimits: [CGFloat] = [1_600, 1_280, 1_024]
+        let qualities: [CGFloat] = [0.82, 0.68, 0.52]
+        for limit in targetLimits {
+            let size = fittedSize(source.size, maximumDimension: limit)
+            let rendered = NSImage(size: size)
+            rendered.lockFocus()
+            NSGraphicsContext.current?.imageInterpolation = .high
+            source.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1)
+            rendered.unlockFocus()
+            guard let tiff = rendered.tiffRepresentation,
+                  let representation = NSBitmapImageRep(data: tiff) else { continue }
+            for quality in qualities {
+                if let data = representation.representation(using: .jpeg, properties: [.compressionFactor: quality]),
+                   data.count <= 4 * 1024 * 1024 {
+                    let name = url.deletingPathExtension().lastPathComponent + ".jpg"
+                    return SupportFeedbackImage(fileName: name, mimeType: "image/jpeg", data: data)
+                }
+            }
+        }
+        throw UploadError.imageTooLarge
+    }
+
+    private static func fittedSize(_ size: NSSize, maximumDimension: CGFloat) -> NSSize {
+        guard size.width > 0, size.height > 0 else { return NSSize(width: maximumDimension, height: maximumDimension) }
+        let scale = min(1, maximumDimension / max(size.width, size.height))
+        return NSSize(width: max(1, round(size.width * scale)), height: max(1, round(size.height * scale)))
     }
 
     private static func saveHistory(_ records: [SupportFeedbackRecord]) {
@@ -161,12 +219,16 @@ enum SupportLogUploader {
         case emptyIssue
         case invalidResponse
         case server(Int)
+        case invalidImage
+        case imageTooLarge
 
         var errorDescription: String? {
             switch self {
             case .emptyIssue: return L.t("Please describe the problem before submitting.")
             case .invalidResponse: return L.t("The feedback service returned an invalid response.")
             case let .server(status): return String(format: L.t("The feedback service returned error %d."), status)
+            case .invalidImage: return L.t("The selected image could not be read.")
+            case .imageTooLarge: return L.t("The selected image is too large to upload.")
             }
         }
     }

@@ -172,6 +172,7 @@ public static class KnowledgeEntryKinds
     public const string Resume = "resume";
     public const string Project = "project";
     public const string Material = "material";
+    public const string QuestionBank = "questionBank";
 
     /// <summary>Kind of an entry, inferring it for entries saved before kinds existed.</summary>
     public static string Of(KnowledgeEntryModel entry)

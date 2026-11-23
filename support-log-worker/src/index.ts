@@ -1,9 +1,10 @@
 import adminHtml from "../../support_logs_admin.html";
 
-const MAX_BODY_BYTES = 256 * 1024;
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_ADMIN_BODY_BYTES = 16 * 1024;
 const MAX_LOG_CHARS = 200_000;
 const MAX_ISSUE_CHARS = 2_000;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const RETENTION_SECONDS = 30 * 24 * 60 * 60;
 
 type ReportStatus = "new" | "review" | "resolved";
@@ -16,6 +17,14 @@ type UploadPayload = {
   issue?: unknown;
   includeLogs?: unknown;
   logs?: unknown;
+  image?: unknown;
+};
+
+type StoredImage = {
+  key: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
 };
 
 type StoredReport = {
@@ -30,10 +39,12 @@ type StoredReport = {
   status: ReportStatus;
   logs: string;
   hasLogs: boolean;
+  image?: StoredImage;
+  hasImage: boolean;
   trackingTokenHash?: string;
 };
 
-type ReportSummary = Omit<StoredReport, "logs" | "trackingTokenHash">;
+type ReportSummary = Omit<StoredReport, "logs" | "trackingTokenHash" | "image">;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -58,6 +69,11 @@ export default {
         if (url.pathname === "/admin/logs") {
           if (request.method !== "GET") return methodNotAllowed("GET");
           return await listReports(url, env);
+        }
+        const imageMatch = url.pathname.match(/^\/admin\/logs\/([A-Fa-f0-9]{10})\/image$/);
+        if (imageMatch) {
+          if (request.method !== "GET") return methodNotAllowed("GET");
+          return await getReportImage(imageMatch[1], url, env);
         }
         const code = url.pathname.slice("/admin/logs/".length);
         if (request.method === "GET") return await getReport(code, env);
@@ -99,6 +115,28 @@ async function createFeedback(request: Request, env: Env, requireIssue: boolean)
   const trackingToken = secureToken(24);
   const now = new Date().toISOString();
   const logs = rawLogs ? redact(rawLogs.slice(-MAX_LOG_CHARS)) : "";
+  const decodedImage = decodeImage(payload.image);
+  if (decodedImage instanceof Response) return decodedImage;
+  let image: StoredImage | undefined;
+  if (decodedImage) {
+    const extension = decodedImage.mimeType === "image/png" ? "png"
+      : decodedImage.mimeType === "image/webp" ? "webp" : "jpg";
+    const key = `feedback/${code}.${extension}`;
+    await env.REPORTS.put(key, decodedImage.bytes, {
+      expirationTtl: RETENTION_SECONDS,
+      metadata: {
+        reportCode: code,
+        contentType: decodedImage.mimeType,
+        fileName: decodedImage.fileName,
+      },
+    });
+    image = {
+      key,
+      fileName: decodedImage.fileName,
+      mimeType: decodedImage.mimeType,
+      size: decodedImage.bytes.byteLength,
+    };
+  }
   const report: StoredReport = {
     code,
     platform,
@@ -111,11 +149,18 @@ async function createFeedback(request: Request, env: Env, requireIssue: boolean)
     status: "new",
     logs,
     hasLogs: logs.length > 0,
+    image,
+    hasImage: image !== undefined,
     trackingTokenHash: await sha256Hex(trackingToken),
   };
-  await putReport(env.REPORTS, report);
-  console.log(JSON.stringify({ event: "feedback_created", code, platform, hasLogs: report.hasLogs, bytes: logs.length }));
-  return json({ code, trackingToken, status: report.status, updatedAt: report.updatedAt, expiresInDays: 30 }, 201);
+  try {
+    await putReport(env.REPORTS, report);
+  } catch (error) {
+    if (image) await env.REPORTS.delete(image.key);
+    throw error;
+  }
+  console.log(JSON.stringify({ event: "feedback_created", code, platform, hasLogs: report.hasLogs, hasImage: report.hasImage, logBytes: logs.length, imageBytes: image?.size ?? 0 }));
+  return json({ code, trackingToken, status: report.status, updatedAt: report.updatedAt, hasImage: report.hasImage, expiresInDays: 30 }, 201);
 }
 
 async function feedbackStatus(request: Request, rawCode: string, env: Env): Promise<Response> {
@@ -128,7 +173,7 @@ async function feedbackStatus(request: Request, rawCode: string, env: Env): Prom
   if (!report.trackingTokenHash || !(await timingSafeEqual(await sha256Hex(suppliedToken), report.trackingTokenHash))) {
     return json({ error: "not_found" }, 404);
   }
-  return json({ code: report.code, issue: report.issue, status: report.status, createdAt: report.createdAt, updatedAt: report.updatedAt, hasLogs: report.hasLogs });
+  return json({ code: report.code, issue: report.issue, status: report.status, createdAt: report.createdAt, updatedAt: report.updatedAt, hasLogs: report.hasLogs, hasImage: report.hasImage });
 }
 
 async function uniqueCode(reports: KVNamespace): Promise<string> {
@@ -151,6 +196,7 @@ async function putReport(reports: KVNamespace, report: StoredReport): Promise<vo
       issue: report.issue.slice(0, 240),
       status: report.status,
       hasLogs: report.hasLogs,
+      hasImage: report.hasImage,
     },
   });
 }
@@ -183,7 +229,38 @@ async function getReport(rawCode: string, env: Env): Promise<Response> {
   const code = normalizeCode(rawCode);
   if (!code) return json({ error: "invalid_code" }, 400);
   const raw = await env.REPORTS.get(`report:${code}`, "json");
-  return raw === null ? json({ error: "not_found" }, 404) : json(normalizeReport(raw, code));
+  if (raw === null) return json({ error: "not_found" }, 404);
+  const report = normalizeReport(raw, code);
+  return json({
+    ...report,
+    trackingTokenHash: undefined,
+    image: report.image ? {
+      fileName: report.image.fileName,
+      mimeType: report.image.mimeType,
+      size: report.image.size,
+      url: `/admin/logs/${report.code}/image`,
+    } : undefined,
+  });
+}
+
+async function getReportImage(rawCode: string, url: URL, env: Env): Promise<Response> {
+  const code = normalizeCode(rawCode);
+  const raw = await env.REPORTS.get(`report:${code}`, "json");
+  if (raw === null) return json({ error: "not_found" }, 404);
+  const report = normalizeReport(raw, code);
+  if (!report.image) return json({ error: "image_not_found" }, 404);
+  const body = await env.REPORTS.get(report.image.key, "stream");
+  if (body === null) return json({ error: "image_not_found" }, 404);
+  const headers = new Headers({
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  headers.set("Content-Type", report.image.mimeType);
+  headers.set(
+    "Content-Disposition",
+    `${url.searchParams.get("download") === "1" ? "attachment" : "inline"}; filename="${report.image.fileName}"`
+  );
+  return new Response(body, { headers });
 }
 
 async function updateReport(rawCode: string, request: Request, env: Env): Promise<Response> {
@@ -206,6 +283,16 @@ function normalizeReport(value: unknown, fallbackCode: string): StoredReport {
   const item = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
   const receivedAt = shortText(item.receivedAt, 64) || new Date(0).toISOString();
   const logs = typeof item.logs === "string" ? item.logs : "";
+  const rawImage = typeof item.image === "object" && item.image !== null
+    ? item.image as Record<string, unknown> : null;
+  const imageKey = shortText(rawImage?.key, 300);
+  const imageMimeType = shortText(rawImage?.mimeType, 80);
+  const image = imageKey && isImageMimeType(imageMimeType) ? {
+    key: imageKey,
+    fileName: safeFileName(shortText(rawImage?.fileName, 160) || `${fallbackCode}.jpg`),
+    mimeType: imageMimeType,
+    size: typeof rawImage?.size === "number" && Number.isFinite(rawImage.size) ? rawImage.size : 0,
+  } : undefined;
   return {
     code: normalizeCode(item.code) || fallbackCode,
     platform: shortText(item.platform, 32) || "Unknown",
@@ -218,13 +305,46 @@ function normalizeReport(value: unknown, fallbackCode: string): StoredReport {
     status: isStatus(item.status) ? item.status : "new",
     logs,
     hasLogs: typeof item.hasLogs === "boolean" ? item.hasLogs : logs.length > 0,
+    image,
+    hasImage: image !== undefined,
     trackingTokenHash: shortText(item.trackingTokenHash, 128) || undefined,
   };
 }
 
 function toSummary(report: StoredReport): ReportSummary {
-  const { logs: _logs, trackingTokenHash: _trackingTokenHash, ...summary } = report;
+  const { logs: _logs, trackingTokenHash: _trackingTokenHash, image: _image, ...summary } = report;
   return summary;
+}
+
+function decodeImage(value: unknown): { bytes: Uint8Array; fileName: string; mimeType: string } | Response | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object") return json({ error: "invalid_image" }, 400);
+  const item = value as Record<string, unknown>;
+  const mimeType = shortText(item.mimeType, 80).toLowerCase();
+  const base64 = typeof item.base64 === "string" ? item.base64 : "";
+  if (!isImageMimeType(mimeType) || !base64) return json({ error: "invalid_image" }, 400);
+  if (base64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 8) return json({ error: "image_too_large" }, 413);
+  try {
+    const binary = atob(base64);
+    if (binary.length < 1 || binary.length > MAX_IMAGE_BYTES) return json({ error: "image_too_large" }, 413);
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    return {
+      bytes,
+      fileName: safeFileName(shortText(item.fileName, 160) || "feedback-image.jpg"),
+      mimeType,
+    };
+  } catch {
+    return json({ error: "invalid_image_encoding" }, 400);
+  }
+}
+
+function isImageMimeType(value: string): boolean {
+  return value === "image/jpeg" || value === "image/png" || value === "image/webp";
+}
+
+function safeFileName(value: string): string {
+  const cleaned = value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120);
+  return cleaned || "feedback-image.jpg";
 }
 
 async function readJson<T>(request: Request, maximumBytes: number): Promise<T | Response> {
@@ -303,7 +423,7 @@ function adminConsole(): Response {
   return new Response(adminHtml, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+      "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'",
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-store",

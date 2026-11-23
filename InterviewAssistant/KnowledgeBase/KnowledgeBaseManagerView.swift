@@ -25,6 +25,7 @@ struct KnowledgeBaseManagerView: View {
     @State private var status = ""
     @State private var searchText = ""
     @State private var editingSource: KnowledgeEntry?
+    @State private var editingQuestionBank: KnowledgeEntry?
     @State private var expandedEntryIDs = Set<UUID>()
     @State private var pendingDeleteBase: KnowledgeBase?
     @State private var showBaseDeleteConfirm = false
@@ -107,6 +108,14 @@ struct KnowledgeBaseManagerView: View {
         }
         .sheet(item: $editingSource) { entry in
             sourceEditor(entry)
+        }
+        .sheet(item: $editingQuestionBank) { entry in
+            QuestionBankEditorSheet(
+                entry: entry,
+                isCompact: isCompact,
+                onCancel: { editingQuestionBank = nil },
+                onSave: { title, document in saveQuestionBank(entry, title: title, document: document) }
+            )
         }
         .sheet(item: $pendingResumeChoice) { choice in
             resumeChoiceSheet(choice)
@@ -904,6 +913,7 @@ struct KnowledgeBaseManagerView: View {
                         importingDocument = true
                     }
                     smallButton(L.t("New note"), systemImage: "square.and.pencil") { addManualSource(to: kb) }
+                    smallButton(L.t("New Q&A bank"), systemImage: "questionmark.bubble") { addQuestionBank(to: kb) }
                 }
                 HStack(spacing: 10) {
                     TextField(L.t("Paste a web page, PDF or Google Drive link"), text: $url)
@@ -1056,7 +1066,9 @@ struct KnowledgeBaseManagerView: View {
                 entryMenu(entry)
             }
 
-            let preview = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let preview = (entry.kind == KnowledgeEntryKind.questionBank
+                ? QuestionBankDocument.decode(entry.content).previewText
+                : entry.content).trimmingCharacters(in: .whitespacesAndNewlines)
             if !preview.isEmpty {
                 let isExpanded = expandedEntryIDs.contains(entry.id)
                 let isLong = preview.count > 240 || preview.filter { $0 == "\n" }.count > 3
@@ -1417,7 +1429,46 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func beginEditingSource(_ entry: KnowledgeEntry) {
-        editingSource = entry
+        if entry.kind == KnowledgeEntryKind.questionBank {
+            editingQuestionBank = entry
+        } else {
+            editingSource = entry
+        }
+    }
+
+    private func addQuestionBank(to kb: KnowledgeBase) {
+        let entry = KnowledgeEntry(
+            title: L.t("Interview Q&A Bank"),
+            content: QuestionBankDocument().encoded(),
+            source: "question-bank",
+            isEnabled: true,
+            knowledgeBase: kb
+        )
+        entry.kindRaw = KnowledgeEntryKind.questionBank
+        kb.entries.append(entry)
+        kb.updatedAt = .now
+        do {
+            try modelContext.save()
+            editingQuestionBank = entry
+        } catch {
+            status = "\(L.t("Add source failed")): \(error.localizedDescription)"
+        }
+    }
+
+    private func saveQuestionBank(_ entry: KnowledgeEntry, title: String, document: QuestionBankDocument) {
+        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        entry.title = clean.isEmpty ? L.t("Interview Q&A Bank") : clean
+        entry.content = document.encoded()
+        entry.kindRaw = KnowledgeEntryKind.questionBank
+        entry.updatedAt = .now
+        entry.knowledgeBase?.updatedAt = .now
+        do {
+            try modelContext.save()
+            editingQuestionBank = nil
+            status = L.t("Question bank saved")
+        } catch {
+            status = "\(L.t("Save source failed")): \(error.localizedDescription)"
+        }
     }
 
     private func saveSourceEdit(_ entry: KnowledgeEntry, title: String, summary: String, content: String) {
@@ -1971,6 +2022,7 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func sourceLabel(for entry: KnowledgeEntry) -> String {
+        if entry.kind == KnowledgeEntryKind.questionBank { return L.t("Structured Q&A bank") }
         if entry.source == "manual" { return L.t("Manual source") }
         if isPDFSource(entry) { return L.t("PDF source") }
         if let host = URL(string: entry.source)?.host {
@@ -1980,6 +2032,7 @@ struct KnowledgeBaseManagerView: View {
     }
 
     private func sourceIcon(for entry: KnowledgeEntry) -> String {
+        if entry.kind == KnowledgeEntryKind.questionBank { return "questionmark.bubble.fill" }
         if isPDFSource(entry) { return "doc.richtext.fill" }
         if URL(string: entry.source)?.host == "github.com" { return "chevron.left.forwardslash.chevron.right" }
         if entry.source == "manual" { return "text.alignleft" }
@@ -2101,6 +2154,310 @@ private struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+/// Structured two-level interview question bank editor.
+private struct QuestionBankEditorSheet: View {
+    @Environment(\.modelContext) private var modelContext
+    let entry: KnowledgeEntry
+    let isCompact: Bool
+    let onCancel: () -> Void
+    let onSave: (_ title: String, _ document: QuestionBankDocument) -> Void
+
+    @State private var title: String
+    @State private var document: QuestionBankDocument
+    @State private var expanded = Set<UUID>()
+    @State private var importText = ""
+    @State private var showImport = false
+    @State private var importingFile = false
+    @State private var isParsing = false
+    @State private var importError = ""
+
+    init(entry: KnowledgeEntry, isCompact: Bool, onCancel: @escaping () -> Void, onSave: @escaping (String, QuestionBankDocument) -> Void) {
+        self.entry = entry
+        self.isCompact = isCompact
+        self.onCancel = onCancel
+        self.onSave = onSave
+        _title = State(initialValue: entry.title)
+        let value = QuestionBankDocument.decode(entry.content)
+        _document = State(initialValue: value)
+        _expanded = State(initialValue: Set(value.questions.map(\.id)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    TextField(L.t("Question bank title"), text: $title)
+                        .textFieldStyle(.plain)
+                        .darkField()
+                    Button { showImport.toggle() } label: {
+                        Label(L.t("Batch import"), systemImage: "sparkles")
+                    }
+                    .buttonStyle(AppButtonStyle())
+                    Button { addPrimary() } label: {
+                        Label(L.t("Add primary question"), systemImage: "plus")
+                    }
+                    .buttonStyle(AppButtonStyle(prominent: true))
+                }
+
+                if showImport { importPanel }
+
+                if document.questions.isEmpty {
+                    ContentUnavailableView(
+                        L.t("No questions yet"),
+                        systemImage: "questionmark.bubble",
+                        description: Text(L.t("Add a primary question or paste a batch for AI to organize."))
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(Array(document.questions.indices), id: \.self) { index in
+                            primaryRow(index)
+                        }
+                        .onMove { source, destination in
+                            document.questions.move(fromOffsets: source, toOffset: destination)
+                        }
+                        .onDelete { document.questions.remove(atOffsets: $0) }
+                    }
+                    .listStyle(.inset)
+                }
+            }
+            .padding(20)
+            .frame(minWidth: isCompact ? 0 : 940, minHeight: isCompact ? 0 : 720)
+            .background(Color.appBG)
+            .foregroundStyle(Color.appText)
+            .navigationTitle(L.t("Edit Q&A Bank"))
+            .iosNavigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(L.t("Cancel"), action: onCancel) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L.t("Save")) { onSave(title, cleanedDocument()) }
+                        .keyboardShortcut("s", modifiers: .command)
+                }
+            }
+            .fileImporter(isPresented: $importingFile, allowedContentTypes: [.pdf, .plainText, .json, .commaSeparatedText, .rtf, .html, .data]) { result in
+                guard case .success(let url) = result else { return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    importText = try DocumentTextImporter.extractText(from: url, maxCharacters: 30_000)
+                    showImport = true
+                } catch {
+                    importError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private var importPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(L.t("Batch paste import"))
+                    .font(.appCaptionMedium)
+                Spacer()
+                Button(L.t("Choose text file")) { importingFile = true }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.appPrimary)
+            }
+            Text(L.t("Paste questions and answers in any reasonable format. AI will identify primary questions, follow-ups, and their answers."))
+                .font(.appSmall)
+                .foregroundStyle(Color.appMuted)
+            TextEditor(text: $importText)
+                .scrollContentBackground(.hidden)
+                .font(.appBody)
+                .frame(height: 130)
+                .darkField()
+            if !importError.isEmpty {
+                Text(importError).font(.appSmall).foregroundStyle(Color.appDanger)
+            }
+            HStack {
+                Spacer()
+                Button { parseImport() } label: {
+                    if isParsing { ProgressView().controlSize(.small) }
+                    Text(L.t("Organize with AI"))
+                }
+                .buttonStyle(AppButtonStyle(prominent: true))
+                .disabled(isParsing || importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(14)
+        .background(Color.appField)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func primaryRow(_ index: Int) -> some View {
+        let id = document.questions[index].id
+        DisclosureGroup(isExpanded: Binding(
+            get: { expanded.contains(id) },
+            set: { isExpanded in
+                if isExpanded { expanded.insert(id) } else { expanded.remove(id) }
+            }
+        )) {
+            VStack(alignment: .leading, spacing: 12) {
+                qaFields(
+                    questionLabel: L.t("Primary question"),
+                    answerLabel: L.t("Answer"),
+                    question: $document.questions[index].question,
+                    answer: $document.questions[index].answer
+                )
+                Divider().opacity(0.5)
+                HStack {
+                    Text(L.t("Follow-ups")).font(.appCaptionMedium)
+                    Spacer()
+                    Button { addFollowUp(to: index) } label: { Label(L.t("Add follow-up"), systemImage: "plus") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.appPrimary)
+                }
+                ForEach(Array(document.questions[index].followUps.indices), id: \.self) { followIndex in
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L.t("Follow-up") + " \(index + 1).\(followIndex + 1)")
+                                .font(.appSmall).foregroundStyle(Color.appMuted)
+                            qaFields(
+                                questionLabel: L.t("Follow-up question"),
+                                answerLabel: L.t("Follow-up answer"),
+                                question: $document.questions[index].followUps[followIndex].question,
+                                answer: $document.questions[index].followUps[followIndex].answer
+                            )
+                        }
+                        VStack(spacing: 8) {
+                            Button { moveFollowUp(parent: index, from: followIndex, offset: -1) } label: { Image(systemName: "arrow.up") }
+                                .disabled(followIndex == 0)
+                            Button { moveFollowUp(parent: index, from: followIndex, offset: 1) } label: { Image(systemName: "arrow.down") }
+                                .disabled(followIndex == document.questions[index].followUps.count - 1)
+                            Button(role: .destructive) { document.questions[index].followUps.remove(at: followIndex) } label: { Image(systemName: "trash") }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(Color.appField)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .draggable("followup|\(id.uuidString)|\(document.questions[index].followUps[followIndex].id.uuidString)")
+                    .dropDestination(for: String.self) { values, _ in
+                        guard let token = values.first else { return false }
+                        return moveFollowUp(
+                            token: token,
+                            targetParentID: id,
+                            targetFollowUpID: document.questions[index].followUps[followIndex].id
+                        )
+                    }
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            HStack {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(Color.appMuted)
+                    .draggable("primary|\(id.uuidString)")
+                Text(document.questions[index].question.isEmpty ? L.t("Untitled primary question") : document.questions[index].question)
+                    .font(.appCaptionMedium)
+                    .lineLimit(2)
+                Spacer()
+                Text(String(format: L.t("%ld follow-ups"), document.questions[index].followUps.count))
+                    .font(.appSmall).foregroundStyle(Color.appMuted)
+                Button(role: .destructive) { document.questions.remove(at: index) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.plain)
+            }
+            .dropDestination(for: String.self) { values, _ in
+                guard let token = values.first else { return false }
+                return movePrimary(token: token, targetID: id)
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func qaFields(questionLabel: String, answerLabel: String, question: Binding<String>, answer: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(questionLabel).font(.appSmall).foregroundStyle(Color.appMuted)
+            TextField(questionLabel, text: question, axis: .vertical).textFieldStyle(.plain).darkField()
+            Text(answerLabel).font(.appSmall).foregroundStyle(Color.appMuted)
+            TextEditor(text: answer).scrollContentBackground(.hidden).font(.appBody).frame(minHeight: 86).darkField()
+        }
+    }
+
+    private func addPrimary() {
+        let item = QuestionBankDocument.PrimaryQuestion()
+        document.questions.append(item)
+        expanded.insert(item.id)
+    }
+
+    private func addFollowUp(to index: Int) {
+        document.questions[index].followUps.append(.init())
+        expanded.insert(document.questions[index].id)
+    }
+
+    private func moveFollowUp(parent: Int, from: Int, offset: Int) {
+        let target = from + offset
+        guard document.questions[parent].followUps.indices.contains(target) else { return }
+        document.questions[parent].followUps.swapAt(from, target)
+    }
+
+    private func movePrimary(token: String, targetID: UUID) -> Bool {
+        let parts = token.split(separator: "|")
+        guard parts.count == 2, parts[0] == "primary", let sourceID = UUID(uuidString: String(parts[1])),
+              let source = document.questions.firstIndex(where: { $0.id == sourceID }),
+              let target = document.questions.firstIndex(where: { $0.id == targetID }), source != target else { return false }
+        let item = document.questions.remove(at: source)
+        document.questions.insert(item, at: min(target, document.questions.count))
+        return true
+    }
+
+    private func moveFollowUp(token: String, targetParentID: UUID, targetFollowUpID: UUID) -> Bool {
+        let parts = token.split(separator: "|")
+        guard parts.count == 3, parts[0] == "followup",
+              let sourceParentID = UUID(uuidString: String(parts[1])),
+              let sourceID = UUID(uuidString: String(parts[2])),
+              let sourceParent = document.questions.firstIndex(where: { $0.id == sourceParentID }),
+              let targetParent = document.questions.firstIndex(where: { $0.id == targetParentID }),
+              let source = document.questions[sourceParent].followUps.firstIndex(where: { $0.id == sourceID }),
+              let target = document.questions[targetParent].followUps.firstIndex(where: { $0.id == targetFollowUpID }) else { return false }
+        let item = document.questions[sourceParent].followUps.remove(at: source)
+        document.questions[targetParent].followUps.insert(item, at: min(target, document.questions[targetParent].followUps.count))
+        return true
+    }
+
+    private func parseImport() {
+        let input = importText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return }
+        let config = AIService.config(from: modelContext)
+        guard KnowledgeAssistant.isAIConfigured(config) else {
+            importError = L.t("Set up an AI provider in Settings before using batch import.")
+            return
+        }
+        isParsing = true
+        importError = ""
+        Task { @MainActor in
+            defer { isParsing = false }
+            do {
+                let imported = try await KnowledgeAssistant.parseQuestionBank(input, config: config)
+                document.questions.append(contentsOf: imported.questions)
+                expanded.formUnion(imported.questions.map(\.id))
+                importText = ""
+                showImport = false
+            } catch {
+                importError = error.localizedDescription
+            }
+        }
+    }
+
+    private func cleanedDocument() -> QuestionBankDocument {
+        var value = document
+        value.questions = value.questions.compactMap { item in
+            var clean = item
+            clean.question = item.question.trimmingCharacters(in: .whitespacesAndNewlines)
+            clean.answer = item.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            clean.followUps = item.followUps.compactMap { follow in
+                var child = follow
+                child.question = follow.question.trimmingCharacters(in: .whitespacesAndNewlines)
+                child.answer = follow.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                return child.question.isEmpty ? nil : child
+            }
+            return clean.question.isEmpty ? nil : clean
+        }
+        return value
     }
 }
 

@@ -455,7 +455,7 @@ When selecting a new location:
 | Imported PDF preview copies | Local Application Support directory | When PDF content is included in an external model request |
 | Language, theme, and shortcuts | UserDefaults | Not actively uploaded |
 | Microphone / system audio | Recognition pipeline memory | Sent to the selected provider when external ASR is used |
-| Recent diagnostics, app version, and OS version | Local system log / `%LOCALAPPDATA%` | Redacted and uploaded only after the user confirms “Upload Diagnostic Logs” in Settings; automatically deleted after 30 days |
+| Problem description, optional diagnostics, and a user-selected image | Local system log / `%LOCALAPPDATA%` / selected file | Uploaded only when the user submits feedback; logs are redacted and images compressed first; automatically deleted after 30 days |
 
 On Windows, the equivalent locations are:
 

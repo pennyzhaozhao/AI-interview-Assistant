@@ -16,6 +16,43 @@ enum KnowledgeAssistant {
         let description: String
     }
 
+    /// Converts a pasted or uploaded list of interview questions into the editable two-level bank.
+    @MainActor
+    static func parseQuestionBank(_ rawText: String, config: APIConfig) async throws -> QuestionBankDocument {
+        let system = """
+        You structure interview preparation notes into a two-level question bank. Return valid JSON only:
+        {"questions":[{"question":"main question","answer":"answer","followUps":[{"question":"follow-up","answer":"answer"}]}]}
+        Preserve the user's language and facts. Identify main questions, their answers, and any follow-up questions with answers.
+        Do not invent missing answers; use an empty string. Keep the original order. Do not return Markdown or code fences.
+        """
+        let raw = try await AIService.callAIModel(
+            config: config,
+            systemPrompt: system,
+            question: String(rawText.prefix(30_000)),
+            maxTokens: 5000
+        )
+        guard let data = extractJSON(raw).data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["questions"] as? [[String: Any]] else {
+            throw NSError(domain: "InterviewAssistant", code: 21, userInfo: [NSLocalizedDescriptionKey: L.t("The AI did not return a valid question bank.")])
+        }
+        let questions = items.compactMap { item -> QuestionBankDocument.PrimaryQuestion? in
+            let question = (item["question"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !question.isEmpty else { return nil }
+            let answer = (item["answer"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let followUps = (item["followUps"] as? [[String: Any]] ?? []).compactMap { follow -> QuestionBankDocument.FollowUp? in
+                let followQuestion = (follow["question"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !followQuestion.isEmpty else { return nil }
+                return .init(question: followQuestion, answer: (follow["answer"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            return .init(question: question, answer: answer, followUps: followUps)
+        }
+        guard !questions.isEmpty else {
+            throw NSError(domain: "InterviewAssistant", code: 22, userInfo: [NSLocalizedDescriptionKey: L.t("No questions were found in the imported text.")])
+        }
+        return QuestionBankDocument(questions: questions)
+    }
+
     /// Turns text extracted from a PDF / Word resume into clean Markdown, keeping every fact.
     @MainActor
     static func resumeToMarkdown(_ rawText: String, config: APIConfig) async throws -> String {
@@ -310,7 +347,7 @@ enum KnowledgeFormatter {
                     lines.append("- \(project.title)\(project.meta.isEmpty ? "" : " (\(project.meta))")\(line.isEmpty ? "" : ": " + line)")
                 }
             }
-            let materials = entries.filter { $0.kind == KnowledgeEntryKind.material }.map(\.title).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.prefix(12)
+            let materials = entries.filter { $0.kind == KnowledgeEntryKind.material || $0.kind == KnowledgeEntryKind.questionBank }.map(\.title).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.prefix(12)
             if !materials.isEmpty { lines.append("Other materials: " + materials.joined(separator: "; ")) }
             if lines.count > 1 { blocks.append(PromptTokenBudget.fit(lines.joined(separator: "\n"), maxTokens: perBase)) }
         }
@@ -322,8 +359,9 @@ enum KnowledgeFormatter {
     static func ragDocuments(_ knowledgeBases: [KnowledgeBase]) -> [RagDocument] {
         knowledgeBases.flatMap { kb in
             kb.entries.map { entry in
-                RagDocument(knowledgeBaseID: kb.id, knowledgeBaseName: kb.name, entryID: entry.id, title: entry.title, kind: entry.kind,
-                            source: entry.source, summary: entry.summary, meta: entry.meta, content: entry.content, isEnabled: entry.isEnabled)
+                let content = entry.kind == KnowledgeEntryKind.questionBank ? QuestionBankDocument.decode(entry.content).searchableText : entry.content
+                return RagDocument(knowledgeBaseID: kb.id, knowledgeBaseName: kb.name, entryID: entry.id, title: entry.title, kind: entry.kind,
+                                   source: entry.source, summary: entry.summary, meta: entry.meta, content: content, isEnabled: entry.isEnabled)
             }
         }
     }
@@ -356,8 +394,9 @@ enum KnowledgeFormatter {
                 }
                 lines.append("")
             }
-            for material in entries where material.kind == KnowledgeEntryKind.material {
-                let content = material.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            for material in entries where material.kind == KnowledgeEntryKind.material || material.kind == KnowledgeEntryKind.questionBank {
+                let rawContent = material.kind == KnowledgeEntryKind.questionBank ? QuestionBankDocument.decode(material.content).searchableText : material.content
+                let content = rawContent.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !content.isEmpty else { continue }
                 lines += ["\(material.title):", content, ""]
             }

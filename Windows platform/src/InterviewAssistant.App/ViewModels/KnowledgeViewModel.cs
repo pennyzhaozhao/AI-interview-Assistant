@@ -816,6 +816,7 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
 
     public string SourceLabel => model.Source switch
     {
+        "question-bank" => LocalizationManager.Text("Structured Q&A bank"),
         "manual" => LocalizationManager.Text("Note"),
         var source when source.StartsWith("pdf:", StringComparison.OrdinalIgnoreCase) => LocalizationManager.Text("PDF source"),
         var source when source.StartsWith("file:", StringComparison.OrdinalIgnoreCase) => Path.GetFileName(source[5..]),
@@ -826,6 +827,7 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
     /// <summary>Segoe Fluent glyph for the material type.</summary>
     public string TypeGlyph => model.Source switch
     {
+        "question-bank" => "",
         "manual" => "",
         var source when source.StartsWith("pdf:", StringComparison.OrdinalIgnoreCase) => "",
         var source when source.StartsWith("http", StringComparison.OrdinalIgnoreCase) => "",
@@ -840,7 +842,7 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
     {
         get
         {
-            var value = model.Content.Trim();
+            var value = Kind == KnowledgeEntryKinds.QuestionBank ? QuestionBankService.PreviewText(model.Content) : model.Content.Trim();
             return value.Length <= 420 ? value : value[..420].TrimEnd() + "…";
         }
     }
@@ -866,7 +868,7 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
     {
         get
         {
-            var value = model.Content.Trim();
+            var value = Kind == KnowledgeEntryKinds.QuestionBank ? QuestionBankService.PreviewText(model.Content) : model.Content.Trim();
             return value.Length > 240 || value.Count(character => character == '\n') > 3;
         }
     }
@@ -876,7 +878,7 @@ public sealed class KnowledgeEntryViewModel(KnowledgeEntryModel model, Action on
         get
         {
             if (!_isPreviewExpanded) return ContentPreview;
-            var value = model.Content.Trim();
+            var value = Kind == KnowledgeEntryKinds.QuestionBank ? QuestionBankService.SearchableText(model.Content) : model.Content.Trim();
             return value.Length <= ExpandedPreviewLimit ? value : value[..ExpandedPreviewLimit] + "…\n" + LocalizationManager.Text("Open the editor to see the rest.");
         }
     }

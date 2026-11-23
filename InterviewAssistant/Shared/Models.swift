@@ -68,7 +68,7 @@ final class KnowledgeBase {
 
     var resumeEntry: KnowledgeEntry? { entries.first { $0.kind == KnowledgeEntryKind.resume } }
     var projectEntries: [KnowledgeEntry] { entries.filter { $0.kind == KnowledgeEntryKind.project }.sorted { $0.createdAt < $1.createdAt } }
-    var materialEntries: [KnowledgeEntry] { entries.filter { $0.kind == KnowledgeEntryKind.material }.sorted { $0.createdAt > $1.createdAt } }
+    var materialEntries: [KnowledgeEntry] { entries.filter { $0.kind == KnowledgeEntryKind.material || $0.kind == KnowledgeEntryKind.questionBank }.sorted { $0.createdAt > $1.createdAt } }
 
     init(id: UUID = UUID(), name: String, desc: String = "", createdAt: Date = .now, updatedAt: Date = .now, entries: [KnowledgeEntry] = []) {
         self.id = id
@@ -246,4 +246,51 @@ enum KnowledgeEntryKind {
     static let resume = "resume"
     static let project = "project"
     static let material = "material"
+    static let questionBank = "questionBank"
+}
+
+struct QuestionBankDocument: Codable, Sendable {
+    struct FollowUp: Codable, Identifiable, Sendable {
+        var id: UUID = UUID()
+        var question: String = ""
+        var answer: String = ""
+    }
+
+    struct PrimaryQuestion: Codable, Identifiable, Sendable {
+        var id: UUID = UUID()
+        var question: String = ""
+        var answer: String = ""
+        var followUps: [FollowUp] = []
+    }
+
+    var version: Int = 1
+    var questions: [PrimaryQuestion] = []
+
+    static func decode(_ content: String) -> QuestionBankDocument {
+        guard let data = content.data(using: .utf8),
+              let value = try? JSONDecoder().decode(QuestionBankDocument.self, from: data) else { return .init() }
+        return value
+    }
+
+    func encoded() -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return (try? String(data: encoder.encode(self), encoding: .utf8)) ?? "{\"version\":1,\"questions\":[]}"
+    }
+
+    var searchableText: String {
+        questions.enumerated().map { index, item in
+            var lines = ["Primary question \(index + 1): \(item.question)", "Answer: \(item.answer)"]
+            for (followIndex, followUp) in item.followUps.enumerated() {
+                lines.append("Follow-up \(index + 1).\(followIndex + 1): \(followUp.question)")
+                lines.append("Follow-up answer: \(followUp.answer)")
+            }
+            return lines.joined(separator: "\n")
+        }.joined(separator: "\n\n")
+    }
+
+    var previewText: String {
+        guard !questions.isEmpty else { return L.t("No questions yet") }
+        return questions.prefix(3).map { "Q: \($0.question)\nA: \($0.answer)" }.joined(separator: "\n\n")
+    }
 }

@@ -47,7 +47,7 @@ public static class KnowledgeContextFormatter
                     builder.AppendLine($"- {project.Title}{(project.Meta.Length > 0 ? $" ({project.Meta})" : "")}{(line.Length > 0 ? ": " + line : "")}");
                 }
             }
-            var materials = entries.Where(entry => KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.Material).Select(entry => entry.Title).Where(title => title.Trim().Length > 0).Take(12).ToList();
+            var materials = entries.Where(entry => KnowledgeEntryKinds.Of(entry) is KnowledgeEntryKinds.Material or KnowledgeEntryKinds.QuestionBank).Select(entry => entry.Title).Where(title => title.Trim().Length > 0).Take(12).ToList();
             if (materials.Count > 0) builder.AppendLine("Other materials: " + string.Join("; ", materials));
             if (builder.Length > kb.Name.Length + 6) blocks.Add(PromptTokenBudget.Fit(builder.ToString().Trim(), perBase));
         }
@@ -58,7 +58,7 @@ public static class KnowledgeContextFormatter
     public static List<RagDocument> ToRagDocuments(IEnumerable<KnowledgeBaseModel> knowledgeBases) =>
         knowledgeBases.SelectMany(kb => kb.Entries.Select(entry => new RagDocument(
             kb.Id, kb.Name, entry.Id, entry.Title ?? "", KnowledgeEntryKinds.Of(entry), entry.Source ?? "", entry.Summary ?? "",
-            entry.Meta ?? "", entry.Content ?? "", entry.IsEnabled))).ToList();
+            entry.Meta ?? "", KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.QuestionBank ? QuestionBankService.SearchableText(entry.Content) : entry.Content ?? "", entry.IsEnabled))).ToList();
 
     /// <summary>
     /// Legacy full-text view of the active knowledge bases (resume, skills, projects, materials), truncated to
@@ -90,8 +90,11 @@ public static class KnowledgeContextFormatter
                 }
                 builder.AppendLine();
             }
-            foreach (var material in entries.Where(entry => KnowledgeEntryKinds.Of(entry) == KnowledgeEntryKinds.Material && !string.IsNullOrWhiteSpace(entry.Content)))
-                builder.AppendLine($"{material.Title}:").AppendLine(material.Content.Trim()).AppendLine();
+            foreach (var material in entries.Where(entry => (KnowledgeEntryKinds.Of(entry) is KnowledgeEntryKinds.Material or KnowledgeEntryKinds.QuestionBank) && !string.IsNullOrWhiteSpace(entry.Content)))
+            {
+                var content = KnowledgeEntryKinds.Of(material) == KnowledgeEntryKinds.QuestionBank ? QuestionBankService.SearchableText(material.Content) : material.Content.Trim();
+                builder.AppendLine($"{material.Title}:").AppendLine(content).AppendLine();
+            }
             if (builder.Length > kb.Name.Length + 6) blocks.Add(builder.ToString().Trim());
         }
         return Truncate(string.Join("\n\n", blocks), limit);
