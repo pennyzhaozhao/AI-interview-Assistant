@@ -14,7 +14,7 @@
             <Setter Property="Background" Value="{DynamicResource CardBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CacheMode" Value="BitmapCache"/>
+            <Setter Property="infra:CardRenderCache.IsEnabled" Value="True"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
             <Setter Property="Padding" Value="16,10"/>
             <Setter Property="Margin" Value="0,0,0,18"/>
@@ -30,7 +30,7 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="20"
                                 Padding="{TemplateBinding Padding}">
-                            <Border.Effect><DropShadowEffect Color="#52677A" BlurRadius="24" ShadowDepth="7" Opacity="0.10"/></Border.Effect>
+                            <Border.Effect><DropShadowEffect Color="#52677A" BlurRadius="24" ShadowDepth="7" Opacity="0.10" RenderingBias="Performance"/></Border.Effect>
                             <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>

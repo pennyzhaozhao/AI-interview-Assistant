@@ -142,8 +142,8 @@
         <Setter Property="CornerRadius" Value="20" />
         <Setter Property="Padding" Value="22" />
         <Setter Property="Margin" Value="0,0,0,18" />
-        <Setter Property="CacheMode" Value="BitmapCache" />
-        <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#52677A" BlurRadius="28" ShadowDepth="8" Opacity="0.16"/></Setter.Value></Setter>
+        <Setter Property="infra:CardRenderCache.IsEnabled" Value="True" />
+        <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#52677A" BlurRadius="28" ShadowDepth="8" Opacity="0.16" RenderingBias="Performance"/></Setter.Value></Setter>
     </Style>
 
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
