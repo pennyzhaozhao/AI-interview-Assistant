@@ -31,6 +31,11 @@ final class PrompterPanel: NSPanel {
     private var isDraggingPanel = false
     private var dockGeneration = 0
     private var dockAnimationTimer: Timer?
+    private var dockAnimationStartFrame: NSRect = .zero
+    private var dockAnimationTargetFrame: NSRect = .zero
+    private var dockAnimationStartTime: CFTimeInterval = 0
+    private var dockAnimationDuration: TimeInterval = 0.32
+    private var dockAnimationGeneration = 0
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -155,34 +160,47 @@ final class PrompterPanel: NSPanel {
     /// overrides without valid Swift stored properties and crashes.
     private func startDockAnimation(to target: NSRect, duration: TimeInterval, generation: Int) {
         stopDockAnimation()
-        let start = frame
-        let startTime = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self, self.dockGeneration == generation else {
-                    timer.invalidate()
-                    return
-                }
-                let linear = min(1, (CACurrentMediaTime() - startTime) / duration)
-                // Ease-in-out cubic.
-                let t = linear < 0.5
-                    ? 4 * linear * linear * linear
-                    : 1 - pow(-2 * linear + 2, 3) / 2
-                let rect = NSRect(
-                    x: start.minX + (target.minX - start.minX) * t,
-                    y: start.minY + (target.minY - start.minY) * t,
-                    width: start.width + (target.width - start.width) * t,
-                    height: start.height + (target.height - start.height) * t
-                )
-                self.applyAnimatedFrame(rect)
-                if linear >= 1 {
-                    self.finishDocking()
-                }
-            }
-        }
+        dockAnimationStartFrame = frame
+        dockAnimationTargetFrame = target
+        dockAnimationStartTime = CACurrentMediaTime()
+        dockAnimationDuration = duration
+        dockAnimationGeneration = generation
+        // Target/selector form: the tick runs as a main-thread method on this panel,
+        // so nothing non-Sendable crosses an isolation boundary.
+        let timer = Timer(
+            timeInterval: 1.0 / 120.0,
+            target: self,
+            selector: #selector(handleDockAnimationTick),
+            userInfo: nil,
+            repeats: true
+        )
         // `.common` keeps the slide running during event tracking.
         RunLoop.main.add(timer, forMode: .common)
         dockAnimationTimer = timer
+    }
+
+    @objc private func handleDockAnimationTick() {
+        guard dockGeneration == dockAnimationGeneration else {
+            stopDockAnimation()
+            return
+        }
+        let start = dockAnimationStartFrame
+        let target = dockAnimationTargetFrame
+        let linear = min(1, (CACurrentMediaTime() - dockAnimationStartTime) / max(dockAnimationDuration, 0.01))
+        // Ease-in-out cubic.
+        let t = linear < 0.5
+            ? 4 * linear * linear * linear
+            : 1 - pow(-2 * linear + 2, 3) / 2
+        let rect = NSRect(
+            x: start.minX + (target.minX - start.minX) * t,
+            y: start.minY + (target.minY - start.minY) * t,
+            width: start.width + (target.width - start.width) * t,
+            height: start.height + (target.height - start.height) * t
+        )
+        applyAnimatedFrame(rect)
+        if linear >= 1 {
+            finishDocking()
+        }
     }
 
     private func applyAnimatedFrame(_ rect: NSRect) {
