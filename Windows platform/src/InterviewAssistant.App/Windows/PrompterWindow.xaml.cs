@@ -176,6 +176,8 @@ public partial class PrompterWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        PrompterHotkeys.SetPendingQuestion(false);
+        PrompterHotkeys.SetScreenshotSession(false);
         _waveTimer.Stop();
         _modeToastTimer.Stop();
         _speechDebounceTimer.Stop();
@@ -595,7 +597,7 @@ public partial class PrompterWindow : Window
         var finish = new MenuItem { Header = Localized("Finish and analyze", "完成并分析"), FontWeight = FontWeights.SemiBold };
         finish.Click += async (_, _) => await FinishScreenshotSessionAsync();
         var clear = new MenuItem { Header = Localized("Discard screenshots", "放弃这些截图") };
-        clear.Click += (_, _) => { _screenshotSegments.Clear(); RefreshTurns(showLatest: true); };
+        clear.Click += (_, _) => { _screenshotSegments.Clear(); PrompterHotkeys.SetScreenshotSession(false); RefreshTurns(showLatest: true); };
         menu.Items.Add(count); menu.Items.Add(new Separator()); menu.Items.Add(more); menu.Items.Add(finish); menu.Items.Add(clear);
         menu.IsOpen = true;
     }
@@ -628,6 +630,7 @@ public partial class PrompterWindow : Window
         }
         var segments = recognized.ToArray();
         _screenshotSegments.Clear();
+        PrompterHotkeys.SetScreenshotSession(false);
         _screenshotBusy = false;
         var question = string.Join("\n\n", segments.Select((item, index) => $"[Screenshot {index + 1}]\n{item.Text}"));
         if (_isDirectorMode) { DirectorQuestionCaptured?.Invoke(question); return; }
@@ -707,8 +710,47 @@ public partial class PrompterWindow : Window
         return result;
     }
 
+    /// <summary>Settings › Keyboard Shortcuts, routed here by MainWindow for the active prompt board.</summary>
+    public void HandleShortcut(PrompterShortcut shortcut)
+    {
+        switch (shortcut)
+        {
+            case PrompterShortcut.ScrollUp:
+            case PrompterShortcut.ScrollDown:
+                if (AnswerScroller.Visibility != Visibility.Visible) return;
+                var step = Math.Max(60, AnswerScroller.ViewportHeight * 0.6) * (shortcut == PrompterShortcut.ScrollUp ? -1 : 1);
+                AnswerScroller.ScrollToVerticalOffset(Math.Clamp(AnswerScroller.VerticalOffset + step, 0, AnswerScroller.ScrollableHeight));
+                break;
+            case PrompterShortcut.AnswerNewQuestion:
+                if (PendingQuestionButton.Visibility == Visibility.Visible) PendingQuestionButton_Click(PendingQuestionButton, new RoutedEventArgs());
+                break;
+            case PrompterShortcut.DeleteScreenshot:
+                RemoveLastScreenshotSegment();
+                break;
+            case PrompterShortcut.SubmitScreenshots:
+                if (_screenshotSegments.Count > 0 && !_screenshotBusy) _ = FinishScreenshotSessionAsync();
+                break;
+        }
+    }
+
+    /// <summary>Deletes the most recent screenshot of the current multi-shot session (one per press).</summary>
+    private void RemoveLastScreenshotSegment()
+    {
+        if (_screenshotBusy || _screenshotSegments.Count == 0) return;
+        _screenshotSegments.RemoveAt(_screenshotSegments.Count - 1);
+        if (_screenshotSegments.Count > 0)
+        {
+            ShowScreenshotSessionControls();
+            return;
+        }
+        ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
+        PrompterHotkeys.SetScreenshotSession(false);
+        RefreshTurns(showLatest: true);
+    }
+
     private void ShowScreenshotSessionControls()
     {
+        PrompterHotkeys.SetScreenshotSession(_screenshotSegments.Count > 0);
         ScreenshotCountText.Text = Localized(
             $"Captured {_screenshotSegments.Count} screenshot(s)",
             $"获取{_screenshotSegments.Count}张截图");
@@ -723,6 +765,7 @@ public partial class PrompterWindow : Window
     {
         if (_screenshotBusy) return;
         _screenshotSegments.Clear();
+        PrompterHotkeys.SetScreenshotSession(false);
         ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
         RefreshTurns(showLatest: true);
     }
@@ -942,12 +985,14 @@ public partial class PrompterWindow : Window
         _pendingInterruptQuestion = MergeSpeechFragments(_pendingInterruptQuestion, text);
         PendingQuestionText.Text = Localized("New question detected · click to answer: ", "检测到新问题 · 点击回答：") + _pendingInterruptQuestion;
         PendingQuestionButton.Visibility = Visibility.Visible;
+        PrompterHotkeys.SetPendingQuestion(true);
     }
 
     private void ClearPendingInterrupt()
     {
         _pendingInterruptQuestion = "";
         PendingQuestionButton.Visibility = Visibility.Collapsed;
+        PrompterHotkeys.SetPendingQuestion(false);
     }
 
     private async void PendingQuestionButton_Click(object sender, RoutedEventArgs e)

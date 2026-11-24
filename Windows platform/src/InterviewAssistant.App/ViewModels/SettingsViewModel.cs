@@ -45,6 +45,7 @@ public sealed class SettingsViewModel : PageViewModel
         TestConnectionCommand = new AsyncRelayCommand(TestConnectionAsync, () => !IsTesting);
         TestSpeechConnectionCommand = new AsyncRelayCommand(TestSpeechConnectionAsync, () => !IsTestingSpeech);
         SaveSpeechCommand = new AsyncRelayCommand(SaveSpeechAsync);
+        RefreshModelsCommand = new AsyncRelayCommand(() => RefreshModelsAsync(showResult: true), () => !IsRefreshingModels);
 
         if (Enum.TryParse<AIProvider>(_store.Data.Preferences.Provider, out var provider))
         {
@@ -80,6 +81,22 @@ public sealed class SettingsViewModel : PageViewModel
     public ObservableCollection<string> Models { get; }
     public ICommand SaveCommand { get; }
     public ICommand TestConnectionCommand { get; }
+    public ICommand RefreshModelsCommand { get; }
+
+    private bool _isRefreshingModels;
+    public bool IsRefreshingModels
+    {
+        get => _isRefreshingModels;
+        private set { if (SetProperty(ref _isRefreshingModels, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+
+    private string _modelListStatus = "";
+    /// <summary>Caption under the model picker: where the list came from, or the last refresh result.</summary>
+    public string ModelListStatus
+    {
+        get => _modelListStatus;
+        private set => SetProperty(ref _modelListStatus, value);
+    }
     public ICommand TestSpeechConnectionCommand { get; }
     public ICommand SaveSpeechCommand { get; }
     public IReadOnlyList<string> Languages { get; } = ["English", "简体中文"];
@@ -381,7 +398,7 @@ public sealed class SettingsViewModel : PageViewModel
     public string SelectedModel
     {
         get => _selectedModel;
-        set => SetProperty(ref _selectedModel, value);
+        set => SetProperty(ref _selectedModel, value ?? "");
     }
 
     public string ApiUrl
@@ -432,14 +449,73 @@ public sealed class SettingsViewModel : PageViewModel
     private void LoadSelectedProvider()
     {
         var settings = _store.GetProviderSettings(SelectedProvider.Provider);
-        Models.Clear();
-        foreach (var model in SelectedProvider.Models) Models.Add(model);
         _selectedModel = string.IsNullOrWhiteSpace(settings.Model) ? SelectedProvider.DefaultModel : settings.Model;
+        RebuildModelList();
         _apiUrl = string.IsNullOrWhiteSpace(settings.ApiUrl) ? SelectedProvider.DefaultUrl : settings.ApiUrl;
         _apiKey = _credentials.Read(SelectedProvider.Provider.ToString().ToLowerInvariant());
         OnPropertyChanged(nameof(SelectedModel));
         OnPropertyChanged(nameof(ApiUrl));
         OnPropertyChanged(nameof(ApiKey));
+        _ = RefreshModelsIfStaleAsync();
+    }
+
+    /// <summary>Models fetched from the provider (newest first), then the built-in ones, plus the current choice.</summary>
+    private void RebuildModelList()
+    {
+        var key = SelectedProvider.Provider.ToString();
+        var fetched = _store.Data.Preferences.FetchedModels.TryGetValue(key, out var list) ? list : [];
+        var names = fetched.Concat(SelectedProvider.Models).Append(_selectedModel)
+            .Select(name => name.Trim()).Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        var selected = _selectedModel;
+        Models.Clear();
+        foreach (var name in names) Models.Add(name);
+        _selectedModel = selected;
+        OnPropertyChanged(nameof(SelectedModel));
+        var chinese = LocalizationManager.Instance.IsChinese;
+        ModelListStatus = _store.Data.Preferences.FetchedModelsAt.TryGetValue(key, out var at)
+            ? (chinese
+                ? $"模型列表已于 {at.LocalDateTime:yyyy-MM-dd HH:mm} 从 {SelectedProvider.DisplayName} 更新，也可以直接输入其他模型名。"
+                : $"Model list updated from {SelectedProvider.DisplayName} on {at.LocalDateTime:yyyy-MM-dd HH:mm}. You can also type any model name.")
+            : (chinese
+                ? "当前为内置模型列表。点击“刷新列表”可获取服务商的最新模型，也可以直接输入任意模型名。"
+                : "Built-in model list. Refresh it to load the provider's newest models, or type any model name.");
+    }
+
+    /// <summary>Refreshes the provider's model list at most once a day when settings are shown.</summary>
+    private async Task RefreshModelsIfStaleAsync()
+    {
+        if (SelectedProvider.RequiresApiKey && string.IsNullOrWhiteSpace(ApiKey)) return;
+        if (_store.Data.Preferences.FetchedModelsAt.TryGetValue(SelectedProvider.Provider.ToString(), out var at)
+            && DateTimeOffset.Now - at < TimeSpan.FromHours(24)) return;
+        await RefreshModelsAsync(showResult: false);
+    }
+
+    private async Task RefreshModelsAsync(bool showResult)
+    {
+        if (IsRefreshingModels) return;
+        IsRefreshingModels = true;
+        var provider = SelectedProvider;
+        var chinese = LocalizationManager.Instance.IsChinese;
+        try
+        {
+            var names = await AppServices.Current.AI.FetchModelsAsync(CurrentConfig());
+            if (names.Count == 0) throw new InvalidOperationException(chinese ? "该服务商未返回模型列表。" : "This provider did not return a model list.");
+            _store.Data.Preferences.FetchedModels[provider.Provider.ToString()] = names.ToList();
+            _store.Data.Preferences.FetchedModelsAt[provider.Provider.ToString()] = DateTimeOffset.Now;
+            _store.ScheduleSave();
+            if (!ReferenceEquals(provider, SelectedProvider)) return;
+            RebuildModelList();
+            if (showResult) ModelListStatus = chinese ? $"已从 {provider.DisplayName} 获取 {names.Count} 个模型。" : $"Loaded {names.Count} models from {provider.DisplayName}.";
+        }
+        catch (Exception exception)
+        {
+            if (showResult && ReferenceEquals(provider, SelectedProvider))
+                ModelListStatus = (chinese ? "该服务商未返回模型列表：" : "This provider did not return a model list: ") + exception.Message;
+        }
+        finally
+        {
+            IsRefreshingModels = false;
+        }
     }
 
     private async Task SaveAsync()
@@ -458,7 +534,14 @@ public sealed class SettingsViewModel : PageViewModel
         {
             PersistFields();
             await AppServices.Current.AI.TestConnectionAsync(CurrentConfig());
-            SetStatus(chinese ? $"{SelectedProvider.DisplayName} 连接成功。" : $"{SelectedProvider.DisplayName} connection successful.", StatusKind.Success);
+            var message = chinese ? $"{SelectedProvider.DisplayName} 连接成功。" : $"{SelectedProvider.DisplayName} connection successful.";
+            SetStatus(message, StatusKind.Success);
+            var balance = await AppServices.Current.AI.BalanceSummaryAsync(CurrentConfig(), chinese);
+            if (balance is not null) message += "\n" + balance;
+            else if (SelectedProvider.Provider != AIProvider.Ollama)
+                message += chinese ? "\n该服务商未提供可用 API Key 查询余额的接口，请到其控制台查看余额。" : "\nThis provider has no balance API for API keys; check the balance in its console.";
+            SetStatus(message, StatusKind.Success);
+            await RefreshModelsAsync(showResult: false);
         }
         catch (Exception exception)
         {
