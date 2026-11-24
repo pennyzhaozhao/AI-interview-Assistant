@@ -70,14 +70,20 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .gemini: ["gemini-2.0-flash", "gemini-2.5-pro"]
         }
     }
-    /// Providers whose chat API accepts an image next to the text. Screenshot questions are
-    /// sent with the image to these, so figure options and option layout are visible to the
-    /// model instead of relying on OCR alone. DeepSeek's API and the default local Ollama
-    /// models are text-only.
-    var supportsImageInput: Bool {
+    /// Whether `model` on this provider accepts an image next to the text. Screenshot
+    /// questions are sent with the image to these, so figure options and the real option
+    /// layout are visible instead of relying on OCR alone. DeepSeek: `deepseek-flash` reads
+    /// images (Chat Completions `image_url`), `deepseek-v4-pro` does not. The default local
+    /// Ollama models are text-only. A wrong guess only costs a text-only retry.
+    func supportsImageInput(model: String) -> Bool {
         switch self {
-        case .openai, .claude, .gemini, .volcano: true
-        case .ollama, .deepseek: false
+        case .openai, .claude, .gemini, .volcano:
+            return true
+        case .deepseek:
+            let name = model.lowercased()
+            return name.hasPrefix("deepseek-flash") || name.contains("vision")
+        case .ollama:
+            return false
         }
     }
 
@@ -91,6 +97,10 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .gemini: "Gemini 使用 Google AI API，填写 API Key 后使用。"
         }
     }
+}
+
+extension APIConfig {
+    var supportsImageInput: Bool { provider.supportsImageInput(model: model) }
 }
 
 struct APIConfig {
@@ -156,7 +166,7 @@ enum AIService {
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
         try validateCredentials(config)
-        if !imagesJPEG.isEmpty, config.provider.supportsImageInput {
+        if !imagesJPEG.isEmpty, config.supportsImageInput {
             let received = TokenFlag()
             do {
                 try await dispatchStream(

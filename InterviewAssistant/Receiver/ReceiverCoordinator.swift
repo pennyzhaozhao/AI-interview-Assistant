@@ -669,7 +669,7 @@ final class ReceiverCoordinator {
     /// True when the configured AI provider can read screenshots directly.
     var canSendImagesToAI: Bool {
         guard let modelContext else { return false }
-        return AIService.config(from: modelContext).provider.supportsImageInput
+        return AIService.config(from: modelContext).supportsImageInput
     }
 
     /// - Parameter imagesJPEG: the captured screenshots, sent with the question to providers that
