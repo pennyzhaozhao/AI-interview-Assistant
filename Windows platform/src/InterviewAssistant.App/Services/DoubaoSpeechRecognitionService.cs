@@ -299,9 +299,12 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         catch { }
     }
 
-    // Index of the first utterance not yet emitted as final (macOS VolcanoASREngine.lastDefiniteIndex).
+    // End time (ms) of the last utterance emitted as final (macOS VolcanoASREngine.lastEmittedUtteranceEndMs).
+    // Utterances are de-duplicated by time, not by array index: depending on the mode the server returns either
+    // every utterance since the start or only recent ones, and an index skipped every later sentence in that case.
     // result.text is cumulative for the whole session, so it must never be used as "the question".
-    private int _lastDefiniteIndex;
+    private double _lastEmittedUtteranceEndMs = -1;
+    private readonly List<string> _recentlyEmittedTexts = [];
     private int _lastFrameFlags;
 
     private void EmitResult(JsonElement root)
@@ -313,20 +316,18 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
 
         if (utterances.Count > 0)
         {
-            if (_lastDefiniteIndex > utterances.Count) _lastDefiniteIndex = 0;
-            for (var index = _lastDefiniteIndex; index < utterances.Count; index++)
+            foreach (var utterance in utterances)
             {
-                var utterance = utterances[index];
-                if (!utterance.TryGetProperty("definite", out var definite) || definite.ValueKind != JsonValueKind.True) break;
-                _lastDefiniteIndex = index + 1;
+                if (!utterance.TryGetProperty("definite", out var definite) || definite.ValueKind != JsonValueKind.True) continue;
                 var text = UtteranceText(utterance);
-                if (text.Length > 0) Recognized?.Invoke(text);
+                if (MarkEmitted(utterance, text)) Recognized?.Invoke(text);
             }
-            // Live partial: only the utterances that are still being spoken.
-            var pending = string.Concat(utterances.Skip(_lastDefiniteIndex).Select(UtteranceText)).Trim();
+            // Live partial: only the utterances not emitted yet.
+            var unfinished = utterances.Where(utterance => !IsEmitted(utterance, UtteranceText(utterance))).ToList();
+            var pending = string.Concat(unfinished.Select(UtteranceText)).Trim();
             if (isFinal)
             {
-                _lastDefiniteIndex = 0;
+                foreach (var utterance in unfinished) MarkEmitted(utterance, UtteranceText(utterance));
                 if (pending.Length > 0) Recognized?.Invoke(pending);
             }
             else if (pending.Length > 0) PartialRecognized?.Invoke(pending);
@@ -338,6 +339,27 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         if (fallback.Length == 0) return;
         if (isFinal) Recognized?.Invoke(fallback);
         else PartialRecognized?.Invoke(fallback);
+    }
+
+    private static double? UtteranceEndMs(JsonElement utterance) =>
+        utterance.TryGetProperty("end_time", out var end) && end.ValueKind == JsonValueKind.Number && end.TryGetDouble(out var value) && value > 0
+            ? value
+            : null;
+
+    private bool IsEmitted(JsonElement utterance, string text) =>
+        UtteranceEndMs(utterance) is { } end ? end <= _lastEmittedUtteranceEndMs : text.Length == 0 || _recentlyEmittedTexts.Contains(text);
+
+    /// <summary>Returns true (and records it) when the utterance has not been emitted yet.</summary>
+    private bool MarkEmitted(JsonElement utterance, string text)
+    {
+        if (text.Length == 0 || IsEmitted(utterance, text)) return false;
+        if (UtteranceEndMs(utterance) is { } end) _lastEmittedUtteranceEndMs = end;
+        else
+        {
+            _recentlyEmittedTexts.Add(text);
+            if (_recentlyEmittedTexts.Count > 20) _recentlyEmittedTexts.RemoveAt(0);
+        }
+        return true;
     }
 
     private static List<JsonElement> ResponseUtterances(JsonElement root)
@@ -418,7 +440,8 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             _resamplePosition = 0;
             lock (_loopbackPending) _loopbackPending.Clear();
             lock (_utteranceGate) _utteranceAudio.Clear();
-            _lastDefiniteIndex = 0;
+            _lastEmittedUtteranceEndMs = -1;
+            _recentlyEmittedTexts.Clear();
         }
     }
 

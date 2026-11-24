@@ -85,7 +85,12 @@ final class VolcanoASREngine {
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var connectionDelegate: VolcanoWebSocketConnectionDelegate?
-    nonisolated(unsafe) private let audioEngine = AVAudioEngine()
+    /// Created only while the microphone is actually in use and released on stop. Merely
+    /// touching `AVAudioEngine.inputNode` opens the input device on macOS; with AirPods that
+    /// switches the headset into its low-quality call profile (mono, one ear silent) even in
+    /// system-audio mode, so no other code path may create or access an input node.
+    @ObservationIgnored
+    nonisolated(unsafe) private var microphoneEngine: AVAudioEngine?
     private let processingQueue = DispatchQueue(label: "InterviewAssistant.VolcanoASR.processing", qos: .userInitiated)
     /// Resamples captured audio to 16 kHz Int16 and re-chunks it into 200 ms packets.
     /// Only touched on `processingQueue`.
@@ -96,7 +101,24 @@ final class VolcanoASREngine {
     private var hasSentAudio = false
     private var silenceChunks = 0
     private var silenceLimitChunks = 10
-    private var lastDefiniteIndex = 0
+    /// End time (ms, session timeline) of the last utterance already emitted. Utterances are
+    /// de-duplicated by time rather than by array index: depending on the mode the server may
+    /// return either every utterance since the start or only the recent ones, and an index
+    /// silently skipped every sentence after the first in the latter case.
+    private var lastEmittedUtteranceEndMs: Double = -1
+    /// Fallback for responses without timestamps.
+    private var recentlyEmittedTexts: [String] = []
+    /// Periodic “[DoubaoASR]” log line, so a support log shows whether audio reaches the
+    /// server and whether the server answers.
+    private struct Diagnostics {
+        var packets = 0
+        var voicedPackets = 0
+        var peakRMS: Float = 0
+        var responses = 0
+        var utterances = 0
+        var lastLog = Date.distantPast
+    }
+    @ObservationIgnored private var diagnostics = Diagnostics()
     private struct TimedPCMChunk {
         let start: Double
         let end: Double
@@ -272,8 +294,10 @@ final class VolcanoASREngine {
         // here traps in `_dispatch_assert_queue_fail` as soon as the board opens.
         let tap = SendableAudioTap(block: Self.makeMicrophoneTap(engine: self))
         let unavailableInputMessage = L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")
+        let engine = AVAudioEngine()
+        microphoneEngine = engine
         let startResult = await Self.startAudioEngine(
-            audioEngine,
+            engine,
             tap: tap,
             unavailableInputMessage: unavailableInputMessage
         )
@@ -281,10 +305,11 @@ final class VolcanoASREngine {
         switch startResult {
         case .success:
             isListening = true
-            installAudioConfigurationObserver()
+            installAudioConfigurationObserver(for: engine)
             statusText = L.t("🎙 Listening with Doubao Voice...")
             return true
         case .failure(let error):
+            if microphoneEngine === engine { stopMicrophoneEngineOnly() }
             statusText = "❌ \(error.localizedDescription)"
             return false
         }
@@ -350,6 +375,7 @@ final class VolcanoASREngine {
         } catch {
             systemAudioCapture = nil
             statusText = String(format: L.t("❌ Unable to capture system audio: %@"), error.localizedDescription)
+            NSLog("[DoubaoASR] system audio capture failed: %@", error.localizedDescription)
             return false
         }
         #else
@@ -399,16 +425,17 @@ final class VolcanoASREngine {
         disconnect()
     }
 
-    private func installAudioConfigurationObserver() {
-        guard audioConfigurationObserver == nil else { return }
+    private func installAudioConfigurationObserver(for engine: AVAudioEngine) {
+        removeAudioConfigurationObserver()
         audioConfigurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
-            object: audioEngine,
+            object: engine,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isListening, self.audioSource == .microphone else { return }
                 self.statusText = L.t("⚠️ The microphone changed. Reconnecting…")
+                self.removeAudioConfigurationObserver()
                 self.stopMicrophoneEngineOnly()
                 try? await Task.sleep(for: .milliseconds(300))
                 _ = await self.startMicrophoneCapture()
@@ -424,7 +451,9 @@ final class VolcanoASREngine {
     }
 
     private func stopMicrophoneEngineOnly() {
-        Self.stopAudioEngineInBackground(audioEngine)
+        guard let engine = microphoneEngine else { return }
+        microphoneEngine = nil
+        Self.stopAudioEngineInBackground(engine)
     }
 
     private nonisolated static func stopAudioEngineInBackground(_ audioEngine: AVAudioEngine) {
@@ -523,6 +552,7 @@ final class VolcanoASREngine {
                 self.isConnected = false
                 self.isListening = false
                 self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+                NSLog("[DoubaoASR] connection lost: %@", error.localizedDescription)
                 self.stopAudioEngine()
             }
         }
@@ -585,12 +615,29 @@ final class VolcanoASREngine {
                 self.isConnected = false
                 self.isListening = false
                 self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+                NSLog("[DoubaoASR] connection lost: %@", error.localizedDescription)
                 self.stopAudioEngine()
             }
         }
     }
 
+    private func logDiagnosticsIfDue(rms: Float) {
+        diagnostics.packets += 1
+        diagnostics.peakRMS = max(diagnostics.peakRMS, rms)
+        if rms > max(minimumVoiceThreshold, noiseFloorRMS * 1.6) { diagnostics.voicedPackets += 1 }
+        let now = Date()
+        guard now.timeIntervalSince(diagnostics.lastLog) >= 5 else { return }
+        NSLog(
+            "[DoubaoASR] source=%@ packets=%ld voiced=%ld peakRMS=%.0f responses=%ld utterances=%ld connected=%@",
+            audioSource == .system ? "system" : "microphone",
+            diagnostics.packets, diagnostics.voicedPackets, Double(diagnostics.peakRMS),
+            diagnostics.responses, diagnostics.utterances, isConnected ? "true" : "false"
+        )
+        diagnostics = Diagnostics(lastLog: now)
+    }
+
     private func handleResponse(_ data: Data) {
+        diagnostics.responses += 1
         let messageType = data.count > 1 ? data[1] >> 4 : 0
         if messageType == 0x0F {
             handleErrorResponse(data)
@@ -642,6 +689,7 @@ final class VolcanoASREngine {
                 ?? L.t("The server returned an unknown error")
             lastErrorText = String(format: L.t("Doubao Voice %d: %@"), code, message)
             statusText = lastErrorText
+            NSLog("[DoubaoASR] server error code=%ld message=%@", code, message)
             return
         }
 
@@ -658,43 +706,38 @@ final class VolcanoASREngine {
             ?? ((json["result"] as? [String: Any])?["is_final"] as? Bool)
             ?? false)
 
-        // Server-side VAD: emit utterances the server has finalized (definite: true)
+        // Server-side VAD: emit utterances the server has finalized (definite: true).
         let utterances = responseUtterances(from: json)
-        if !utterances.isEmpty {
-            for i in lastDefiniteIndex..<utterances.count {
-                let utterance = utterances[i]
-                guard utterance["definite"] as? Bool == true else { break }
-                let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                lastDefiniteIndex = i + 1
-                if !utteranceText.isEmpty {
-                    partialText = ""
-                    isSpeaking = false
-                    hasSentAudio = false
-                    silenceChunks = 0
-                    emitRecognizedUtterance(utteranceText, metadata: utterance)
-                    statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
-                }
-            }
+        var emittedAny = false
+        for utterance in utterances where utterance["definite"] as? Bool == true {
+            let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard markEmitted(utterance, text: utteranceText) else { continue }
+            emittedAny = true
+            partialText = ""
+            isSpeaking = false
+            hasSentAudio = false
+            silenceChunks = 0
+            diagnostics.utterances += 1
+            emitRecognizedUtterance(utteranceText, metadata: utterance)
+            statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
         }
 
         if isFinal {
-            // Emit any text not yet covered by definite utterances
-            let remainingText: String
-            if lastDefiniteIndex < utterances.count {
-                remainingText = utterances
-                    .dropFirst(lastDefiniteIndex)
-                    .compactMap { $0["text"] as? String }
-                    .joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            } else if lastDefiniteIndex == 0 {
-                remainingText = text
-            } else {
-                remainingText = ""
+            // Emit any text the definite utterances did not cover.
+            var remaining: [String] = []
+            for utterance in utterances {
+                let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if markEmitted(utterance, text: utteranceText) { remaining.append(utteranceText) }
             }
-            lastDefiniteIndex = 0
+            if utterances.isEmpty, !emittedAny {
+                let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if markEmitted(nil, text: clean) { remaining.append(clean) }
+            }
             partialText = ""
             hasSentAudio = false
+            let remainingText = remaining.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             if !remainingText.isEmpty {
+                diagnostics.utterances += 1
                 emitRecognizedUtterance(remainingText, metadata: utterances.last)
             }
             statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
@@ -702,6 +745,20 @@ final class VolcanoASREngine {
             partialText = text
             statusText = "💬 \(String(text.prefix(30)))..."
         }
+    }
+
+    /// Returns true (and records it) when `utterance` has not been emitted yet.
+    private func markEmitted(_ utterance: [String: Any]?, text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        if let end = Self.doubleValue(utterance?["end_time"]), end > 0 {
+            guard end > lastEmittedUtteranceEndMs else { return false }
+            lastEmittedUtteranceEndMs = end
+            return true
+        }
+        guard !recentlyEmittedTexts.contains(text) else { return false }
+        recentlyEmittedTexts.append(text)
+        if recentlyEmittedTexts.count > 20 { recentlyEmittedTexts.removeFirst() }
+        return true
     }
 
     private func handleErrorResponse(_ data: Data) {
@@ -758,6 +815,7 @@ final class VolcanoASREngine {
     private func handleVAD(pcmData: Data, rms: Float) {
         sendAudioChunk(pcmData)
         hasSentAudio = true
+        logDiagnosticsIfDue(rms: rms)
         if audioSource == .microphone {
             appendToAudioRing(pcmData)
         }
@@ -813,7 +871,8 @@ final class VolcanoASREngine {
         isSpeaking = false
         hasSentAudio = false
         silenceChunks = 0
-        lastDefiniteIndex = 0
+        lastEmittedUtteranceEndMs = -1
+        recentlyEmittedTexts = []
         noiseFloorRMS = 0
         audioRing = []
         audioTimelineSeconds = 0

@@ -909,7 +909,9 @@ public partial class PrompterWindow : Window
         var gap = _lastRecognizedSpeechAt is { } previous ? now - previous : TimeSpan.MaxValue;
         _lastRecognizedSpeechAt = now;
         if (_audioMode == PrompterAudioMode.Microphone && LooksLikeAnswerEcho(text)) return;
-        if (_answerVisibleSince is { } answerSince)
+        // The hold-for-confirmation bar protects a visible answer from the candidate's own voice, which only the
+        // microphone picks up. System audio is the other side of the call: a new turn there is a new question.
+        if (_audioMode == PrompterAudioMode.Microphone && _answerVisibleSince is { } answerSince)
         {
             var strongQuestion = gap >= TimeSpan.FromSeconds(3.5) && LooksLikeInterviewerQuestion(text);
             if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(10))

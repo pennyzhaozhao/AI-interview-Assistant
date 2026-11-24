@@ -445,7 +445,11 @@ final class ReceiverCoordinator {
             return
         }
         let answerAge = activeSpeechAnswerStartedAt.map { Date().timeIntervalSince($0) } ?? .infinity
-        let shouldProtectVisibleAnswer = activeSpeechAnswerHasStarted
+        // The hold-for-confirmation banner protects a visible answer from the candidate's own
+        // voice, which only the microphone can pick up. System audio is the other side of the
+        // call, so a new turn there is always a new interviewer question.
+        let shouldProtectVisibleAnswer = audioSource == .microphone
+            && activeSpeechAnswerHasStarted
             && speaker != .interviewer
             && (!strongQuestionSignal || answerAge < suspiciousQuestionProtectionWindow)
         if shouldProtectVisibleAnswer {
