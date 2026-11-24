@@ -119,6 +119,14 @@ final class VolcanoASREngine {
         var lastLog = Date.distantPast
     }
     @ObservationIgnored private var diagnostics = Diagnostics()
+    /// True between `start()` and `stop()`: an unexpected disconnect is then reconnected.
+    @ObservationIgnored private var wantsListening = false
+    @ObservationIgnored private var reconnectAttempts = 0
+    /// System audio delivers nothing while the Mac is silent, and Doubao closes a stream that
+    /// receives no audio for a while (the interviewer is quiet while the candidate answers).
+    /// This task fills such gaps with silence packets so the stream stays open.
+    @ObservationIgnored private var silenceKeepAliveTask: Task<Void, Never>?
+    @ObservationIgnored private var lastPacketAt = Date.distantPast
     private struct TimedPCMChunk {
         let start: Double
         let end: Double
@@ -263,7 +271,9 @@ final class VolcanoASREngine {
     @discardableResult
     func start() async -> Bool {
         guard !isListening else { return true }
+        wantsListening = true
         guard await connect() else { return false }
+        NSLog("[DoubaoASR] connected source=%@", audioSource == .system ? "system" : "microphone")
 
         switch audioSource {
         case .microphone:
@@ -370,6 +380,8 @@ final class VolcanoASREngine {
         do {
             try await capture.start()
             isListening = true
+            startSilenceKeepAlive()
+            NSLog("[DoubaoASR] system audio capture started")
             statusText = L.t("🔊 Listening to system audio with Doubao Voice...")
             return true
         } catch {
@@ -418,6 +430,8 @@ final class VolcanoASREngine {
     #endif
 
     func stop() {
+        wantsListening = false
+        reconnectAttempts = 0
         guard isListening || isConnected else { return }
         if hasSentAudio {
             sendAudioChunk(Data(), isLast: true)
@@ -543,17 +557,20 @@ final class VolcanoASREngine {
             payload: compressedPayload
         )
         guard let task = webSocketTask else { return }
-        Task { @MainActor [weak self] in
-            do {
-                try await task.send(.data(frame))
-            } catch {
-                guard let self, self.webSocketTask === task, self.isConnected else { return }
-                self.lastErrorText = error.localizedDescription
-                self.isConnected = false
-                self.isListening = false
-                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
-                NSLog("[DoubaoASR] connection lost: %@", error.localizedDescription)
-                self.stopAudioEngine()
+        // Hand the frame to the socket synchronously, like 1.2.1 did. One Task per packet (as
+        // in 1.3.0) does not guarantee the order in which the sends reach the socket; Doubao
+        // requires strictly increasing sequence numbers and closes the stream on a reordered
+        // packet, which with ~100 system-audio packets per second happened within seconds.
+        // A failed send is only logged: the receive loop detects a dead connection.
+        Self.enqueue(frame, on: task)
+    }
+
+    /// Built outside @MainActor so URLSession's completion handler, called on its delegate
+    /// queue, does not carry main-actor isolation (the `_dispatch_assert_queue_fail` crash).
+    private nonisolated static func enqueue(_ frame: Data, on task: URLSessionWebSocketTask) {
+        task.send(.data(frame)) { error in
+            if let error {
+                NSLog("[DoubaoASR] audio send failed: %@", error.localizedDescription)
             }
         }
     }
@@ -611,12 +628,51 @@ final class VolcanoASREngine {
                 }
             } catch {
                 guard self.webSocketTask === task, self.isConnected else { return }
-                self.lastErrorText = error.localizedDescription
-                self.isConnected = false
-                self.isListening = false
-                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
-                NSLog("[DoubaoASR] connection lost: %@", error.localizedDescription)
-                self.stopAudioEngine()
+                self.handleConnectionLost(error)
+            }
+        }
+    }
+
+    /// An unexpected disconnect while the board is listening: reconnect and keep listening
+    /// instead of silently going deaf for the rest of the interview.
+    private func handleConnectionLost(_ error: Error) {
+        NSLog("[DoubaoASR] connection lost: %@ (attempt %ld)", error.localizedDescription, reconnectAttempts)
+        let shouldReconnect = wantsListening && reconnectAttempts < 5
+        disconnect(clearStatus: false)
+        guard shouldReconnect else {
+            lastErrorText = error.localizedDescription
+            statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+            return
+        }
+        reconnectAttempts += 1
+        let delay = Double(min(reconnectAttempts, 3))
+        statusText = L.t("⚠️ Doubao Voice disconnected. Reconnecting…")
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, self.wantsListening, !self.isListening else { return }
+            if await self.start() {
+                NSLog("[DoubaoASR] reconnected")
+            } else if self.wantsListening {
+                self.handleConnectionLost(NSError(
+                    domain: "InterviewAssistant.Doubao",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: self.lastErrorText.isEmpty ? L.t("Reconnect failed") : self.lastErrorText]
+                ))
+            }
+        }
+    }
+
+    private func startSilenceKeepAlive() {
+        silenceKeepAliveTask?.cancel()
+        let silence = Data(repeating: 0, count: 6_400) // 200 ms, 16 kHz, Int16 mono
+        silenceKeepAliveTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard let self else { return }
+                guard self.isListening, self.isConnected else { continue }
+                if Date().timeIntervalSince(self.lastPacketAt) >= 0.4 {
+                    self.handleVAD(pcmData: silence, rms: 0)
+                }
             }
         }
     }
@@ -638,6 +694,7 @@ final class VolcanoASREngine {
 
     private func handleResponse(_ data: Data) {
         diagnostics.responses += 1
+        reconnectAttempts = 0
         let messageType = data.count > 1 ? data[1] >> 4 : 0
         if messageType == 0x0F {
             handleErrorResponse(data)
@@ -815,6 +872,7 @@ final class VolcanoASREngine {
     private func handleVAD(pcmData: Data, rms: Float) {
         sendAudioChunk(pcmData)
         hasSentAudio = true
+        lastPacketAt = Date()
         logDiagnosticsIfDue(rms: rms)
         if audioSource == .microphone {
             appendToAudioRing(pcmData)
@@ -977,6 +1035,8 @@ final class VolcanoASREngine {
     }
 
     private func stopAudioEngine() {
+        silenceKeepAliveTask?.cancel()
+        silenceKeepAliveTask = nil
         resetPCMStream()
         removeAudioConfigurationObserver()
         #if os(macOS)
@@ -1218,6 +1278,7 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
         reason: Data?
     ) {
         let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) }
+        NSLog("[DoubaoASR] server closed websocket code=%ld reason=%@", closeCode.rawValue, reasonText ?? "")
         let message = reasonText?.isEmpty == false
             ? String(format: L.t("The server closed the connection: %@"), reasonText!)
             : String(format: L.t("The server closed the connection (%d)"), closeCode.rawValue)
@@ -1237,60 +1298,130 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
     }
 }
 
-/// Streaming resampler + re-chunker for Doubao: any PCM format in, 16 kHz mono Int16
-/// packets of a fixed duration out. Not thread-safe; use from one serial queue.
+/// Streaming resampler + re-chunker for Doubao: any PCM buffer in, 16 kHz mono Int16
+/// packets of a fixed duration out. Downsampling averages the source samples each output
+/// sample covers (a box low-pass, exact 3:1 for 48 kHz); upsampling interpolates linearly.
+/// The fractional read position and unconsumed samples carry over between buffers, so
+/// ~10 ms ScreenCaptureKit buffers convert as one continuous stream.
+/// Not thread-safe; use from one serial queue.
 private final class VolcanoPCMStream: @unchecked Sendable {
-    private let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+    private let targetRate = 16_000.0
     private let chunkBytes: Int
-    private var converter: AVAudioConverter?
-    private var inputFormat: AVAudioFormat?
+    private var sourceRate = 0.0
+    private var position = 0.0
+    private var history: [Float] = []
     private var pending = Data()
+    private var buffersSinceLog = 0
+    private var packetsSinceLog = 0
+    private var lastLog = Date.distantPast
 
     init(chunkSeconds: Double) {
         chunkBytes = Int(16_000 * chunkSeconds) * MemoryLayout<Int16>.size
     }
 
     func reset() {
-        converter = nil
-        inputFormat = nil
+        sourceRate = 0
+        position = 0
+        history = []
         pending = Data()
     }
 
     /// Converts `buffer` and returns every complete packet now available.
     func append(_ buffer: AVAudioPCMBuffer) -> [Data] {
-        guard buffer.frameLength > 0 else { return [] }
-        if inputFormat.map({ !$0.isEqual(buffer.format) }) ?? true {
-            converter = AVAudioConverter(from: buffer.format, to: outputFormat)
-            inputFormat = buffer.format
-            pending = Data()
+        let rate = buffer.format.sampleRate
+        guard buffer.frameLength > 0, rate > 0 else { return [] }
+        if rate != sourceRate {
+            reset()
+            sourceRate = rate
         }
-        guard let converter else { return [] }
+        buffersSinceLog += 1
+        history.append(contentsOf: Self.monoSamples(buffer))
 
-        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
-        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return [] }
-        var provided = false
-        var error: NSError?
-        // `.noDataNow` keeps the converter's internal state for the next buffer, so the
-        // resampler's history carries over and no samples are lost between buffers.
-        let status = converter.convert(to: output, error: &error) { _, outStatus in
-            if provided {
-                outStatus.pointee = .noDataNow
-                return nil
+        let step = sourceRate / targetRate
+        var output: [Int16] = []
+        output.reserveCapacity(Int(Double(history.count) / step) + 1)
+        if step >= 1 {
+            while position + step <= Double(history.count) {
+                let start = Int(position)
+                let end = min(history.count, max(start + 1, Int(position + step)))
+                var sum: Float = 0
+                for index in start..<end { sum += history[index] }
+                output.append(Self.int16(sum / Float(end - start)))
+                position += step
             }
-            provided = true
-            outStatus.pointee = .haveData
-            return buffer
+        } else {
+            while position + 1 < Double(history.count) {
+                let index = Int(position)
+                let fraction = Float(position - Double(index))
+                output.append(Self.int16(history[index] * (1 - fraction) + history[index + 1] * fraction))
+                position += step
+            }
         }
-        guard status != .error, error == nil, let samples = output.int16ChannelData else { return [] }
-        let byteCount = Int(output.frameLength) * MemoryLayout<Int16>.size
-        if byteCount > 0 { pending.append(Data(bytes: samples[0], count: byteCount)) }
+        let consumed = min(Int(position), history.count)
+        if consumed > 0 {
+            history.removeFirst(consumed)
+            position -= Double(consumed)
+        }
+        output.withUnsafeBufferPointer { pending.append(Data(buffer: $0)) }
 
         var packets: [Data] = []
         while pending.count >= chunkBytes {
             packets.append(Data(pending.prefix(chunkBytes)))
             pending = Data(pending.dropFirst(chunkBytes))
         }
+        packetsSinceLog += packets.count
+        logIfDue(buffer)
         return packets
+    }
+
+    private func logIfDue(_ buffer: AVAudioPCMBuffer) {
+        let now = Date()
+        guard now.timeIntervalSince(lastLog) >= 5 else { return }
+        NSLog(
+            "[DoubaoASR] capture buffers=%ld packets=%ld rate=%.0f channels=%ld interleaved=%@ common=%ld",
+            buffersSinceLog, packetsSinceLog, sourceRate, Int(buffer.format.channelCount),
+            buffer.format.isInterleaved ? "true" : "false", Int(buffer.format.commonFormat.rawValue)
+        )
+        buffersSinceLog = 0
+        packetsSinceLog = 0
+        lastLog = now
+    }
+
+    private static func int16(_ value: Float) -> Int16 {
+        guard value.isFinite else { return 0 }
+        return Int16(max(-1, min(1, value)) * Float(Int16.max))
+    }
+
+    /// Mono float samples from float32, int16 or int32 buffers, interleaved or not.
+    private static func monoSamples(_ buffer: AVAudioPCMBuffer) -> [Float] {
+        let frames = Int(buffer.frameLength)
+        let channels = max(1, Int(buffer.format.channelCount))
+        let interleaved = buffer.format.isInterleaved
+        var mono = [Float](repeating: 0, count: frames)
+
+        func mix(scale: Float, read: (_ channel: Int, _ frame: Int) -> Float) {
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<channels { sum += read(channel, frame) }
+                mono[frame] = sum / Float(channels) * scale
+            }
+        }
+
+        if let data = buffer.floatChannelData {
+            mix(scale: 1) { channel, frame in
+                interleaved ? data[0][frame * channels + channel] : data[channel][frame]
+            }
+        } else if let data = buffer.int16ChannelData {
+            mix(scale: 1 / 32_768) { channel, frame in
+                Float(interleaved ? data[0][frame * channels + channel] : data[channel][frame])
+            }
+        } else if let data = buffer.int32ChannelData {
+            mix(scale: 1 / 2_147_483_648) { channel, frame in
+                Float(interleaved ? data[0][frame * channels + channel] : data[channel][frame])
+            }
+        } else {
+            return []
+        }
+        return mono
     }
 }

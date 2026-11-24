@@ -55,6 +55,10 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         try newStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
+        // ScreenCaptureKit always produces (tiny, 1 fps) video frames too. Without a screen
+        // output it logs “stream output NOT found. Dropping frame” for each one; the handler
+        // below simply ignores them.
+        try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
 
         let shouldStop = stateLock.withLock {
             if stopRequested { return true }
@@ -110,6 +114,7 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
 extension SystemAudioCapture: SCStreamDelegate {
     func stream(_ stream: SCStream, didStopWithError error: Error) {
+        NSLog("[SystemAudioCapture] stream stopped: %@", error.localizedDescription)
         onStopped?(error)
     }
 }
