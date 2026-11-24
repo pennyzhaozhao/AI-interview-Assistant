@@ -512,6 +512,7 @@ enum L {
         "Screenshot Shortcut": "截图快捷键",
         "Submit Screenshots": "提交截图",
         "Press the new shortcut…": "按下新的快捷键…",
+        "Restore Defaults": "恢复默认键",
         "Refreshing…": "刷新中…",
         "Refresh List": "刷新列表",
         "The list shows built-in models. Refresh it to load the provider's newest models, or type any model name below.": "当前为内置模型列表。点击“刷新列表”可获取服务商的最新模型，也可以在下方直接输入任意模型名。",

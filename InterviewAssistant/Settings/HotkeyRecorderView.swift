@@ -415,7 +415,8 @@ enum PrompterHotkey: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .scrollUp, .scrollDown: "textformat"
+        case .scrollUp: "arrow.up"
+        case .scrollDown: "arrow.down"
         case .answerNewQuestion: "arrow.left.arrow.right"
         case .screenshot: "camera.viewfinder"
         case .deleteLastScreenshot: "trash"
@@ -496,17 +497,19 @@ struct HotkeySettingsView: View {
     @State private var keys: [PrompterHotkey: String] = [:]
     @State private var recording: PrompterHotkey?
     @State private var keyMonitor: Any?
+    @State private var mouseMonitor: Any?
     @State private var message: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                SettingsBackButton()
                 HStack(spacing: 16) {
                     Image(systemName: "keyboard")
-                        .font(.system(size: 28, weight: .medium))
-                        .foregroundStyle(Color.appText.opacity(0.75))
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Color.appPrimary)
                         .frame(width: 64, height: 64)
-                        .background(Color.appField)
+                        .background(Color.appPrimary.opacity(0.16))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L.t("Keyboard Shortcuts"))
@@ -549,11 +552,26 @@ struct HotkeySettingsView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.appDanger)
                 }
+
+                Button {
+                    restoreDefaults()
+                } label: {
+                    Label(L.t("Restore Defaults"), systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(AppButtonStyle())
+                .disabled(PrompterHotkey.allCases.allSatisfy { (keys[$0] ?? $0.currentKey) == $0.defaultKey })
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
         }
-        .navigationTitle(L.t("Keyboard Shortcuts"))
+        .frame(maxWidth: .infinity)
+        .background(Color.appBG.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .navigationTitle("")
+        // Switching to another app also cancels a recording in progress.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            stopRecording()
+        }
         .onAppear {
             keys = Dictionary(uniqueKeysWithValues: PrompterHotkey.allCases.map { ($0, $0.currentKey) })
         }
@@ -563,12 +581,7 @@ struct HotkeySettingsView: View {
     private func row(_ hotkey: PrompterHotkey) -> some View {
         let isRecording = recording == hotkey
         return HStack(spacing: 14) {
-            Image(systemName: hotkey.icon)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(Color.appText.opacity(0.7))
-                .frame(width: 42, height: 42)
-                .background(Color.appField)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            iconTile(hotkey.icon, tint: Color.appPrimary)
             Text(hotkey.title)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.appText)
@@ -596,6 +609,13 @@ struct HotkeySettingsView: View {
         stopRecording()
         message = nil
         recording = hotkey
+        // Clicking anywhere else, or leaving the app, cancels: the shortcut keeps its previous value
+        // (a new value is only saved when a key combination is pressed).
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { event in
+            stopRecording()
+            return event
+        }
+
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {
                 stopRecording()
@@ -635,8 +655,25 @@ struct HotkeySettingsView: View {
 
     private func stopRecording() {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
         keyMonitor = nil
+        mouseMonitor = nil
         recording = nil
+    }
+
+    private func restoreDefaults() {
+        stopRecording()
+        message = nil
+        for hotkey in PrompterHotkey.allCases {
+            UserDefaults.standard.removeObject(forKey: hotkey.preferenceKey)
+            keys[hotkey] = hotkey.defaultKey
+        }
+        if InterviewWindowPresence.hasOpenBoards {
+            HotkeyManager.shared.register(key: PrompterHotkey.screenshot.defaultKey, id: PrompterHotkey.screenshot.hotkeyID) {
+                NotificationCenter.default.post(name: .screenshotHotkey, object: nil)
+            }
+        }
+        PrompterHotkeyRegistry.refresh()
     }
 }
 #endif
