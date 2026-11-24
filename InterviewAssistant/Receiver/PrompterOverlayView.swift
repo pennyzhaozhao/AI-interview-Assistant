@@ -1958,9 +1958,15 @@ struct PrompterOverlayView: View {
     @MainActor
     private func finishScreenshotAnalysis() async {
         screenshotSubmissionState = .loading
-        let previewImage = screenshotCapture.capturedImages.last
+        let capturedImages = screenshotCapture.capturedImages
+        let previewImage = capturedImages.last
         let recognizedText = screenshotCapture.finishAndMerge().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !recognizedText.isEmpty else {
+        // Every captured image goes to a vision-capable model, which also covers questions
+        // whose options are figures (and figure-only questions OCR cannot read at all).
+        let imagesForModel = coordinator.canSendImagesToAI
+            ? capturedImages.compactMap { ReceiverCoordinator.jpegForModel($0) }
+            : []
+        guard !recognizedText.isEmpty || !imagesForModel.isEmpty else {
             coordinator.aiText = L.t("No clear question was recognized. Try capturing a larger region.")
             coordinator.confidence = 0.18
             screenshotCapture.resetMultiCapture()
@@ -1969,7 +1975,7 @@ struct PrompterOverlayView: View {
         }
 
         if let previewImage { coordinator.screenshotImage = previewImage }
-        await coordinator.askScreenshotQuestion(rawText: recognizedText)
+        await coordinator.askScreenshotQuestion(rawText: recognizedText, imagesJPEG: imagesForModel)
         screenshotCapture.resetMultiCapture()
         screenshotSubmissionState = .success
         Task { @MainActor in

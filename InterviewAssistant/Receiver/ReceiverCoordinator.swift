@@ -666,8 +666,21 @@ final class ReceiverCoordinator {
     }
     #endif
 
-    func askScreenshotQuestion(rawText: String) async {
-        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// True when the configured AI provider can read screenshots directly.
+    var canSendImagesToAI: Bool {
+        guard let modelContext else { return false }
+        return AIService.config(from: modelContext).provider.supportsImageInput
+    }
+
+    /// - Parameter imagesJPEG: the captured screenshots, sent with the question to providers that
+    ///   accept images, so figure options and the real option layout are visible to the model.
+    func askScreenshotQuestion(rawText: String, imagesJPEG: [Data] = []) async {
+        let images = canSendImagesToAI ? imagesJPEG : []
+        var trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A pure figure question can have no OCR text at all; the attached image carries it.
+        if trimmed.isEmpty, !images.isEmpty {
+            trimmed = L.t("(The question is in the attached screenshot.)")
+        }
         guard !trimmed.isEmpty else { return }
         if mode == .director {
             publishDirectorQuestion(trimmed)
@@ -717,6 +730,7 @@ final class ReceiverCoordinator {
             systemPromptOverride: systemPrompt,
             isApproachForPendingCode: false,
             maxTokens: 1800,
+            imagesJPEG: images,
             turnConfigurator: { turn in
                 turn.screenshotData = screenshotData
                 turn.category = "Screenshot OCR"
@@ -791,6 +805,7 @@ final class ReceiverCoordinator {
         maxTokens: Int = 500,
         onProgress: ((String) -> Void)? = nil,
         onComplete: (() -> Void)? = nil,
+        imagesJPEG: [Data] = [],
         turnConfigurator: ((ConversationTurn) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { return }
@@ -846,6 +861,7 @@ final class ReceiverCoordinator {
                 systemPrompt: prompt,
                 question: cleanQuestion,
                 maxTokens: effectiveMaxTokens,
+                imagesJPEG: imagesJPEG,
                 onToken: { token in
                     if isApproachForPendingCode && self.isGeneratingCode { return }
                     streamingAnswer += token
@@ -1012,6 +1028,25 @@ final class ReceiverCoordinator {
     }
 
     #if os(macOS)
+    /// A screenshot prepared for a vision model: at most `maxDimension` px on the long side,
+    /// JPEG-compressed, so a full Retina capture does not turn into a multi-megabyte request.
+    static func jpegForModel(_ image: NSImage, maxDimension: CGFloat = 1_600) -> Data? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        let scale = min(1, maxDimension / max(width, height, 1))
+        let targetWidth = max(1, Int(width * scale))
+        let targetHeight = max(1, Int(height * scale))
+        guard let context = CGContext(
+            data: nil, width: targetWidth, height: targetHeight, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        guard let scaled = context.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: scaled).representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+    }
+
     private func currentScreenshotPNGData() -> Data? {
         guard let image = screenshotImage,
               let tiff = image.tiffRepresentation,
@@ -1038,8 +1073,27 @@ final class ReceiverCoordinator {
         return 0.42
     }
 
+    /// Removes the hidden working the screenshot prompts ask for (<analysis>…</analysis>) and
+    /// the <think>…</think> blocks some local models emit. While a block is still streaming,
+    /// everything from its opening tag on is hidden, so only the final answer is ever shown.
+    static func strippingHiddenReasoning(_ text: String) -> String {
+        var value = text
+        for tag in ["analysis", "think"] {
+            let open = "<\(tag)>"
+            let close = "</\(tag)>"
+            while let start = value.range(of: open, options: .caseInsensitive) {
+                if let end = value.range(of: close, options: .caseInsensitive, range: start.upperBound..<value.endIndex) {
+                    value.removeSubrange(start.lowerBound..<end.upperBound)
+                } else {
+                    value.removeSubrange(start.lowerBound..<value.endIndex)
+                }
+            }
+        }
+        return value
+    }
+
     private func displayableAnswer(from rawText: String) -> String {
-        var text = rawText
+        var text = Self.strippingHiddenReasoning(rawText)
             .replacingOccurrences(of: "💡", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

@@ -123,6 +123,32 @@ final class SpeechProtectionTests: XCTestCase {
         }
     }
 
+    func testScreenshotMultipleChoiceDetection() {
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("A. Linux\nB. Windows\nC. macOS"))
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("(A) 1 (B) 2 (C) 3"))
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("以下关于进程的说法正确的是\n进程是资源分配的基本单位\n线程是资源分配的基本单位"))
+        XCTAssertFalse(KnowledgeContextBuilder.isMultipleChoiceQuestion("Implement a function that returns a sorted array of the input"))
+        XCTAssertFalse(KnowledgeContextBuilder.isMultipleChoiceQuestion("给定一个数组，返回其中位数，要求时间复杂度 O(log n)"))
+    }
+
+    func testScreenshotPromptUsesRealOptionLabels() {
+        let prompt = KnowledgeContextBuilder.buildQuestionPrompt(
+            rawText: "下列排序算法中，平均时间复杂度为 O(nlogn) 的是\nA. 冒泡排序\nB. 快速排序",
+            answerLanguage: "zh-CN"
+        )
+        XCTAssertTrue(prompt.contains("multiple-choice question"))
+        XCTAssertFalse(prompt.contains("思路、步骤、代码、复杂度"))
+        XCTAssertTrue(prompt.contains("never invent letters"))
+        XCTAssertTrue(prompt.contains("第 3 个图形"))
+    }
+
+    @MainActor
+    func testHiddenReasoningIsStripped() {
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<analysis>check B</analysis>答案：B. Linux"), "答案：B. Linux")
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<analysis>still thinking"), "")
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<think>x</think>答案：进程"), "答案：进程")
+    }
+
     func testFusionWeights() {
         let value = SpeakerVerifier.fusedScore(similarity: 0.8, rmsCloseness: 0.6, answerOverlap: 0.4)
         XCTAssertEqual(value, 0.69, accuracy: 0.0001)

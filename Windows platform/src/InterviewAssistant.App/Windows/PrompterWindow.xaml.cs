@@ -242,8 +242,11 @@ public partial class PrompterWindow : Window
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (_turnIndex != turnIndex) return;
-                    turn.Answer = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
-                    if (!string.IsNullOrWhiteSpace(turn.Answer)) _answerVisibleSince ??= DateTimeOffset.UtcNow;
+                    var display = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
+                    // Still inside the hidden <analysis> block: keep showing "Preparing…".
+                    if (string.IsNullOrWhiteSpace(display)) return;
+                    turn.Answer = display;
+                    _answerVisibleSince ??= DateTimeOffset.UtcNow;
                     QuestionText.Text = turn.Question;
                     PreparingPanel.Visibility = Visibility.Collapsed;
                     AnswerScroller.Visibility = Visibility.Visible;
@@ -680,9 +683,13 @@ public partial class PrompterWindow : Window
 
         var language = InterviewPromptBuilder.IsChinese(AnswerLanguageCode()) ? "Simplified Chinese" : "English";
         var instruction = $"""
-            Transcribe the complete question shown in this screenshot, including its question stem and every visible answer option.
-            Return only the faithfully reconstructed question text; do not answer it, summarize it, describe the image, or infer that it is a skills checklist.
-            Preserve option labels such as A, B, C and D. Prefer the image whenever the OCR hint is incomplete.
+            Transcribe the complete question shown in this screenshot, including its question stem and every answer option.
+            Return only the faithfully reconstructed question text; do not answer it, summarize it, or infer that it is a skills checklist.
+            Copy option labels exactly as they appear (A/B/C/D, ①②③, 1/2/3…). Never add labels that are not in the image:
+            if the options have no labels, put each option on its own line starting with "[option, no label]".
+            If options (or parts of the stem) are pictures, describe each picture precisely on its own line, numbered by
+            position, e.g. "[figure 1, leftmost] …", "[figure 2] …" (count top to bottom for a vertical list), and keep any label the picture has.
+            Prefer the image whenever the OCR hint is incomplete or wrong.
             The later answer will be written in {language}.
 
             OCR hint (may be incomplete or wrong):

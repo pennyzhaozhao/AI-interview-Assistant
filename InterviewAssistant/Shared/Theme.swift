@@ -499,6 +499,7 @@ enum L {
         "Relaxed": "宽松",
         "⚠️ Doubao Voice disconnected. Reconnecting…": "⚠️ 豆包语音连接断开，正在重连…",
         "Reconnect failed": "重连失败",
+        "(The question is in the attached screenshot.)": "（题目在附带的截图中。）",
         "Pause Before Answering": "停顿多久后开始回答",
         "The interviewer's speech is treated as one question until they stay quiet this long. Use the manual trigger to answer right away.": "面试官停顿不超过这个时长时，前后的话都算同一个问题；停顿超过后才开始生成回答。需要立刻回答时可以用手动触发。",
         "%.1f s": "%.1f 秒",

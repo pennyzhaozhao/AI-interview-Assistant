@@ -70,6 +70,17 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .gemini: ["gemini-2.0-flash", "gemini-2.5-pro"]
         }
     }
+    /// Providers whose chat API accepts an image next to the text. Screenshot questions are
+    /// sent with the image to these, so figure options and option layout are visible to the
+    /// model instead of relying on OCR alone. DeepSeek's API and the default local Ollama
+    /// models are text-only.
+    var supportsImageInput: Bool {
+        switch self {
+        case .openai, .claude, .gemini, .volcano: true
+        case .ollama, .deepseek: false
+        }
+    }
+
     var help: String {
         switch self {
         case .ollama: "本地 Ollama，默认不需要 API Key。"
@@ -130,22 +141,61 @@ enum AIService {
         }
     }
 
+    private final class TokenFlag: @unchecked Sendable { var value = false }
+
+    /// - Parameter imagesJPEG: optional images (screenshots) sent with the question to providers
+    ///   that accept images. If that request fails before any text arrives (for example a
+    ///   custom model without vision), the question is retried as text only.
     static func streamResponse(
         config: APIConfig,
         systemPrompt: String,
         question: String,
         maxTokens: Int = 400,
+        imagesJPEG: [Data] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
         try validateCredentials(config)
+        if !imagesJPEG.isEmpty, config.provider.supportsImageInput {
+            let received = TokenFlag()
+            do {
+                try await dispatchStream(
+                    config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens,
+                    imagesBase64: imagesJPEG.map { $0.base64EncodedString() },
+                    onToken: { token in
+                        received.value = true
+                        onToken(token)
+                    },
+                    onComplete: onComplete
+                )
+                return
+            } catch {
+                if received.value || error is CancellationError { throw error }
+                NSLog("[AIService] image request failed, retrying as text only: %@", error.localizedDescription)
+            }
+        }
+        try await dispatchStream(
+            config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens,
+            imagesBase64: [], onToken: onToken, onComplete: onComplete
+        )
+    }
+
+    private static func dispatchStream(
+        config: APIConfig,
+        systemPrompt: String,
+        question: String,
+        maxTokens: Int,
+        imagesBase64: [String],
+        onToken: @escaping @MainActor (String) -> Void,
+        onComplete: @escaping @MainActor (String) -> Void
+    ) async throws {
         switch config.provider {
         case .claude:
-            try await streamClaude(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, onToken: onToken, onComplete: onComplete)
+            try await streamClaude(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64, onToken: onToken, onComplete: onComplete)
         case .ollama, .openai, .deepseek, .volcano:
-            try await streamOpenAICompatible(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, onToken: onToken, onComplete: onComplete)
+            try await streamOpenAICompatible(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64, onToken: onToken, onComplete: onComplete)
         case .gemini:
-            let text = try await completeGemini(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens)
+            let text = try await completeGemini(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64)
             await onToken(text)
             await onComplete(text)
         }
@@ -163,6 +213,7 @@ enum AIService {
         systemPrompt: String,
         question: String,
         maxTokens: Int,
+        imagesBase64: [String] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
@@ -180,7 +231,7 @@ enum AIService {
             "max_tokens": maxTokens,
             "stream": true,
             "system": systemPrompt,
-            "messages": [["role": "user", "content": question]]
+            "messages": [["role": "user", "content": claudeContent(question, imagesBase64: imagesBase64)] as [String: Any]]
         ])
 
         let (bytes, response) = try await session.bytes(for: request)
@@ -250,7 +301,8 @@ enum AIService {
         config: APIConfig,
         systemPrompt: String,
         question: String,
-        maxTokens: Int
+        maxTokens: Int,
+        imagesBase64: [String] = []
     ) async throws -> String {
         let base = config.apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(base)/models/\(config.model):generateContent?key=\(config.apiKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
@@ -262,7 +314,7 @@ enum AIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "systemInstruction": ["parts": [["text": systemPrompt]]],
-            "contents": [["role": "user", "parts": [["text": question]]]],
+            "contents": [["role": "user", "parts": geminiParts(question, imagesBase64: imagesBase64)] as [String: Any]],
             "generationConfig": ["maxOutputTokens": maxTokens]
         ])
         let (data, response) = try await session.data(for: request)
@@ -283,6 +335,7 @@ enum AIService {
         systemPrompt: String,
         question: String,
         maxTokens: Int,
+        imagesBase64: [String] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
@@ -300,8 +353,8 @@ enum AIService {
             "stream": true,
             "messages": [
                 ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": "Interview question: \(question)"]
-            ],
+                ["role": "user", "content": openAIContent("Interview question: \(question)", imagesBase64: imagesBase64)]
+            ] as [[String: Any]],
             "max_tokens": maxTokens
         ]
         if config.provider == .deepseek {
@@ -391,6 +444,32 @@ enum AIService {
             throw NSError(domain: "InterviewAssistant", code: 3, userInfo: [NSLocalizedDescriptionKey: "AI 返回为空，请检查模型名称、API Key 或 API 地址。"])
         }
         return text
+    }
+
+    // MARK: Image content blocks
+
+    private static func openAIContent(_ text: String, imagesBase64: [String]) -> Any {
+        guard !imagesBase64.isEmpty else { return text }
+        var blocks: [[String: Any]] = [["type": "text", "text": text]]
+        for image in imagesBase64 {
+            blocks.append(["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(image)"]])
+        }
+        return blocks
+    }
+
+    private static func claudeContent(_ text: String, imagesBase64: [String]) -> Any {
+        guard !imagesBase64.isEmpty else { return text }
+        var blocks: [[String: Any]] = imagesBase64.map {
+            ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": $0]]
+        }
+        blocks.append(["type": "text", "text": text])
+        return blocks
+    }
+
+    private static func geminiParts(_ text: String, imagesBase64: [String]) -> [[String: Any]] {
+        var parts: [[String: Any]] = imagesBase64.map { ["inline_data": ["mime_type": "image/jpeg", "data": $0]] }
+        parts.append(["text": text])
+        return parts
     }
 
     private static func normalizeAPIBase(_ url: String) -> String {
