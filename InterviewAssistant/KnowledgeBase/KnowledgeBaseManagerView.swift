@@ -2173,6 +2173,8 @@ private struct QuestionBankEditorSheet: View {
     @State private var importingFile = false
     @State private var isParsing = false
     @State private var importError = ""
+    /// Primary questions whose follow-ups are folded away in the outline on the left.
+    @State private var outlineCollapsed = Set<UUID>()
 
     init(entry: KnowledgeEntry, isCompact: Bool, onCancel: @escaping () -> Void, onSave: @escaping (String, QuestionBankDocument) -> Void) {
         self.entry = entry
@@ -2197,7 +2199,7 @@ private struct QuestionBankEditorSheet: View {
                     }
                     .buttonStyle(AppButtonStyle())
                     Button { addPrimary() } label: {
-                        Label(L.t("Add primary question"), systemImage: "plus")
+                        Label(L.t("Add question"), systemImage: "plus")
                     }
                     .buttonStyle(AppButtonStyle(prominent: true))
                 }
@@ -2208,17 +2210,25 @@ private struct QuestionBankEditorSheet: View {
                     ContentUnavailableView(
                         L.t("No questions yet"),
                         systemImage: "questionmark.bubble",
-                        description: Text(L.t("Add a primary question or paste a batch for AI to organize."))
+                        description: Text(L.t("Add a question or paste a batch for AI to organize."))
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            ForEach(Array(document.questions.indices), id: \.self) { index in
-                                primaryRow(index)
+                    ScrollViewReader { proxy in
+                        HStack(alignment: .top, spacing: 16) {
+                            if !isCompact {
+                                outline(proxy)
+                            }
+                            ScrollView {
+                                LazyVStack(spacing: 14) {
+                                    ForEach(Array(document.questions.indices), id: \.self) { index in
+                                        primaryRow(index)
+                                            .id(document.questions[index].id)
+                                    }
+                                }
+                                .padding(.vertical, 2)
                             }
                         }
-                        .padding(.vertical, 2)
                     }
                 }
             }
@@ -2299,23 +2309,10 @@ private struct QuestionBankEditorSheet: View {
                 }
                 .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L.t("Primary question") + " \(index + 1)")
-                        .font(.appCaptionMedium)
-                    if !expanded.contains(id), !document.questions[index].question.isEmpty {
-                        Text(document.questions[index].question)
-                            .font(.appSmall)
-                            .foregroundStyle(Color.appMuted)
-                            .lineLimit(1)
-                    }
-                }
+                questionTitle(document.questions[index].question, placeholder: L.t("New question"))
+                    .font(.system(size: 16, weight: .semibold))
 
                 Spacer(minLength: 12)
-
-                Button { addFollowUp(to: index) } label: {
-                    Label(L.t("Add follow-up"), systemImage: "plus")
-                }
-                .buttonStyle(AppButtonStyle())
 
                 Button(role: .destructive) {
                     document.questions.remove(at: index)
@@ -2340,7 +2337,7 @@ private struct QuestionBankEditorSheet: View {
             if expanded.contains(id) {
                 VStack(alignment: .leading, spacing: 16) {
                     qaField(
-                        label: L.t("Primary question"),
+                        label: L.t("Question"),
                         text: $document.questions[index].question,
                         isAnswer: false
                     )
@@ -2360,6 +2357,7 @@ private struct QuestionBankEditorSheet: View {
                             VStack(spacing: 12) {
                                 ForEach(Array(document.questions[index].followUps.indices), id: \.self) { followIndex in
                                     followUpCard(parentIndex: index, followIndex: followIndex)
+                                        .id(document.questions[index].followUps[followIndex].id)
                                 }
                             }
                         }
@@ -2392,7 +2390,7 @@ private struct QuestionBankEditorSheet: View {
         let followID = document.questions[parentIndex].followUps[followIndex].id
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Text(L.t("Follow-up") + " \(parentIndex + 1).\(followIndex + 1)")
+                questionTitle(document.questions[parentIndex].followUps[followIndex].question, placeholder: L.t("New follow-up"))
                     .font(.appCaptionMedium)
                 Spacer()
                 Button(role: .destructive) {
@@ -2436,6 +2434,84 @@ private struct QuestionBankEditorSheet: View {
             guard let token = values.first else { return false }
             return moveFollowUp(token: token, targetParentID: parentID, targetFollowUpID: followID)
         }
+    }
+
+    /// A card or outline title: the question itself, or a muted placeholder while it is empty.
+    private func questionTitle(_ text: String, placeholder: String) -> some View {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Text(clean.isEmpty ? placeholder : clean)
+            .foregroundStyle(clean.isEmpty ? Color.appMuted : Color.appText)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    /// Table of contents: questions, each with its follow-ups (foldable). Clicking scrolls to the card.
+    private func outline(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L.t("Outline"))
+                    .font(.appSmall)
+                    .foregroundStyle(Color.appMuted)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 6)
+                ForEach(document.questions) { item in
+                    let isFolded = outlineCollapsed.contains(item.id)
+                    HStack(spacing: 4) {
+                        Button {
+                            if isFolded { outlineCollapsed.remove(item.id) } else { outlineCollapsed.insert(item.id) }
+                        } label: {
+                            Image(systemName: isFolded ? "chevron.right" : "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(item.followUps.isEmpty ? Color.clear : Color.appMuted)
+                                .frame(width: 18, height: 26)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(item.followUps.isEmpty)
+
+                        Button {
+                            expanded.insert(item.id)
+                            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(item.id, anchor: .top) }
+                        } label: {
+                            questionTitle(item.question, placeholder: L.t("New question"))
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+
+                    if !isFolded {
+                        ForEach(item.followUps) { follow in
+                            Button {
+                                expanded.insert(item.id)
+                                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(follow.id, anchor: .top) }
+                            } label: {
+                                questionTitle(follow.question, placeholder: L.t("New follow-up"))
+                                    .font(.system(size: 12))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 34)
+                                    .padding(.trailing, 6)
+                                    .padding(.vertical, 4)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 6)
+        }
+        .frame(width: 240)
+        .background(Color.appSurface)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.appBorder, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
     private func qaField(label: String, text: Binding<String>, isAnswer: Bool) -> some View {

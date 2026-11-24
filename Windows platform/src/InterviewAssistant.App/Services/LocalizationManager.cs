@@ -127,7 +127,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
         ["New Q&A bank"] = "新建问答题库", ["Interview Q&A Bank"] = "面试问答题库", ["Edit Q&A Bank"] = "编辑问答题库",
         ["Create primary questions and answers, then add ordered follow-ups under each one."] = "填写一级问题和答案，并在每个问题下添加可排序的追问。",
         ["Structured Q&A bank"] = "结构化问答题库", ["Batch paste import"] = "批量粘贴导入", ["Upload question file"] = "上传题库文件",
-        ["Add primary question"] = "添加一级问题", ["Primary question"] = "一级问题", ["Untitled primary question"] = "未命名一级问题",
+        ["Add primary question"] = "添加一级问题", ["Add question"] = "添加问题", ["New question"] = "新问题", ["New follow-up"] = "新追问", ["Outline"] = "目录", ["Add a question or paste a batch for AI to organize."] = "添加问题，或批量粘贴后让 AI 自动整理。", ["Primary question"] = "一级问题", ["Untitled primary question"] = "未命名一级问题",
         ["Follow-ups"] = "追问", ["Follow-up"] = "追问", ["Add follow-up"] = "添加追问", ["Follow-up question"] = "追问问题", ["Follow-up answer"] = "追问答案", ["Drag to reorder"] = "拖拽排序",
         ["{0} follow-ups"] = "{0} 个追问", ["No questions yet"] = "暂无问题", ["Add a primary question or paste a batch for AI to organize."] = "添加一级问题，或批量粘贴后让 AI 自动整理。",
         ["Paste questions and answers in any reasonable format. AI will identify primary questions, follow-ups, and their answers."] = "粘贴任意常见格式的问题和答案，AI 会识别一级问题、追问及其对应答案。",

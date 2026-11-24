@@ -21,8 +21,16 @@
                 <Button Grid.Column="6" Content="{DynamicResource AddPrimaryQuestionText}" Style="{StaticResource PrimaryButtonStyle}" Click="AddPrimary_Click"/>
             </Grid>
             <Grid Grid.Row="2">
-                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="QuestionPanel"/></ScrollViewer>
-                <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <!-- Outline: questions with their follow-ups (foldable); clicking scrolls to the card. -->
+                <Border x:Name="OutlineBorder" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="20" Padding="8,12">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="{DynamicResource OutlineText}" Style="{StaticResource CaptionStyle}" Margin="10,0,0,8"/>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel x:Name="OutlinePanel"/></ScrollViewer>
+                    </DockPanel>
+                </Border>
+                <ScrollViewer x:Name="QuestionScroller" Grid.Column="2" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="QuestionPanel"/></ScrollViewer>
+                <StackPanel x:Name="EmptyPanel" Grid.ColumnSpan="3" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <TextBlock Text="?" FontSize="42" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
                     <TextBlock Text="{DynamicResource NoQuestionsText}" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,8,0,0"/>
                     <TextBlock Text="{DynamicResource NoQuestionsHint}" Style="{StaticResource CaptionStyle}" HorizontalAlignment="Center" Margin="0,5,0,0"/>
