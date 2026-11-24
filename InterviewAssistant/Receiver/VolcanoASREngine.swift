@@ -87,6 +87,9 @@ final class VolcanoASREngine {
     private var connectionDelegate: VolcanoWebSocketConnectionDelegate?
     nonisolated(unsafe) private let audioEngine = AVAudioEngine()
     private let processingQueue = DispatchQueue(label: "InterviewAssistant.VolcanoASR.processing", qos: .userInitiated)
+    /// Resamples captured audio to 16 kHz Int16 and re-chunks it into 200 ms packets.
+    /// Only touched on `processingQueue`.
+    private let pcmStream = VolcanoPCMStream(chunkSeconds: 0.2)
     private var sessionID = ""
     private var sequenceNumber = 0
     private var isSpeaking = false
@@ -915,6 +918,7 @@ final class VolcanoASREngine {
     }
 
     private func stopAudioEngine() {
+        resetPCMStream()
         removeAudioConfigurationObserver()
         #if os(macOS)
         if let capture = systemAudioCapture {
@@ -929,15 +933,27 @@ final class VolcanoASREngine {
         #endif
     }
 
+    /// Microphone taps deliver ~200 ms buffers, but ScreenCaptureKit delivers ~10 ms ones.
+    /// Both go through one long-lived converter (a fresh converter per buffer drops the
+    /// resampler's look-ahead samples every time, which garbles short system-audio buffers
+    /// beyond recognition) and are re-chunked to 200 ms, the packet size the VAD counters
+    /// and the Doubao streaming API expect.
     private nonisolated func processCapturedBuffer(_ buffer: AVAudioPCMBuffer) {
+        let stream = pcmStream
         processingQueue.async { [weak self] in
-            guard let pcmData = Self.convertToPCM16Mono(buffer, sampleRate: 16_000) else { return }
-            let rms = Self.rmsInt16(pcmData)
-            Task { @MainActor in
-                guard let self, self.isListening else { return }
-                self.handleVAD(pcmData: pcmData, rms: rms)
+            for pcmData in stream.append(buffer) {
+                let rms = Self.rmsInt16(pcmData)
+                Task { @MainActor in
+                    guard let self, self.isListening else { return }
+                    self.handleVAD(pcmData: pcmData, rms: rms)
+                }
             }
         }
+    }
+
+    private func resetPCMStream() {
+        let stream = pcmStream
+        processingQueue.async { stream.reset() }
     }
 
     static func makeAuthenticatedRequest(config: Config, sessionID: String) async throws -> URLRequest {
@@ -987,34 +1003,6 @@ final class VolcanoASREngine {
     private static func handshakeFailureMessage(detail: String, resourceID: String) -> String {
         let plan = resourceID.hasSuffix(".concurrent") ? L.t("concurrent plan") : L.t("hourly plan")
         return String(format: L.t("Doubao Voice handshake failed (%@). The selected plan is %@. Confirm that the same plan is enabled for this App ID and that the Access Token belongs to the same app."), detail, plan)
-    }
-
-    private nonisolated static func convertToPCM16Mono(_ buffer: AVAudioPCMBuffer, sampleRate: Double) -> Data? {
-        guard let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true) else {
-            return nil
-        }
-        let inputFormat = buffer.format
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            return nil
-        }
-
-        let ratio = sampleRate / inputFormat.sampleRate
-        let outputCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
-            return nil
-        }
-
-        let inputProvider = VolcanoConverterInputProvider(buffer: buffer)
-        var conversionError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outStatus in
-            inputProvider.next(outStatus: outStatus)
-        }
-        guard status != .error, conversionError == nil, let data = outputBuffer.int16ChannelData else {
-            return nil
-        }
-
-        let frameLength = Int(outputBuffer.frameLength)
-        return Data(bytes: data[0], count: frameLength * MemoryLayout<Int16>.size)
     }
 
     private nonisolated static func rmsInt16(_ data: Data) -> Float {
@@ -1190,21 +1178,60 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
     }
 }
 
-private final class VolcanoConverterInputProvider: @unchecked Sendable {
-    private let buffer: AVAudioPCMBuffer
-    private var didProvideInput = false
+/// Streaming resampler + re-chunker for Doubao: any PCM format in, 16 kHz mono Int16
+/// packets of a fixed duration out. Not thread-safe; use from one serial queue.
+private final class VolcanoPCMStream: @unchecked Sendable {
+    private let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+    private let chunkBytes: Int
+    private var converter: AVAudioConverter?
+    private var inputFormat: AVAudioFormat?
+    private var pending = Data()
 
-    init(buffer: AVAudioPCMBuffer) {
-        self.buffer = buffer
+    init(chunkSeconds: Double) {
+        chunkBytes = Int(16_000 * chunkSeconds) * MemoryLayout<Int16>.size
     }
 
-    func next(outStatus: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
-        if didProvideInput {
-            outStatus.pointee = .noDataNow
-            return nil
+    func reset() {
+        converter = nil
+        inputFormat = nil
+        pending = Data()
+    }
+
+    /// Converts `buffer` and returns every complete packet now available.
+    func append(_ buffer: AVAudioPCMBuffer) -> [Data] {
+        guard buffer.frameLength > 0 else { return [] }
+        if inputFormat.map({ !$0.isEqual(buffer.format) }) ?? true {
+            converter = AVAudioConverter(from: buffer.format, to: outputFormat)
+            inputFormat = buffer.format
+            pending = Data()
         }
-        didProvideInput = true
-        outStatus.pointee = .haveData
-        return buffer
+        guard let converter else { return [] }
+
+        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
+        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else { return [] }
+        var provided = false
+        var error: NSError?
+        // `.noDataNow` keeps the converter's internal state for the next buffer, so the
+        // resampler's history carries over and no samples are lost between buffers.
+        let status = converter.convert(to: output, error: &error) { _, outStatus in
+            if provided {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            provided = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        guard status != .error, error == nil, let samples = output.int16ChannelData else { return [] }
+        let byteCount = Int(output.frameLength) * MemoryLayout<Int16>.size
+        if byteCount > 0 { pending.append(Data(bytes: samples[0], count: byteCount)) }
+
+        var packets: [Data] = []
+        while pending.count >= chunkBytes {
+            packets.append(Data(pending.prefix(chunkBytes)))
+            pending = Data(pending.dropFirst(chunkBytes))
+        }
+        return packets
     }
 }

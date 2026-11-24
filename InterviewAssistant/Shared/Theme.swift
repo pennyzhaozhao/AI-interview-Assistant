@@ -94,6 +94,7 @@ enum AppPreferenceKey {
     static let hideDockIcon = "hide_dock_icon"
     static let speechHeuristicsEnabled = "speech_heuristics_enabled"
     static let speechContentFilterLevel = "speech_content_filter_level"
+    static let speechTurnEndPauseSeconds = "speech_turn_end_pause_seconds"
     static let speakerRecognitionEnabled = "speaker_recognition_enabled"
     static let speakerRecognitionSensitivity = "speaker_recognition_sensitivity"
     static let speakerRecognitionDebugLogging = "speaker_recognition_debug_logging"
@@ -496,6 +497,9 @@ enum L {
         "Filter My Own Speech by Content": "按内容过滤我说的话",
         "In microphone mode, transcripts that read like your own answer instead of an interviewer question are ignored. Works alongside voiceprints.": "麦克风模式下，识别文本如果更像你自己的回答而不是面试官提问，会被忽略。可与声纹识别同时使用。",
         "Relaxed": "宽松",
+        "Pause Before Answering": "停顿多久后开始回答",
+        "The interviewer's speech is treated as one question until they stay quiet this long. Use the manual trigger to answer right away.": "面试官停顿不超过这个时长时，前后的话都算同一个问题；停顿超过后才开始生成回答。需要立刻回答时可以用手动触发。",
+        "%.1f s": "%.1f 秒",
         "Standard": "标准",
         "Strict": "严格",
         "Speaker Recognition": "说话人识别",

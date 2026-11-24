@@ -101,6 +101,29 @@ enum SpeechProtectionPolicy {
     }
 }
 
+// MARK: - End of interviewer turn
+
+/// When a spoken interviewer turn is complete. Recognizers finalize a sentence after
+/// roughly one second of silence; an interviewer often pauses longer than that mid-question,
+/// so fragments are merged until the speaker has been quiet for `endOfTurnPause`.
+enum SpeechTurnPolicy {
+    static let defaultEndOfTurnPause: TimeInterval = 3.5
+    static let endOfTurnPauseOptions: [TimeInterval] = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
+
+    /// Quiet time (no new transcript and no detected voice) that ends a turn. User setting.
+    static var endOfTurnPause: TimeInterval {
+        let stored = UserDefaults.standard.object(forKey: AppPreferenceKey.speechTurnEndPauseSeconds) as? Double
+        return min(max(stored ?? defaultEndOfTurnPause, 1.0), 8.0)
+    }
+
+    /// Safety cap so constant background noise cannot hold a turn open forever.
+    static let maximumTurnDuration: TimeInterval = 45
+    /// After the manual trigger: quiet time after the flushed fragment before submitting.
+    static let forcedTurnPause: TimeInterval = 0.3
+    /// After the manual trigger: submit whatever is pending if no new fragment arrives.
+    static let forcedTurnTimeout: TimeInterval = 2.0
+}
+
 // MARK: - Content-based self-speech filter
 
 /// How aggressively microphone transcripts that read like the candidate's own

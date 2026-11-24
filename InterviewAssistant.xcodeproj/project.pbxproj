@@ -49,6 +49,7 @@
 		AA000000000000000000002F /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012E /* UpdateChecker.swift */; };
 		AA0000000000000000000030 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = AA0000000000000000000A03 /* Sparkle */; };
 		AA0000000000000000000031 /* SupportLogUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000012F /* SupportLogUploader.swift */; };
+		AA0000000000000000000F01 /* PreparedAnswers.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000F02 /* PreparedAnswers.swift */; };
 		BB0000000000000000000001 /* SpeechProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000101 /* SpeechProtectionTests.swift */; };
 		AA00000000000000000009A0 /* LocalRAGCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B0 /* LocalRAGCore.swift */; };
 		AA00000000000000000009A1 /* XLMRobertaTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000009B1 /* XLMRobertaTokenizer.swift */; };
@@ -114,6 +115,7 @@
 		AA000000000000000000012D /* SpeakerEnrollmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerEnrollmentView.swift; sourceTree = "<group>"; };
 		AA000000000000000000012E /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		AA000000000000000000012F /* SupportLogUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportLogUploader.swift; sourceTree = "<group>"; };
+		AA0000000000000000000F02 /* PreparedAnswers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparedAnswers.swift; sourceTree = "<group>"; };
 		AA0000000000000000000200 /* InterviewAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterviewAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000100 /* InterviewAssistantTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InterviewAssistantTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB0000000000000000000101 /* SpeechProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechProtectionTests.swift; sourceTree = "<group>"; };
@@ -199,6 +201,7 @@
 				AA0000000000000000000103 /* Theme.swift */,
 				AA000000000000000000012E /* UpdateChecker.swift */,
 				AA000000000000000000012F /* SupportLogUploader.swift */,
+				AA0000000000000000000F02 /* PreparedAnswers.swift */,
 				AA0000000000000000000104 /* Models.swift */,
 				AA000000000000000000012A /* DataStorageManager.swift */,
 				AA000000000000000000012B /* SpeechUtterancePolicy.swift */,
@@ -505,6 +508,7 @@
 				AA000000000000000000002E /* SpeakerEnrollmentView.swift in Sources */,
 				AA000000000000000000002F /* UpdateChecker.swift in Sources */,
 				AA0000000000000000000031 /* SupportLogUploader.swift in Sources */,
+				AA0000000000000000000F01 /* PreparedAnswers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

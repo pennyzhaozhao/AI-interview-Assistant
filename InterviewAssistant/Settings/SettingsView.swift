@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.mockInterviewLanguage) private var mockInterviewLanguageRaw = MockInterviewLanguage.followApp.rawValue
     @AppStorage(AppPreferenceKey.interviewerLanguage) private var interviewerLanguageRaw = MockInterviewLanguage.followApp.rawValue
     @AppStorage(AppPreferenceKey.resumeAIProcessing) private var resumeAIProcessingRaw = ResumeAIMode.ask.rawValue
+    @AppStorage(AppPreferenceKey.speechTurnEndPauseSeconds) private var speechTurnEndPauseSeconds = SpeechTurnPolicy.defaultEndOfTurnPause
     @State private var showingStoragePicker = false
     @State private var showingClearDataConfirmation = false
     @State private var showingStorageMessage = false
@@ -118,6 +119,8 @@ struct SettingsView: View {
                             minWidth: preferencePickerWidth
                         )
                     }
+
+                    speechTurnPauseCard
 
                     preferenceCardRow(title: L.t("Organize uploaded resumes with AI"), icon: "person.text.rectangle", tint: Color.appPrimary) {
                         PremiumMenuPicker(
@@ -348,6 +351,33 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .background(cardBackground(radius: 20))
+    }
+
+    private var speechTurnPauseCard: some View {
+        let selection = Binding<String>(
+            get: { String(format: "%.1f", speechTurnEndPauseSeconds) },
+            set: { speechTurnEndPauseSeconds = Double($0) ?? SpeechTurnPolicy.defaultEndOfTurnPause }
+        )
+        var values = SpeechTurnPolicy.endOfTurnPauseOptions
+        if !values.contains(where: { abs($0 - speechTurnEndPauseSeconds) < 0.01 }) {
+            values = (values + [speechTurnEndPauseSeconds]).sorted()
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            preferenceRow(title: L.t("Pause Before Answering"), icon: "timer", tint: Color.appPrimary) {
+                PremiumMenuPicker(
+                    selection: selection,
+                    options: values.map { (String(format: "%.1f", $0), String(format: L.t("%.1f s"), $0)) },
+                    minWidth: preferencePickerWidth
+                )
+            }
+            Text(L.t("The interviewer's speech is treated as one question until they stay quiet this long. Use the manual trigger to answer right away."))
+                .font(.system(size: 12))
+                .foregroundStyle(Color.appMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(cardBackground(radius: 20))
     }
 

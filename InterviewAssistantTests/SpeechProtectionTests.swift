@@ -69,6 +69,55 @@ final class SpeechProtectionTests: XCTestCase {
         ))
     }
 
+    func testPreparedAnswerSimilarityIgnoresPoliteFillers() {
+        XCTAssertGreaterThan(PreparedAnswerLibrary.similarity("请做一下自我介绍", "自我介绍一下"), 0.8)
+        XCTAssertEqual(PreparedAnswerLibrary.similarity("Tell me about yourself", "Tell me about yourself."), 1, accuracy: 0.0001)
+        XCTAssertLessThan(PreparedAnswerLibrary.similarity("Redis 和 MySQL 的区别", "你的期望薪资是多少"), 0.1)
+    }
+
+    func testPreparedAnswersParsedFromMaterial() {
+        let material = """
+        # 常见问题
+        Q: 为什么从上家公司离职？
+        A: 我希望做更贴近用户的产品。
+        补充一句。
+        问：你的缺点是什么？
+        答：我有时过于追求细节。
+        """
+        let items = PreparedAnswerLibrary.parseMaterial(material, title: "Notes")
+        XCTAssertEqual(items.map(\.question), ["为什么从上家公司离职？", "你的缺点是什么？"])
+        XCTAssertEqual(items.first?.answer, "我希望做更贴近用户的产品。\n补充一句。")
+        XCTAssertEqual(items.last?.answer, "我有时过于追求细节。")
+    }
+
+    func testPreparedAnswerCandidatesGateFollowUps() {
+        let items = [
+            PreparedQA(question: "请做一下自我介绍", answer: "我是……", sourceTitle: "Bank"),
+            PreparedQA(question: "具体说说难点", answer: "难点是……", sourceTitle: "Bank", parentQuestion: "介绍一下你最有挑战的项目")
+        ]
+        let selfIntro = PreparedAnswerLibrary.candidates(for: "自我介绍一下", previousQuestion: nil, items: items, retrievedChunks: [])
+        XCTAssertEqual(selfIntro.map(\.question), ["请做一下自我介绍"])
+        // A generic follow-up only applies right after its primary question.
+        XCTAssertFalse(PreparedAnswerLibrary.candidates(for: "具体说说难点", previousQuestion: "你的期望薪资是多少", items: items, retrievedChunks: []).isEmpty)
+        XCTAssertTrue(PreparedAnswerLibrary.candidates(for: "能展开讲讲吗", previousQuestion: "你的期望薪资是多少", items: items, retrievedChunks: []).isEmpty)
+        XCTAssertEqual(
+            PreparedAnswerLibrary.candidates(for: "能展开讲讲吗", previousQuestion: "介绍一下你最有挑战的项目", items: items, retrievedChunks: []).first?.question,
+            "具体说说难点"
+        )
+    }
+
+    func testQuestionBankIsChunkedAsQuestionAnswerPairs() {
+        var document = QuestionBankDocument()
+        document.questions = [
+            .init(question: "请做一下自我介绍", answer: "我是一名后端工程师。"),
+            .init(question: "为什么从上家公司离职？", answer: "希望有更大的成长空间。")
+        ]
+        let parts = KnowledgeChunker.splitContent(document.searchableText, options: .default)
+        XCTAssertEqual(parts.count, 2)
+        XCTAssertTrue(parts.allSatisfy { $0.isQA })
+        XCTAssertTrue(parts[0].text.contains("自我介绍") && !parts[0].text.contains("离职"))
+    }
+
     func testFusionWeights() {
         let value = SpeakerVerifier.fusedScore(similarity: 0.8, rmsCloseness: 0.6, answerOverlap: 0.4)
         XCTAssertEqual(value, 0.69, accuracy: 0.0001)
