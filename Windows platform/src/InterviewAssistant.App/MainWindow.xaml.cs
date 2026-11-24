@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Runtime.InteropServices;
 using InterviewAssistant.Windows;
 
@@ -116,6 +117,7 @@ public partial class MainWindow : Window
         // A re-created handle loses its extended styles: keep it out of the taskbar while an interview runs.
         if (_activeInterviewWindows > 0) ApplyInterviewTaskbarStyle();
         ApplyRoundedCorners();
+        ApplySystemBackdrop(source);
     }
 
     private nint WindowMessageHook(nint windowHandle, int message, nint wParam, nint lParam, ref bool handled)
@@ -168,6 +170,7 @@ public partial class MainWindow : Window
         {
             UpdateScreenshotHotkey();
             PrompterHotkeys.Refresh();
+            ApplySystemBackdrop(HwndSource.FromHwnd(_windowHandle));
             if (_activeInterviewWindows > 0) MoveToBackground();
         }));
     }
@@ -259,6 +262,46 @@ public partial class MainWindow : Window
         catch
         {
             // Older Windows versions do not expose the corner preference attribute.
+        }
+    }
+
+    private void ApplySystemBackdrop(HwndSource? source)
+    {
+        if (_windowHandle == nint.Zero || !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            Background = (Brush)FindResource("BackgroundBrush");
+            return;
+        }
+
+        try
+        {
+            Background = Brushes.Transparent;
+            if (source?.CompositionTarget is not null)
+                source.CompositionTarget.BackgroundColor = Colors.Transparent;
+
+            var margins = new NativeMethods.DwmMargins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+            _ = NativeMethods.DwmExtendFrameIntoClientArea(_windowHandle, ref margins);
+
+            var backdrop = NativeMethods.DwmsbtTransientWindow;
+            _ = NativeMethods.DwmSetWindowAttribute(
+                _windowHandle,
+                NativeMethods.DwmwaSystemBackdropType,
+                ref backdrop,
+                Marshal.SizeOf<int>());
+
+            var useDarkMode = string.Equals(
+                Services.AppServices.Current.DataStore.Data.Preferences.Theme,
+                "dark",
+                StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            _ = NativeMethods.DwmSetWindowAttribute(
+                _windowHandle,
+                NativeMethods.DwmwaUseImmersiveDarkMode,
+                ref useDarkMode,
+                Marshal.SizeOf<int>());
+        }
+        catch
+        {
+            Background = (Brush)FindResource("BackgroundBrush");
         }
     }
 

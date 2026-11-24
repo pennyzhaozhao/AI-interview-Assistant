@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}">
+        Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="46" ResizeBorderThickness="6" CornerRadius="20" GlassFrameThickness="0" />
     </shell:WindowChrome.WindowChrome>
@@ -24,10 +24,18 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{DynamicResource TitleBarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+        <Border Grid.Row="0" Background="Transparent" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{Binding SidebarWidth}" />
+                    <ColumnDefinition Width="1" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}" />
+                <Border Grid.Column="1" Background="{DynamicResource BorderBrush}" />
+                <Border Grid.Column="2" Background="{DynamicResource TitleBarBrush}" />
                 <TextBlock Text="Interview AI" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="18,0,0,0" />
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <StackPanel Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Width="46" Height="46" Content="—" Style="{StaticResource WindowButtonStyle}" Click="MinimizeButton_Click" />
                     <Button Width="46" Height="46" Content="□" Style="{StaticResource WindowButtonStyle}" Click="MaximizeButton_Click" />
                     <Button Width="52" Height="46" Content="×" Style="{StaticResource CloseWindowButtonStyle}" Click="CloseButton_Click" />
@@ -87,7 +95,7 @@
 
             <Border Grid.Column="1" Background="{DynamicResource BorderBrush}" />
 
-            <Grid Grid.Column="2">
+            <Grid Grid.Column="2" Background="{DynamicResource BackgroundBrush}">
                 <Ellipse Width="700" Height="700" Fill="{DynamicResource AccentGlowBrush}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-410,-250,0" IsHitTestVisible="False" />
                 <ContentControl Content="{Binding CurrentPage}" />
             </Grid>

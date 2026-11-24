@@ -1,5 +1,7 @@
 import SwiftUI
-#if os(iOS)
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
 import UIKit
 #endif
 
@@ -63,7 +65,6 @@ struct ContentView: View {
                 desktopShell
             }
         }
-        .background(appBackground)
         .foregroundStyle(Color.appText)
         .environment(\.locale, currentLanguage.locale)
         .preferredColorScheme(currentTheme.colorScheme)
@@ -86,6 +87,7 @@ struct ContentView: View {
             }
             currentScreen
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(appBackground)
                 .id(isSidebarCollapsed)
         }
         .frame(minWidth: 1180, minHeight: 760)
@@ -103,6 +105,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: isKeyboardVisible)
+        .background(appBackground)
     }
 
     private var sidebar: some View {
@@ -149,7 +152,30 @@ struct ContentView: View {
         }
         .padding(isSidebarCollapsed ? 12 : 18)
         .frame(width: isSidebarCollapsed ? 72 : 280)
-        .background(Color.appSurface.opacity(0.5))
+        .background {
+            ZStack {
+                #if os(macOS)
+                SidebarVisualEffectView()
+                #else
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                #endif
+
+                Color.appBG
+                    .opacity(currentTheme == .dark ? 0.42 : 0.56)
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(currentTheme == .dark ? 0.035 : 0.12),
+                        Color.appPrimary.opacity(currentTheme == .dark ? 0.02 : 0.014),
+                        Color.clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .ignoresSafeArea(.container, edges: .top)
+        }
     }
 
     private func sidebarButton(_ section: AppSection) -> some View {
@@ -300,3 +326,42 @@ struct ContentView: View {
     }
 
 }
+
+#if os(macOS)
+private struct SidebarVisualEffectView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let effectView = NSVisualEffectView()
+        effectView.material = .sidebar
+        effectView.blendingMode = .behindWindow
+        effectView.state = .active
+        return effectView
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = .sidebar
+        nsView.blendingMode = .behindWindow
+        nsView.state = .active
+    }
+}
+
+struct TransparentWindowConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        configureWindow(for: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configureWindow(for: nsView)
+    }
+
+    private func configureWindow(for view: NSView) {
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
+        }
+    }
+}
+#endif

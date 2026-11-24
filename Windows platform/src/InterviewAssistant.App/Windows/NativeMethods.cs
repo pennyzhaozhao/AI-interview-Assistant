@@ -14,7 +14,10 @@ internal static class NativeMethods
     internal const uint WdaExcludeFromCapture = 0x00000011;
     internal const uint WdaMonitor = 0x00000001;
     internal const int DwmwaWindowCornerPreference = 33;
+    internal const int DwmwaUseImmersiveDarkMode = 20;
+    internal const int DwmwaSystemBackdropType = 38;
     internal const int DwmwcpRound = 2;
+    internal const int DwmsbtTransientWindow = 3;
     internal const int WmGetMinMaxInfo = 0x0024;
     internal const int WmHotkey = 0x0312;
     internal const uint ModAlt = 0x0001;

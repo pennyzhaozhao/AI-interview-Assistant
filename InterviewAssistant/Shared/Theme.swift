@@ -316,7 +316,6 @@ enum L {
         "Paste the job description, responsibilities, or requirements here.": "在这里粘贴职位描述、职责或岗位要求。",
         "Platform": "平台",
         "Port": "端口",
-        "Practice smarter. Ace your next interview.": "更聪明地练习，拿下下一场面试。",
         "Press any key...": "按任意键...",
         "Preparing answer suggestion...": "正在准备回答建议...",
         "Resize prompt height": "调整提示板高度",

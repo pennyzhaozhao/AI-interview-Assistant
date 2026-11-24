@@ -81,7 +81,11 @@ struct InterviewAssistantApp: App {
             .modelContainer(sharedModelContainer)
             .environment(\.locale, currentLanguage.locale)
             .preferredColorScheme(currentTheme.colorScheme)
+            #if os(macOS)
+            .background(TransparentWindowConfigurator())
+            #else
             .background(Color.appBG)
+            #endif
             .onAppear {
                 #if os(macOS)
                 Self.applyActivationPolicy(hideDockIcon: false)
