@@ -107,15 +107,20 @@ final class SpeechProtectionTests: XCTestCase {
     }
 
     func testQuestionBankIsChunkedAsQuestionAnswerPairs() {
+        // Long enough to be split (short content intentionally stays one passage).
         var document = QuestionBankDocument()
-        document.questions = [
-            .init(question: "请做一下自我介绍", answer: "我是一名后端工程师。"),
-            .init(question: "为什么从上家公司离职？", answer: "希望有更大的成长空间。")
-        ]
+        document.questions = (1...8).map { index in
+            .init(
+                question: "第\(index)题：请讲讲你在项目\(index)中遇到的问题？",
+                answer: String(repeating: "在项目\(index)里我负责后端架构设计，并推动团队完成了性能优化和稳定性治理。", count: 6)
+            )
+        }
         let parts = KnowledgeChunker.splitContent(document.searchableText, options: .default)
-        XCTAssertEqual(parts.count, 2)
-        XCTAssertTrue(parts.allSatisfy { $0.isQA })
-        XCTAssertTrue(parts[0].text.contains("自我介绍") && !parts[0].text.contains("离职"))
+        XCTAssertGreaterThanOrEqual(parts.count, 8)
+        for part in parts {
+            XCTAssertTrue(part.isQA)
+            XCTAssertEqual(part.text.components(separatedBy: "\n").filter { $0.hasPrefix("Q: ") }.count, 1)
+        }
     }
 
     func testFusionWeights() {

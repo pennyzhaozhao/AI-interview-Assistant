@@ -43,6 +43,11 @@ public partial class PrompterWindow : Window
     private string _codeLanguage = "python";
     private bool _showingError;
     private string _pendingSpeechQuestion = "";
+    /// One interviewer turn: fragments are merged until nothing new has been recognized (final
+    /// or partial) for the end-of-turn pause. Mirrors macOS SpeechTurnPolicy.
+    private DateTimeOffset? _pendingTurnStartedAt;
+    private DateTimeOffset? _pendingTurnLastActivityAt;
+    private static readonly TimeSpan MaximumTurnDuration = TimeSpan.FromSeconds(45);
     private string _pendingInterruptQuestion = "";
     private DateTimeOffset? _answerVisibleSince;
     private DateTimeOffset? _lastRecognizedSpeechAt;
@@ -118,10 +123,18 @@ public partial class PrompterWindow : Window
             _modeToastTimer.Stop();
             ModeToast.Visibility = Visibility.Collapsed;
         };
-        _speechDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
+        // Polls the pending interviewer turn; it is submitted once the speaker has been quiet
+        // for the configured pause (Settings › AI), not on the recognizer's ~1 s sentence break.
+        _speechDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _speechDebounceTimer.Tick += async (_, _) =>
         {
+            var now = DateTimeOffset.UtcNow;
+            var started = _pendingTurnStartedAt ?? now;
+            var quiet = now - (_pendingTurnLastActivityAt ?? started);
+            if (quiet < EndOfTurnPause && now - started < MaximumTurnDuration) return;
             _speechDebounceTimer.Stop();
+            _pendingTurnStartedAt = null;
+            _pendingTurnLastActivityAt = null;
             var question = _pendingSpeechQuestion.Trim();
             _pendingSpeechQuestion = "";
             if (question.Length > 0) await SubmitRecognizedQuestionAsync(question);
@@ -466,6 +479,14 @@ public partial class PrompterWindow : Window
         string system;
         string user;
         int maxTokens;
+        // The candidate's own prepared answers (question banks and Q:/A: materials) for spoken questions.
+        List<PreparedQA> preparedAnswers = fromScreenshot
+            ? []
+            : PreparedAnswerLibrary.Candidates(
+                question,
+                _session.Turns.Count > 0 ? _session.Turns[^1].Question : null,
+                PreparedAnswerLibrary.Collect(data.KnowledgeBases, activeIds),
+                knowledge.Retrieval.Chunks);
         if (fromScreenshot)
         {
             system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, knowledge);
@@ -485,7 +506,11 @@ public partial class PrompterWindow : Window
         }
         system = InterviewPromptBuilder.AppendCustomInstructions(system, data.KnowledgeBases, activeIds);
         system += InterviewPromptBuilder.OutputLanguageMandate(language);
-        if (!fromScreenshot) system = InterviewPromptBuilder.AppendCommonReference(system, question);
+        // Prepared answers outrank the generic templates and go last so they take precedence over the
+        // answer-length guidance; leave room for a long prepared answer.
+        if (!fromScreenshot && preparedAnswers.Count == 0) system = InterviewPromptBuilder.AppendCommonReference(system, question);
+        system += PreparedAnswerLibrary.PromptBlock(preparedAnswers);
+        maxTokens = PreparedAnswerLibrary.RecommendedMaxTokens(preparedAnswers, maxTokens);
         return (system, user, maxTokens);
     }
 
@@ -864,8 +889,16 @@ public partial class PrompterWindow : Window
         return _store.Data.Preferences.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-Hans" : "en";
     }
 
+    private TimeSpan EndOfTurnPause => TimeSpan.FromSeconds(Math.Clamp(_store.Data.Preferences.SpeechTurnEndPauseSeconds, 1.0, 8.0));
+
     private void SpeechRecognition_Recognized(string text)
     {
+        // Recognizers raise results on background threads; the turn state and UI live on the UI thread.
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => SpeechRecognition_Recognized(text)));
+            return;
+        }
         if (_audioMode == PrompterAudioMode.Muted) return;
         if (_isDirectorMode)
         {
@@ -889,8 +922,10 @@ public partial class PrompterWindow : Window
         // question, remove any fragments that were held in the yellow confirmation bar.
         ClearPendingInterrupt();
         _pendingSpeechQuestion = MergeSpeechFragments(_pendingSpeechQuestion, text);
-        _speechDebounceTimer.Stop();
-        _speechDebounceTimer.Start();
+        QuestionText.Text = _pendingSpeechQuestion;
+        _pendingTurnStartedAt ??= now;
+        _pendingTurnLastActivityAt = now;
+        if (!_speechDebounceTimer.IsEnabled) _speechDebounceTimer.Start();
     }
 
     private void ShowPendingInterrupt(string text)
@@ -1004,7 +1039,12 @@ public partial class PrompterWindow : Window
     private void SpeechRecognition_PartialRecognized(string text)
     {
         if (_audioMode == PrompterAudioMode.Muted) return;
-        Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = text));
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            // Still talking (not yet finalized): keep the pending turn open.
+            if (_pendingTurnStartedAt is not null) _pendingTurnLastActivityAt = DateTimeOffset.UtcNow;
+            QuestionText.Text = _pendingSpeechQuestion.Length > 0 ? MergeSpeechFragments(_pendingSpeechQuestion, text) : text;
+        }));
     }
 
     private void SpeechRecognition_StatusChanged(string status)

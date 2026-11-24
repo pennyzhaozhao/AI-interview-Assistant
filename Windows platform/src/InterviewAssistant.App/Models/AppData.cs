@@ -45,6 +45,8 @@ public sealed class AppPreferences
     public string ResumeAIProcessing { get; set; } = ResumeAIModes.Ask;
     /// <summary>Microphone mode: drop transcripts that read like the candidate's own answer. off / relaxed / standard / strict.</summary>
     public string SpeechContentFilterLevel { get; set; } = "strict";
+    /// <summary>Seconds of silence that end an interviewer turn before the AI answers (macOS default 3.5).</summary>
+    public double SpeechTurnEndPauseSeconds { get; set; } = 3.5;
 }
 
 public static class ResumeAIModes

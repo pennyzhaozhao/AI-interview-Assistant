@@ -107,6 +107,29 @@ public sealed class SettingsViewModel : PageViewModel
             OnPropertyChanged();
         }
     }
+    /// <summary>End-of-turn pause choices, in seconds (shown as "3.5 s" / "3.5 秒").</summary>
+    private static readonly double[] SpeechTurnPauseValues = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0];
+    public ObservableCollection<string> SpeechTurnPauseNames { get; } = [];
+
+    public string SpeechTurnPause
+    {
+        get
+        {
+            var current = _store.Data.Preferences.SpeechTurnEndPauseSeconds;
+            var index = Array.FindIndex(SpeechTurnPauseValues, value => Math.Abs(value - current) < 0.01);
+            if (index < 0) index = Array.IndexOf(SpeechTurnPauseValues, 3.5);
+            return index < SpeechTurnPauseNames.Count ? SpeechTurnPauseNames[index] : "";
+        }
+        set
+        {
+            if (_refreshingSpeechLanguages || string.IsNullOrEmpty(value)) return;
+            var index = SpeechTurnPauseNames.IndexOf(value);
+            if (index < 0 || Math.Abs(SpeechTurnPauseValues[index] - _store.Data.Preferences.SpeechTurnEndPauseSeconds) < 0.01) return;
+            SavePreference(p => p.SpeechTurnEndPauseSeconds = SpeechTurnPauseValues[index]);
+            OnPropertyChanged();
+        }
+    }
+
     public IReadOnlyList<string> ScreenshotModes { get; } = ["Preset region", "Select region each time"];
     public ObservableCollection<string> SpeechRecognitionEngines { get; }
     public IReadOnlyList<string> SpeechResourceIds { get; } =
@@ -190,10 +213,19 @@ public sealed class SettingsViewModel : PageViewModel
             ResumeAIModeNames.Clear();
             foreach (var mode in modes) ResumeAIModeNames.Add(mode);
         }
+        var pauseNames = SpeechTurnPauseValues
+            .Select(value => value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + (chinese ? " 秒" : " s"))
+            .ToArray();
+        if (!SpeechTurnPauseNames.SequenceEqual(pauseNames))
+        {
+            SpeechTurnPauseNames.Clear();
+            foreach (var name in pauseNames) SpeechTurnPauseNames.Add(name);
+        }
         _refreshingSpeechLanguages = false;
         OnPropertyChanged(nameof(MockInterviewLanguage));
         OnPropertyChanged(nameof(InterviewerLanguage));
         OnPropertyChanged(nameof(ResumeAIMode));
+        OnPropertyChanged(nameof(SpeechTurnPause));
     }
 
     private string SpeechLanguageName(string code)

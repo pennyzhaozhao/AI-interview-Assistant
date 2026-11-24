@@ -15,6 +15,10 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     private CancellationTokenSource? _cancellation;
     private int _sequence;
     private double _resamplePosition;
+    /// Loopback audio arrives in ~10 ms buffers; it is re-chunked into 200 ms packets
+    /// (the size microphone capture already uses and Doubao's streaming API expects).
+    private readonly List<byte> _loopbackPending = [];
+    private const int PacketBytes = 16000 * 2 / 5;
     private readonly object _lifecycleGate = new();
     private int _lifecycleGeneration;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -135,9 +139,22 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         if (capture is null || socket?.State != WebSocketState.Open || cancellation is null) return;
         try
         {
-            var pcm = capture is WasapiLoopbackCapture loopback
-                ? ConvertLoopbackToPcm16(e.Buffer.AsSpan(0, e.BytesRecorded), loopback.WaveFormat)
-                : e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
+            byte[] pcm;
+            if (capture is WasapiLoopbackCapture loopback)
+            {
+                var converted = ConvertLoopbackToPcm16(e.Buffer.AsSpan(0, e.BytesRecorded), loopback.WaveFormat);
+                lock (_loopbackPending)
+                {
+                    _loopbackPending.AddRange(converted);
+                    if (_loopbackPending.Count < PacketBytes) return;
+                    pcm = _loopbackPending.GetRange(0, PacketBytes).ToArray();
+                    _loopbackPending.RemoveRange(0, PacketBytes);
+                }
+            }
+            else
+            {
+                pcm = e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
+            }
             if (pcm.Length == 0) return;
             AppendUtteranceAudio(pcm);
             await SendFrameAsync(0x02, 0x01, 0x00, 0x01, Interlocked.Increment(ref _sequence), Gzip(pcm), cancellation.Token);
@@ -399,6 +416,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             _socket = null;
             _sequence = 0;
             _resamplePosition = 0;
+            lock (_loopbackPending) _loopbackPending.Clear();
             lock (_utteranceGate) _utteranceAudio.Clear();
             _lastDefiniteIndex = 0;
         }
