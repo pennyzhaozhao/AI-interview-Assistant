@@ -2221,9 +2221,11 @@ private struct QuestionBankEditorSheet: View {
                             }
                             ScrollView {
                                 LazyVStack(spacing: 14) {
-                                    ForEach(Array(document.questions.indices), id: \.self) { index in
-                                        primaryRow(index)
-                                            .id(document.questions[index].id)
+                                    // Element bindings keyed by id: index-based rows kept stale indices in
+                                    // their actions and bindings and crashed when the list shrank.
+                                    ForEach($document.questions) { $item in
+                                        primaryRow($item)
+                                            .id(item.id)
                                     }
                                 }
                                 .padding(.vertical, 2)
@@ -2296,8 +2298,8 @@ private struct QuestionBankEditorSheet: View {
     }
 
     @ViewBuilder
-    private func primaryRow(_ index: Int) -> some View {
-        let id = document.questions[index].id
+    private func primaryRow(_ item: Binding<QuestionBankDocument.PrimaryQuestion>) -> some View {
+        let id = item.wrappedValue.id
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Button {
@@ -2309,13 +2311,13 @@ private struct QuestionBankEditorSheet: View {
                 }
                 .buttonStyle(.plain)
 
-                questionTitle(document.questions[index].question, placeholder: L.t("New question"))
+                questionTitle(item.wrappedValue.question, placeholder: L.t("New question"))
                     .font(.system(size: 16, weight: .semibold))
 
                 Spacer(minLength: 12)
 
                 Button(role: .destructive) {
-                    document.questions.remove(at: index)
+                    removePrimary(id: id)
                 } label: {
                     Image(systemName: "trash")
                         .foregroundStyle(Color.appDanger)
@@ -2338,16 +2340,16 @@ private struct QuestionBankEditorSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     qaField(
                         label: L.t("Question"),
-                        text: $document.questions[index].question,
+                        text: item.question,
                         isAnswer: false
                     )
                     qaField(
                         label: L.t("Answer"),
-                        text: $document.questions[index].answer,
+                        text: item.answer,
                         isAnswer: true
                     )
 
-                    if !document.questions[index].followUps.isEmpty {
+                    if !item.wrappedValue.followUps.isEmpty {
                         HStack(alignment: .top, spacing: 14) {
                             Rectangle()
                                 .fill(Color.appBorder)
@@ -2355,19 +2357,19 @@ private struct QuestionBankEditorSheet: View {
                                 .padding(.leading, 12)
 
                             VStack(spacing: 12) {
-                                ForEach(Array(document.questions[index].followUps.indices), id: \.self) { followIndex in
-                                    followUpCard(parentIndex: index, followIndex: followIndex)
-                                        .id(document.questions[index].followUps[followIndex].id)
+                                ForEach(item.followUps) { $follow in
+                                    followUpCard(parentID: id, follow: $follow)
+                                        .id(follow.id)
                                 }
                             }
                         }
                     }
 
-                    Button { addFollowUp(to: index) } label: {
+                    Button { addFollowUp(to: id) } label: {
                         Label(L.t("Add follow-up"), systemImage: "plus")
                     }
                     .buttonStyle(AppButtonStyle())
-                    .padding(.leading, document.questions[index].followUps.isEmpty ? 0 : 28)
+                    .padding(.leading, item.wrappedValue.followUps.isEmpty ? 0 : 28)
                 }
                 .padding(.top, 18)
             }
@@ -2385,16 +2387,15 @@ private struct QuestionBankEditorSheet: View {
         }
     }
 
-    private func followUpCard(parentIndex: Int, followIndex: Int) -> some View {
-        let parentID = document.questions[parentIndex].id
-        let followID = document.questions[parentIndex].followUps[followIndex].id
+    private func followUpCard(parentID: UUID, follow: Binding<QuestionBankDocument.FollowUp>) -> some View {
+        let followID = follow.wrappedValue.id
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                questionTitle(document.questions[parentIndex].followUps[followIndex].question, placeholder: L.t("New follow-up"))
+                questionTitle(follow.wrappedValue.question, placeholder: L.t("New follow-up"))
                     .font(.appCaptionMedium)
                 Spacer()
                 Button(role: .destructive) {
-                    document.questions[parentIndex].followUps.remove(at: followIndex)
+                    removeFollowUp(id: followID, parentID: parentID)
                 } label: {
                     Image(systemName: "trash")
                         .foregroundStyle(Color.appDanger)
@@ -2414,12 +2415,12 @@ private struct QuestionBankEditorSheet: View {
 
             qaField(
                 label: L.t("Follow-up question"),
-                text: $document.questions[parentIndex].followUps[followIndex].question,
+                text: follow.question,
                 isAnswer: false
             )
             qaField(
                 label: L.t("Follow-up answer"),
-                text: $document.questions[parentIndex].followUps[followIndex].answer,
+                text: follow.answer,
                 isAnswer: true
             )
         }
@@ -2553,9 +2554,22 @@ private struct QuestionBankEditorSheet: View {
         expanded.insert(item.id)
     }
 
-    private func addFollowUp(to index: Int) {
+    private func addFollowUp(to id: UUID) {
+        guard let index = document.questions.firstIndex(where: { $0.id == id }) else { return }
         document.questions[index].followUps.append(.init())
-        expanded.insert(document.questions[index].id)
+        expanded.insert(id)
+        outlineCollapsed.remove(id)
+    }
+
+    private func removePrimary(id: UUID) {
+        document.questions.removeAll { $0.id == id }
+        expanded.remove(id)
+        outlineCollapsed.remove(id)
+    }
+
+    private func removeFollowUp(id: UUID, parentID: UUID) {
+        guard let index = document.questions.firstIndex(where: { $0.id == parentID }) else { return }
+        document.questions[index].followUps.removeAll { $0.id == id }
     }
 
     private func movePrimary(token: String, targetID: UUID) -> Bool {
