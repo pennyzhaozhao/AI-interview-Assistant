@@ -43,6 +43,11 @@ public partial class PrompterWindow : Window
     private string _codeLanguage = "python";
     private bool _showingError;
     private string _pendingSpeechQuestion = "";
+    /// One interviewer turn: fragments are merged until nothing new has been recognized (final
+    /// or partial) for the end-of-turn pause. Mirrors macOS SpeechTurnPolicy.
+    private DateTimeOffset? _pendingTurnStartedAt;
+    private DateTimeOffset? _pendingTurnLastActivityAt;
+    private static readonly TimeSpan MaximumTurnDuration = TimeSpan.FromSeconds(45);
     private string _pendingInterruptQuestion = "";
     private DateTimeOffset? _answerVisibleSince;
     private DateTimeOffset? _lastRecognizedSpeechAt;
@@ -118,10 +123,18 @@ public partial class PrompterWindow : Window
             _modeToastTimer.Stop();
             ModeToast.Visibility = Visibility.Collapsed;
         };
-        _speechDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
+        // Polls the pending interviewer turn; it is submitted once the speaker has been quiet
+        // for the configured pause (Settings › AI), not on the recognizer's ~1 s sentence break.
+        _speechDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _speechDebounceTimer.Tick += async (_, _) =>
         {
+            var now = DateTimeOffset.UtcNow;
+            var started = _pendingTurnStartedAt ?? now;
+            var quiet = now - (_pendingTurnLastActivityAt ?? started);
+            if (quiet < EndOfTurnPause && now - started < MaximumTurnDuration) return;
             _speechDebounceTimer.Stop();
+            _pendingTurnStartedAt = null;
+            _pendingTurnLastActivityAt = null;
             var question = _pendingSpeechQuestion.Trim();
             _pendingSpeechQuestion = "";
             if (question.Length > 0) await SubmitRecognizedQuestionAsync(question);
@@ -163,6 +176,8 @@ public partial class PrompterWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        PrompterHotkeys.SetPendingQuestion(false);
+        PrompterHotkeys.SetScreenshotSession(false);
         _waveTimer.Stop();
         _modeToastTimer.Stop();
         _speechDebounceTimer.Stop();
@@ -229,8 +244,11 @@ public partial class PrompterWindow : Window
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (_turnIndex != turnIndex) return;
-                    turn.Answer = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
-                    if (!string.IsNullOrWhiteSpace(turn.Answer)) _answerVisibleSince ??= DateTimeOffset.UtcNow;
+                    var display = InterviewPromptBuilder.DisplayableAnswer(partial, _codeLanguage);
+                    // Still inside the hidden <analysis> block: keep showing "Preparing…".
+                    if (string.IsNullOrWhiteSpace(display)) return;
+                    turn.Answer = display;
+                    _answerVisibleSince ??= DateTimeOffset.UtcNow;
                     QuestionText.Text = turn.Question;
                     PreparingPanel.Visibility = Visibility.Collapsed;
                     AnswerScroller.Visibility = Visibility.Visible;
@@ -466,6 +484,14 @@ public partial class PrompterWindow : Window
         string system;
         string user;
         int maxTokens;
+        // The candidate's own prepared answers (question banks and Q:/A: materials) for spoken questions.
+        List<PreparedQA> preparedAnswers = fromScreenshot
+            ? []
+            : PreparedAnswerLibrary.Candidates(
+                question,
+                _session.Turns.Count > 0 ? _session.Turns[^1].Question : null,
+                PreparedAnswerLibrary.Collect(data.KnowledgeBases, activeIds),
+                knowledge.Retrieval.Chunks);
         if (fromScreenshot)
         {
             system = InterviewPromptBuilder.BuildStructuredTechnicalSystemPrompt(context, knowledge);
@@ -485,7 +511,11 @@ public partial class PrompterWindow : Window
         }
         system = InterviewPromptBuilder.AppendCustomInstructions(system, data.KnowledgeBases, activeIds);
         system += InterviewPromptBuilder.OutputLanguageMandate(language);
-        if (!fromScreenshot) system = InterviewPromptBuilder.AppendCommonReference(system, question);
+        // Prepared answers outrank the generic templates and go last so they take precedence over the
+        // answer-length guidance; leave room for a long prepared answer.
+        if (!fromScreenshot && preparedAnswers.Count == 0) system = InterviewPromptBuilder.AppendCommonReference(system, question);
+        system += PreparedAnswerLibrary.PromptBlock(preparedAnswers);
+        maxTokens = PreparedAnswerLibrary.RecommendedMaxTokens(preparedAnswers, maxTokens);
         return (system, user, maxTokens);
     }
 
@@ -567,7 +597,7 @@ public partial class PrompterWindow : Window
         var finish = new MenuItem { Header = Localized("Finish and analyze", "完成并分析"), FontWeight = FontWeights.SemiBold };
         finish.Click += async (_, _) => await FinishScreenshotSessionAsync();
         var clear = new MenuItem { Header = Localized("Discard screenshots", "放弃这些截图") };
-        clear.Click += (_, _) => { _screenshotSegments.Clear(); RefreshTurns(showLatest: true); };
+        clear.Click += (_, _) => { _screenshotSegments.Clear(); PrompterHotkeys.SetScreenshotSession(false); RefreshTurns(showLatest: true); };
         menu.Items.Add(count); menu.Items.Add(new Separator()); menu.Items.Add(more); menu.Items.Add(finish); menu.Items.Add(clear);
         menu.IsOpen = true;
     }
@@ -600,6 +630,7 @@ public partial class PrompterWindow : Window
         }
         var segments = recognized.ToArray();
         _screenshotSegments.Clear();
+        PrompterHotkeys.SetScreenshotSession(false);
         _screenshotBusy = false;
         var question = string.Join("\n\n", segments.Select((item, index) => $"[Screenshot {index + 1}]\n{item.Text}"));
         if (_isDirectorMode) { DirectorQuestionCaptured?.Invoke(question); return; }
@@ -655,9 +686,13 @@ public partial class PrompterWindow : Window
 
         var language = InterviewPromptBuilder.IsChinese(AnswerLanguageCode()) ? "Simplified Chinese" : "English";
         var instruction = $"""
-            Transcribe the complete question shown in this screenshot, including its question stem and every visible answer option.
-            Return only the faithfully reconstructed question text; do not answer it, summarize it, describe the image, or infer that it is a skills checklist.
-            Preserve option labels such as A, B, C and D. Prefer the image whenever the OCR hint is incomplete.
+            Transcribe the complete question shown in this screenshot, including its question stem and every answer option.
+            Return only the faithfully reconstructed question text; do not answer it, summarize it, or infer that it is a skills checklist.
+            Copy option labels exactly as they appear (A/B/C/D, ①②③, 1/2/3…). Never add labels that are not in the image:
+            if the options have no labels, put each option on its own line starting with "[option, no label]".
+            If options (or parts of the stem) are pictures, describe each picture precisely on its own line, numbered by
+            position, e.g. "[figure 1, leftmost] …", "[figure 2] …" (count top to bottom for a vertical list), and keep any label the picture has.
+            Prefer the image whenever the OCR hint is incomplete or wrong.
             The later answer will be written in {language}.
 
             OCR hint (may be incomplete or wrong):
@@ -675,8 +710,47 @@ public partial class PrompterWindow : Window
         return result;
     }
 
+    /// <summary>Settings › Keyboard Shortcuts, routed here by MainWindow for the active prompt board.</summary>
+    public void HandleShortcut(PrompterShortcut shortcut)
+    {
+        switch (shortcut)
+        {
+            case PrompterShortcut.ScrollUp:
+            case PrompterShortcut.ScrollDown:
+                if (AnswerScroller.Visibility != Visibility.Visible) return;
+                var step = Math.Max(60, AnswerScroller.ViewportHeight * 0.6) * (shortcut == PrompterShortcut.ScrollUp ? -1 : 1);
+                AnswerScroller.ScrollToVerticalOffset(Math.Clamp(AnswerScroller.VerticalOffset + step, 0, AnswerScroller.ScrollableHeight));
+                break;
+            case PrompterShortcut.AnswerNewQuestion:
+                if (PendingQuestionButton.Visibility == Visibility.Visible) PendingQuestionButton_Click(PendingQuestionButton, new RoutedEventArgs());
+                break;
+            case PrompterShortcut.DeleteScreenshot:
+                RemoveLastScreenshotSegment();
+                break;
+            case PrompterShortcut.SubmitScreenshots:
+                if (_screenshotSegments.Count > 0 && !_screenshotBusy) _ = FinishScreenshotSessionAsync();
+                break;
+        }
+    }
+
+    /// <summary>Deletes the most recent screenshot of the current multi-shot session (one per press).</summary>
+    private void RemoveLastScreenshotSegment()
+    {
+        if (_screenshotBusy || _screenshotSegments.Count == 0) return;
+        _screenshotSegments.RemoveAt(_screenshotSegments.Count - 1);
+        if (_screenshotSegments.Count > 0)
+        {
+            ShowScreenshotSessionControls();
+            return;
+        }
+        ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
+        PrompterHotkeys.SetScreenshotSession(false);
+        RefreshTurns(showLatest: true);
+    }
+
     private void ShowScreenshotSessionControls()
     {
+        PrompterHotkeys.SetScreenshotSession(_screenshotSegments.Count > 0);
         ScreenshotCountText.Text = Localized(
             $"Captured {_screenshotSegments.Count} screenshot(s)",
             $"获取{_screenshotSegments.Count}张截图");
@@ -691,6 +765,7 @@ public partial class PrompterWindow : Window
     {
         if (_screenshotBusy) return;
         _screenshotSegments.Clear();
+        PrompterHotkeys.SetScreenshotSession(false);
         ScreenshotSessionPanel.Visibility = Visibility.Collapsed;
         RefreshTurns(showLatest: true);
     }
@@ -864,8 +939,16 @@ public partial class PrompterWindow : Window
         return _store.Data.Preferences.Language.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-Hans" : "en";
     }
 
+    private TimeSpan EndOfTurnPause => TimeSpan.FromSeconds(Math.Clamp(_store.Data.Preferences.SpeechTurnEndPauseSeconds, 1.0, 8.0));
+
     private void SpeechRecognition_Recognized(string text)
     {
+        // Recognizers raise results on background threads; the turn state and UI live on the UI thread.
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => SpeechRecognition_Recognized(text)));
+            return;
+        }
         if (_audioMode == PrompterAudioMode.Muted) return;
         if (_isDirectorMode)
         {
@@ -876,7 +959,9 @@ public partial class PrompterWindow : Window
         var gap = _lastRecognizedSpeechAt is { } previous ? now - previous : TimeSpan.MaxValue;
         _lastRecognizedSpeechAt = now;
         if (_audioMode == PrompterAudioMode.Microphone && LooksLikeAnswerEcho(text)) return;
-        if (_answerVisibleSince is { } answerSince)
+        // The hold-for-confirmation bar protects a visible answer from the candidate's own voice, which only the
+        // microphone picks up. System audio is the other side of the call: a new turn there is a new question.
+        if (_audioMode == PrompterAudioMode.Microphone && _answerVisibleSince is { } answerSince)
         {
             var strongQuestion = gap >= TimeSpan.FromSeconds(3.5) && LooksLikeInterviewerQuestion(text);
             if (!strongQuestion || now - answerSince < TimeSpan.FromSeconds(10))
@@ -889,8 +974,10 @@ public partial class PrompterWindow : Window
         // question, remove any fragments that were held in the yellow confirmation bar.
         ClearPendingInterrupt();
         _pendingSpeechQuestion = MergeSpeechFragments(_pendingSpeechQuestion, text);
-        _speechDebounceTimer.Stop();
-        _speechDebounceTimer.Start();
+        QuestionText.Text = _pendingSpeechQuestion;
+        _pendingTurnStartedAt ??= now;
+        _pendingTurnLastActivityAt = now;
+        if (!_speechDebounceTimer.IsEnabled) _speechDebounceTimer.Start();
     }
 
     private void ShowPendingInterrupt(string text)
@@ -898,12 +985,14 @@ public partial class PrompterWindow : Window
         _pendingInterruptQuestion = MergeSpeechFragments(_pendingInterruptQuestion, text);
         PendingQuestionText.Text = Localized("New question detected · click to answer: ", "检测到新问题 · 点击回答：") + _pendingInterruptQuestion;
         PendingQuestionButton.Visibility = Visibility.Visible;
+        PrompterHotkeys.SetPendingQuestion(true);
     }
 
     private void ClearPendingInterrupt()
     {
         _pendingInterruptQuestion = "";
         PendingQuestionButton.Visibility = Visibility.Collapsed;
+        PrompterHotkeys.SetPendingQuestion(false);
     }
 
     private async void PendingQuestionButton_Click(object sender, RoutedEventArgs e)
@@ -1004,7 +1093,12 @@ public partial class PrompterWindow : Window
     private void SpeechRecognition_PartialRecognized(string text)
     {
         if (_audioMode == PrompterAudioMode.Muted) return;
-        Dispatcher.BeginInvoke(new Action(() => QuestionText.Text = text));
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            // Still talking (not yet finalized): keep the pending turn open.
+            if (_pendingTurnStartedAt is not null) _pendingTurnLastActivityAt = DateTimeOffset.UtcNow;
+            QuestionText.Text = _pendingSpeechQuestion.Length > 0 ? MergeSpeechFragments(_pendingSpeechQuestion, text) : text;
+        }));
     }
 
     private void SpeechRecognition_StatusChanged(string status)

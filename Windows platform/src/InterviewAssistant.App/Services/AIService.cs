@@ -358,6 +358,123 @@ public sealed class AIService
         return RequireText(text);
     }
 
+    // ───────────────────────── Model catalog & balance ─────────────────────────
+
+    /// <summary>
+    /// Fetches the provider's current model list (its /models endpoint), so new models appear without an app
+    /// update. Non-chat models are filtered out; newest names first. Port of macOS AIService.refreshModels.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> FetchModelsAsync(AIConfig config, CancellationToken cancellationToken = default)
+    {
+        HttpRequestMessage request;
+        switch (config.Provider)
+        {
+            case AIProvider.Claude:
+            {
+                var baseUrl = config.ApiUrl.Trim().TrimEnd('/');
+                if (baseUrl.EndsWith("/messages", StringComparison.OrdinalIgnoreCase)) baseUrl = baseUrl[..^"/messages".Length];
+                request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/models?limit=100");
+                request.Headers.Add("x-api-key", config.ApiKey);
+                request.Headers.Add("anthropic-version", "2023-06-01");
+                break;
+            }
+            case AIProvider.Gemini:
+                request = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiUrl.Trim().TrimEnd('/')}/models?pageSize=200&key={Uri.EscapeDataString(config.ApiKey)}");
+                break;
+            default:
+                request = new HttpRequestMessage(HttpMethod.Get, $"{NormalizeBaseUrl(config.ApiUrl)}/models");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", string.IsNullOrWhiteSpace(config.ApiKey) ? "ollama" : config.ApiKey);
+                break;
+        }
+        using (request)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(20));
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            var body = await response.Content.ReadAsStringAsync(timeout.Token);
+            if (!response.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)response.StatusCode}");
+            using var document = JsonDocument.Parse(body);
+            var names = new List<string>();
+            if (config.Provider == AIProvider.Gemini)
+            {
+                if (document.RootElement.TryGetProperty("models", out var models))
+                {
+                    foreach (var model in models.EnumerateArray())
+                    {
+                        var methods = model.TryGetProperty("supportedGenerationMethods", out var list)
+                            ? list.EnumerateArray().Select(item => item.GetString()).ToList()
+                            : [];
+                        var name = model.TryGetProperty("name", out var value) ? value.GetString() ?? "" : "";
+                        if (methods.Contains("generateContent") && name.Length > 0) names.Add(name.StartsWith("models/", StringComparison.Ordinal) ? name["models/".Length..] : name);
+                    }
+                }
+            }
+            else if (document.RootElement.TryGetProperty("data", out var data))
+            {
+                foreach (var model in data.EnumerateArray())
+                    if (model.TryGetProperty("id", out var id) && id.GetString() is { Length: > 0 } name) names.Add(name);
+            }
+            return names.Where(name => IsChatModel(name, config.Provider)).Distinct().OrderByDescending(name => name, StringComparer.Ordinal).ToList();
+        }
+    }
+
+    /// <summary>Drops embedding, image, audio and other non-chat models from a provider's list.</summary>
+    public static bool IsChatModel(string id, AIProvider provider)
+    {
+        var name = id.ToLowerInvariant();
+        string[] excluded = ["embed", "embedding", "tts", "whisper", "transcribe", "audio", "realtime", "moderation",
+            "dall-e", "image", "imagen", "davinci", "babbage", "search", "computer-use", "rerank", "aqa"];
+        if (excluded.Any(name.Contains)) return false;
+        return provider switch
+        {
+            AIProvider.OpenAI => new[] { "gpt-", "chatgpt-", "o1", "o3", "o4" }.Any(prefix => name.StartsWith(prefix, StringComparison.Ordinal)),
+            AIProvider.Claude => name.StartsWith("claude", StringComparison.Ordinal),
+            AIProvider.Gemini => name.StartsWith("gemini", StringComparison.Ordinal),
+            _ => true
+        };
+    }
+
+    /// <summary>
+    /// A short balance line for the connection test, or null when the provider has no balance API that works with
+    /// an API key (OpenAI, Anthropic, Gemini and Volcano Ark only show it in their consoles).
+    /// </summary>
+    public async Task<string?> BalanceSummaryAsync(AIConfig config, bool chinese, CancellationToken cancellationToken = default)
+    {
+        if (config.Provider != AIProvider.DeepSeek) return null;
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{NormalizeBaseUrl(config.ApiUrl)}/user/balance");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            if (!response.IsSuccessStatusCode) return null;
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            if (!document.RootElement.TryGetProperty("balance_infos", out var infos) || infos.GetArrayLength() == 0) return null;
+            static string Text(JsonElement item, string name) =>
+                item.TryGetProperty(name, out var value) ? (value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString()) : "";
+            var parts = infos.EnumerateArray().Select(info =>
+            {
+                var currency = Text(info, "currency");
+                var symbol = currency == "CNY" ? "¥" : currency == "USD" ? "$" : currency + " ";
+                var line = symbol + Text(info, "total_balance");
+                var toppedUp = Text(info, "topped_up_balance");
+                var granted = Text(info, "granted_balance");
+                if (toppedUp.Length > 0 && granted.Length > 0)
+                    line += chinese ? $"（充值 {symbol}{toppedUp} + 赠送 {symbol}{granted}）" : $" (top-up {symbol}{toppedUp} + granted {symbol}{granted})";
+                return line;
+            });
+            var summary = (chinese ? "账户余额：" : "Account balance: ") + string.Join("; ", parts);
+            if (document.RootElement.TryGetProperty("is_available", out var available) && available.ValueKind == JsonValueKind.False)
+                summary += chinese ? " —— 余额不足" : " — insufficient balance";
+            return summary;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string NormalizeBaseUrl(string value)
     {
         var result = value.Trim().TrimEnd('/');

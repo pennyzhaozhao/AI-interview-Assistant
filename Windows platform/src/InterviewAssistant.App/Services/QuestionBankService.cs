@@ -38,24 +38,21 @@ public static class QuestionBankService
 
     public static string Encode(QuestionBankDocument value) => JsonSerializer.Serialize(value, JsonOptions);
 
+    /// <summary>
+    /// Indexed text. “Q:” / “A:” lines make the RAG chunker keep each question with its own answer (one chunk per
+    /// pair, labelled as prepared Q&amp;A in the prompt). Same format as macOS <c>QuestionBankDocument.searchableText</c>.
+    /// </summary>
     public static string SearchableText(string? content)
     {
-        var builder = new StringBuilder();
-        var document = Decode(content);
-        for (var index = 0; index < document.Questions.Count; index++)
+        static string OneLine(string text) => text.Replace("\r", " ").Replace("\n", " ").Trim();
+        var blocks = new List<string>();
+        foreach (var item in Decode(content).Questions)
         {
-            var item = document.Questions[index];
-            builder.AppendLine($"Primary question {index + 1}: {item.Question}");
-            builder.AppendLine($"Answer: {item.Answer}");
-            for (var followIndex = 0; followIndex < item.FollowUps.Count; followIndex++)
-            {
-                var follow = item.FollowUps[followIndex];
-                builder.AppendLine($"Follow-up {index + 1}.{followIndex + 1}: {follow.Question}");
-                builder.AppendLine($"Follow-up answer: {follow.Answer}");
-            }
-            builder.AppendLine();
+            blocks.Add($"Q: {OneLine(item.Question)}\nA: {item.Answer}");
+            foreach (var follow in item.FollowUps)
+                blocks.Add($"Q: {OneLine(follow.Question)}（追问 · Follow-up to: {OneLine(item.Question)}）\nA: {follow.Answer}");
         }
-        return builder.ToString().Trim();
+        return string.Join("\n\n", blocks);
     }
 
 #if !QUESTION_BANK_CORE_ONLY

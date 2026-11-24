@@ -70,6 +70,23 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .gemini: ["gemini-2.0-flash", "gemini-2.5-pro"]
         }
     }
+    /// Whether `model` on this provider accepts an image next to the text. Screenshot
+    /// questions are sent with the image to these, so figure options and the real option
+    /// layout are visible instead of relying on OCR alone. DeepSeek: `deepseek-flash` reads
+    /// images (Chat Completions `image_url`), `deepseek-v4-pro` does not. The default local
+    /// Ollama models are text-only. A wrong guess only costs a text-only retry.
+    func supportsImageInput(model: String) -> Bool {
+        switch self {
+        case .openai, .claude, .gemini, .volcano:
+            return true
+        case .deepseek:
+            let name = model.lowercased()
+            return name.hasPrefix("deepseek-flash") || name.contains("vision")
+        case .ollama:
+            return false
+        }
+    }
+
     var help: String {
         switch self {
         case .ollama: "本地 Ollama，默认不需要 API Key。"
@@ -80,6 +97,10 @@ enum AIProvider: String, CaseIterable, Identifiable {
         case .gemini: "Gemini 使用 Google AI API，填写 API Key 后使用。"
         }
     }
+}
+
+extension APIConfig {
+    var supportsImageInput: Bool { provider.supportsImageInput(model: model) }
 }
 
 struct APIConfig {
@@ -109,8 +130,135 @@ enum AIService {
             provider: provider,
             apiURL: apiURL.isEmpty ? provider.defaultURL : apiURL,
             apiKey: apiKey(for: provider),
-            model: provider.models.contains(storedModel) ? storedModel : provider.defaultModel
+            // Any model the user picked (built-in, fetched from the provider, or typed in) is used as is.
+            model: storedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? provider.defaultModel
+                : storedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+    }
+
+    // MARK: Model catalog
+
+    /// Models to offer for `provider`: the list last fetched from the provider (newest names first),
+    /// then the built-in suggestions, plus `current` so a custom choice never disappears.
+    static func availableModels(for provider: AIProvider, including current: String = "") -> [String] {
+        var result: [String] = []
+        for name in cachedModels(for: provider) + provider.models + [current] {
+            let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty, !result.contains(value) { result.append(value) }
+        }
+        return result
+    }
+
+    static func cachedModels(for provider: AIProvider) -> [String] {
+        UserDefaults.standard.stringArray(forKey: "ai_models_\(provider.rawValue)") ?? []
+    }
+
+    static func modelsRefreshedAt(for provider: AIProvider) -> Date? {
+        UserDefaults.standard.object(forKey: "ai_models_refreshed_\(provider.rawValue)") as? Date
+    }
+
+    /// Fetches the provider's current model list (its `/models` endpoint) and caches it, so newly
+    /// released models appear without an app update. Throws when the provider offers no list.
+    @discardableResult
+    static func refreshModels(config: APIConfig) async throws -> [String] {
+        var request: URLRequest
+        switch config.provider {
+        case .claude:
+            var base = config.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            while base.hasSuffix("/") { base.removeLast() }
+            if base.hasSuffix("/messages") { base.removeLast("/messages".count) }
+            guard let url = URL(string: "\(base)/models?limit=100") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+            request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .gemini:
+            let base = config.apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+            let key = config.apiKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            guard let url = URL(string: "\(base)/models?pageSize=200&key=\(key)") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+        case .ollama, .openai, .deepseek, .volcano:
+            let base = normalizeAPIBase(config.apiURL)
+            guard !base.isEmpty, let url = URL(string: "\(base)/models") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+            request.setValue("Bearer \(config.apiKey.isEmpty ? "ollama" : config.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw catalogError(String(format: L.t("This provider did not return a model list (HTTP %d)."), status))
+        }
+        var names: [String]
+        if config.provider == .gemini {
+            names = (json["models"] as? [[String: Any]] ?? []).compactMap { model in
+                let methods = model["supportedGenerationMethods"] as? [String] ?? []
+                guard methods.contains("generateContent"), let name = model["name"] as? String else { return nil }
+                return name.hasPrefix("models/") ? String(name.dropFirst("models/".count)) : name
+            }
+        } else {
+            names = (json["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+        }
+        names = names.filter { isChatModel($0, provider: config.provider) }.sorted(by: >)
+        guard !names.isEmpty else { throw catalogError(L.t("This provider did not return a model list.")) }
+        UserDefaults.standard.set(names, forKey: "ai_models_\(config.provider.rawValue)")
+        UserDefaults.standard.set(Date(), forKey: "ai_models_refreshed_\(config.provider.rawValue)")
+        return names
+    }
+
+    /// Drops embedding, image, audio and other non-chat models from a provider's list.
+    static func isChatModel(_ id: String, provider: AIProvider) -> Bool {
+        let name = id.lowercased()
+        let excluded = ["embed", "embedding", "tts", "whisper", "transcribe", "audio", "realtime", "moderation",
+                        "dall-e", "image", "imagen", "davinci", "babbage", "search", "computer-use", "rerank", "aqa"]
+        if excluded.contains(where: { name.contains($0) }) { return false }
+        switch provider {
+        case .openai:
+            return ["gpt-", "chatgpt-", "o1", "o3", "o4"].contains { name.hasPrefix($0) }
+        case .claude:
+            return name.hasPrefix("claude")
+        case .gemini:
+            return name.hasPrefix("gemini")
+        case .deepseek, .volcano, .ollama:
+            return true
+        }
+    }
+
+    private static func catalogError(_ message: String) -> NSError {
+        NSError(domain: "InterviewAssistant.Models", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    // MARK: Account balance
+
+    /// A short balance line for the connection test, or nil when the provider has no balance API
+    /// that works with an API key (OpenAI, Anthropic, Gemini and Volcano Ark only show it in their consoles).
+    static func accountBalanceSummary(config: APIConfig) async -> String? {
+        guard config.provider == .deepseek else { return nil }
+        let base = normalizeAPIBase(config.apiURL)
+        guard let url = URL(string: "\(base)/user/balance") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        guard let result = try? await session.data(for: request),
+              ((result.1 as? HTTPURLResponse)?.statusCode ?? 0) == 200,
+              let json = try? JSONSerialization.jsonObject(with: result.0) as? [String: Any],
+              let infos = json["balance_infos"] as? [[String: Any]], !infos.isEmpty else { return nil }
+        let parts = infos.map { info -> String in
+            let currency = info["currency"] as? String ?? ""
+            let symbol = currency == "CNY" ? "¥" : (currency == "USD" ? "$" : currency + " ")
+            let total = info["total_balance"] as? String ?? "\(info["total_balance"] ?? "")"
+            let toppedUp = info["topped_up_balance"] as? String
+            let granted = info["granted_balance"] as? String
+            var line = "\(symbol)\(total)"
+            if let toppedUp, let granted {
+                line += String(format: L.t(" (top-up %@%@ + granted %@%@)"), symbol, toppedUp, symbol, granted)
+            }
+            return line
+        }
+        var summary = String(format: L.t("Account balance: %@"), parts.joined(separator: "; "))
+        if json["is_available"] as? Bool == false { summary += L.t(" — insufficient balance") }
+        return summary
     }
 
     private static func apiKey(for provider: AIProvider) -> String {
@@ -130,22 +278,61 @@ enum AIService {
         }
     }
 
+    private final class TokenFlag: @unchecked Sendable { var value = false }
+
+    /// - Parameter imagesJPEG: optional images (screenshots) sent with the question to providers
+    ///   that accept images. If that request fails before any text arrives (for example a
+    ///   custom model without vision), the question is retried as text only.
     static func streamResponse(
         config: APIConfig,
         systemPrompt: String,
         question: String,
         maxTokens: Int = 400,
+        imagesJPEG: [Data] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
         try validateCredentials(config)
+        if !imagesJPEG.isEmpty, config.supportsImageInput {
+            let received = TokenFlag()
+            do {
+                try await dispatchStream(
+                    config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens,
+                    imagesBase64: imagesJPEG.map { $0.base64EncodedString() },
+                    onToken: { token in
+                        received.value = true
+                        onToken(token)
+                    },
+                    onComplete: onComplete
+                )
+                return
+            } catch {
+                if received.value || error is CancellationError { throw error }
+                NSLog("[AIService] image request failed, retrying as text only: %@", error.localizedDescription)
+            }
+        }
+        try await dispatchStream(
+            config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens,
+            imagesBase64: [], onToken: onToken, onComplete: onComplete
+        )
+    }
+
+    private static func dispatchStream(
+        config: APIConfig,
+        systemPrompt: String,
+        question: String,
+        maxTokens: Int,
+        imagesBase64: [String],
+        onToken: @escaping @MainActor (String) -> Void,
+        onComplete: @escaping @MainActor (String) -> Void
+    ) async throws {
         switch config.provider {
         case .claude:
-            try await streamClaude(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, onToken: onToken, onComplete: onComplete)
+            try await streamClaude(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64, onToken: onToken, onComplete: onComplete)
         case .ollama, .openai, .deepseek, .volcano:
-            try await streamOpenAICompatible(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, onToken: onToken, onComplete: onComplete)
+            try await streamOpenAICompatible(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64, onToken: onToken, onComplete: onComplete)
         case .gemini:
-            let text = try await completeGemini(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens)
+            let text = try await completeGemini(config: config, systemPrompt: systemPrompt, question: question, maxTokens: maxTokens, imagesBase64: imagesBase64)
             await onToken(text)
             await onComplete(text)
         }
@@ -163,6 +350,7 @@ enum AIService {
         systemPrompt: String,
         question: String,
         maxTokens: Int,
+        imagesBase64: [String] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
@@ -180,7 +368,7 @@ enum AIService {
             "max_tokens": maxTokens,
             "stream": true,
             "system": systemPrompt,
-            "messages": [["role": "user", "content": question]]
+            "messages": [["role": "user", "content": claudeContent(question, imagesBase64: imagesBase64)] as [String: Any]]
         ])
 
         let (bytes, response) = try await session.bytes(for: request)
@@ -250,7 +438,8 @@ enum AIService {
         config: APIConfig,
         systemPrompt: String,
         question: String,
-        maxTokens: Int
+        maxTokens: Int,
+        imagesBase64: [String] = []
     ) async throws -> String {
         let base = config.apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let url = URL(string: "\(base)/models/\(config.model):generateContent?key=\(config.apiKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") else {
@@ -262,7 +451,7 @@ enum AIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "systemInstruction": ["parts": [["text": systemPrompt]]],
-            "contents": [["role": "user", "parts": [["text": question]]]],
+            "contents": [["role": "user", "parts": geminiParts(question, imagesBase64: imagesBase64)] as [String: Any]],
             "generationConfig": ["maxOutputTokens": maxTokens]
         ])
         let (data, response) = try await session.data(for: request)
@@ -283,6 +472,7 @@ enum AIService {
         systemPrompt: String,
         question: String,
         maxTokens: Int,
+        imagesBase64: [String] = [],
         onToken: @escaping @MainActor (String) -> Void,
         onComplete: @escaping @MainActor (String) -> Void
     ) async throws {
@@ -300,8 +490,8 @@ enum AIService {
             "stream": true,
             "messages": [
                 ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": "Interview question: \(question)"]
-            ],
+                ["role": "user", "content": openAIContent("Interview question: \(question)", imagesBase64: imagesBase64)]
+            ] as [[String: Any]],
             "max_tokens": maxTokens
         ]
         if config.provider == .deepseek {
@@ -391,6 +581,32 @@ enum AIService {
             throw NSError(domain: "InterviewAssistant", code: 3, userInfo: [NSLocalizedDescriptionKey: "AI 返回为空，请检查模型名称、API Key 或 API 地址。"])
         }
         return text
+    }
+
+    // MARK: Image content blocks
+
+    private static func openAIContent(_ text: String, imagesBase64: [String]) -> Any {
+        guard !imagesBase64.isEmpty else { return text }
+        var blocks: [[String: Any]] = [["type": "text", "text": text]]
+        for image in imagesBase64 {
+            blocks.append(["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(image)"]])
+        }
+        return blocks
+    }
+
+    private static func claudeContent(_ text: String, imagesBase64: [String]) -> Any {
+        guard !imagesBase64.isEmpty else { return text }
+        var blocks: [[String: Any]] = imagesBase64.map {
+            ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": $0]]
+        }
+        blocks.append(["type": "text", "text": text])
+        return blocks
+    }
+
+    private static func geminiParts(_ text: String, imagesBase64: [String]) -> [[String: Any]] {
+        var parts: [[String: Any]] = imagesBase64.map { ["inline_data": ["mime_type": "image/jpeg", "data": $0]] }
+        parts.append(["text": text])
+        return parts
     }
 
     private static func normalizeAPIBase(_ url: String) -> String {

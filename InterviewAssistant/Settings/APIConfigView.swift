@@ -16,6 +16,10 @@ struct APIConfigView: View {
     @State private var asrResourceID = "volc.seedasr.sauc.duration"
     @State private var asrConnectionTestResult: String?
     @State private var isTestingASR = false
+    /// Bumped after the model list is fetched so the picker re-reads it.
+    @State private var modelListVersion = 0
+    @State private var isRefreshingModels = false
+    @State private var modelListMessage: String?
 
     private let providerOptions: [AIProvider] = AIProvider.productionOptions
 
@@ -38,7 +42,10 @@ struct APIConfigView: View {
         .foregroundStyle(Color.appText)
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
-        .onAppear { load() }
+        .onAppear {
+            load()
+            Task { await refreshModelsIfStale() }
+        }
     }
 
     private var header: some View {
@@ -146,6 +153,7 @@ struct APIConfigView: View {
             }
             .onChange(of: provider) { _, newValue in
                 applyProvider(newValue, force: true)
+                Task { await refreshModelsIfStale() }
             }
         }
     }
@@ -159,10 +167,20 @@ struct APIConfigView: View {
                         .foregroundStyle(Color.appText)
                     PremiumMenuPicker(
                         selection: $model,
-                        options: provider.models.map { ($0, $0) },
+                        options: modelOptions.map { ($0, $0) },
                         minWidth: isCompact ? 180 : 260
                     )
+                    .id(modelListVersion)
                     Spacer(minLength: 0)
+                    Button {
+                        Task { await refreshModels(showResult: true) }
+                    } label: {
+                        Label(isRefreshingModels ? L.t("Refreshing…") : L.t("Refresh List"), systemImage: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.appPrimary)
+                    .disabled(isRefreshingModels)
                 }
                 .padding(.horizontal, 14)
                 .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
@@ -176,6 +194,11 @@ struct APIConfigView: View {
                 TextField(L.t("Custom model"), text: $model)
                     .textFieldStyle(.plain)
                     .darkField()
+
+                Text(modelListMessage ?? modelListCaption)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -296,9 +319,10 @@ struct APIConfigView: View {
 
     private func applyProvider(_ provider: AIProvider, force: Bool) {
         if force || apiURL.isEmpty { apiURL = storedAPIURL(for: provider) }
-        if force || model.isEmpty || !provider.models.contains(model) { model = storedModel(for: provider) }
+        if force || model.isEmpty { model = storedModel(for: provider) }
         apiKey = KeychainStore.read("api-key-\(provider.rawValue)")
         connectionTestResult = nil
+        modelListMessage = nil
     }
 
     @discardableResult
@@ -334,11 +358,10 @@ struct APIConfigView: View {
         return provider.defaultURL.isEmpty ? L.t("API URL") : provider.defaultURL
     }
 
+    /// Any stored model is kept: built-in, fetched from the provider, or typed in by the user.
     private func validModel(_ storedValue: String, for provider: AIProvider) -> String {
-        if provider.models.contains(storedValue) {
-            return storedValue
-        }
-        return provider.models.first ?? provider.defaultModel
+        let value = storedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? provider.defaultModel : value
     }
 
     private func storedAPIURL(for provider: AIProvider) -> String {
@@ -396,13 +419,63 @@ struct APIConfigView: View {
     }
     #endif
 
+    private var modelOptions: [String] {
+        _ = modelListVersion
+        return AIService.availableModels(for: provider, including: model)
+    }
+
+    private var modelListCaption: String {
+        guard let date = AIService.modelsRefreshedAt(for: provider) else {
+            return L.t("The list shows built-in models. Refresh it to load the provider's newest models, or type any model name below.")
+        }
+        return String(format: L.t("Model list updated from %@ on %@. Type any other model name below."),
+                      provider.shortLabel, date.formatted(date: .abbreviated, time: .shortened))
+    }
+
+    /// Refreshes the provider's model list at most once a day when the page opens.
+    private func refreshModelsIfStale() async {
+        let hasKey = provider == .ollama || !KeychainStore.read("api-key-\(provider.rawValue)").isEmpty
+        guard hasKey else { return }
+        if let date = AIService.modelsRefreshedAt(for: provider), Date().timeIntervalSince(date) < 24 * 3600 { return }
+        await refreshModels(showResult: false)
+    }
+
+    private func refreshModels(showResult: Bool) async {
+        guard !isRefreshingModels else { return }
+        isRefreshingModels = true
+        defer { isRefreshingModels = false }
+        let config = APIConfig(
+            provider: provider,
+            apiURL: apiURL.isEmpty ? provider.defaultURL : apiURL,
+            apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            model: model
+        )
+        do {
+            let names = try await AIService.refreshModels(config: config)
+            modelListVersion += 1
+            if showResult {
+                modelListMessage = String(format: L.t("Loaded %d models from %@."), names.count, provider.shortLabel)
+            }
+        } catch {
+            if showResult { modelListMessage = error.localizedDescription }
+        }
+    }
+
     private func testConnection() async {
         guard save() else { return }
         connectionTestResult = L.t("Testing...")
         do {
             let config = AIService.config(from: modelContext)
             _ = try await AIService.callAIModel(config: config, systemPrompt: "Reply with the single word OK.", question: "Connection test", maxTokens: 64)
-            connectionTestResult = String(format: L.t("✅ Connection successful: connected directly to %@"), provider.label)
+            var result = String(format: L.t("✅ Connection successful: connected directly to %@"), provider.label)
+            connectionTestResult = result
+            if let balance = await AIService.accountBalanceSummary(config: config) {
+                result += "\n" + balance
+            } else if provider != .ollama {
+                result += "\n" + L.t("This provider has no balance API for API keys; check the balance in its console.")
+            }
+            connectionTestResult = result
+            await refreshModels(showResult: false)
         } catch {
             connectionTestResult = "\(L.t("Connection failed")): \(error.localizedDescription)"
         }

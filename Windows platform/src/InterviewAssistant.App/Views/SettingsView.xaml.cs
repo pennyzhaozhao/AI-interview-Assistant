@@ -15,47 +15,130 @@ public partial class SettingsView : UserControl
     private ViewModels.SettingsViewModel? _subscribedViewModel;
     private SupportFeedbackImage? _feedbackImage;
 
-    public SettingsView() => InitializeComponent();
-
-    private string? _hotkeyBeforeRecording;
-
-    private void ScreenshotHotkeyBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    public SettingsView()
     {
-        _hotkeyBeforeRecording = (DataContext as ViewModels.SettingsViewModel)?.ScreenshotHotkey;
-        ScreenshotHotkeyBox.Text = LocalizationManager.Text("Press shortcut…");
-        ScreenshotHotkeyBox.SelectAll();
+        InitializeComponent();
+        // Clicking blank space does not move keyboard focus in WPF, so end a shortcut recording explicitly.
+        PreviewMouseDown += (_, _) =>
+        {
+            if (Keyboard.FocusedElement is TextBox { Tag: InterviewAssistant.Windows.PrompterShortcut } box && !box.IsMouseOver)
+                Keyboard.ClearFocus();
+        };
     }
 
-    private void ScreenshotHotkeyBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    // ───────────────────────── Keyboard shortcuts ─────────────────────────
+
+    private void ShowShortcuts_Click(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is ViewModels.SettingsViewModel viewModel) ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
-        _hotkeyBeforeRecording = null;
+        SettingsRootPanel.Visibility = Visibility.Collapsed;
+        ApiConfigPanel.Visibility = Visibility.Collapsed;
+        ShortcutsPanel.Visibility = Visibility.Visible;
+        ShortcutStatusText.Text = "";
+        BuildShortcutRows();
     }
 
-    private void ScreenshotHotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    private void BackFromShortcuts_Click(object sender, RoutedEventArgs e)
+    {
+        Keyboard.ClearFocus();
+        ShortcutsPanel.Visibility = Visibility.Collapsed;
+        SettingsRootPanel.Visibility = Visibility.Visible;
+    }
+
+    private static string ShortcutTitle(InterviewAssistant.Windows.PrompterShortcut shortcut) => LocalizationManager.Text(shortcut switch
+    {
+        InterviewAssistant.Windows.PrompterShortcut.ScrollUp => "Scroll Text Up",
+        InterviewAssistant.Windows.PrompterShortcut.ScrollDown => "Scroll Text Down",
+        InterviewAssistant.Windows.PrompterShortcut.AnswerNewQuestion => "Answer New Question",
+        InterviewAssistant.Windows.PrompterShortcut.Screenshot => "Screenshot Shortcut",
+        InterviewAssistant.Windows.PrompterShortcut.DeleteScreenshot => "Delete Previous Screenshot",
+        _ => "Submit Screenshots"
+    });
+
+    private static string ShortcutGlyph(InterviewAssistant.Windows.PrompterShortcut shortcut) => shortcut switch
+    {
+        InterviewAssistant.Windows.PrompterShortcut.ScrollUp => "\uE74A",
+        InterviewAssistant.Windows.PrompterShortcut.ScrollDown => "\uE74B",
+        InterviewAssistant.Windows.PrompterShortcut.AnswerNewQuestion => "\uE8AB",
+        InterviewAssistant.Windows.PrompterShortcut.Screenshot => "\uE722",
+        InterviewAssistant.Windows.PrompterShortcut.DeleteScreenshot => "\uE74D",
+        _ => "\uE724"
+    };
+
+    private void BuildShortcutRows()
+    {
+        ShortcutList.Children.Clear();
+        var preferences = AppServices.Current.DataStore.Data.Preferences;
+        var all = InterviewAssistant.Windows.PrompterHotkeys.All;
+        for (var index = 0; index < all.Length; index++)
+        {
+            var shortcut = all[index];
+            var grid = new Grid { Margin = new Thickness(16, 10, 16, 10), MinHeight = 52 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition());
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+            var tile = new Border { Width = 42, Height = 42, CornerRadius = new CornerRadius(12), HorizontalAlignment = HorizontalAlignment.Left };
+            tile.SetResourceReference(Border.BackgroundProperty, "PrimarySoftBrush");
+            var glyph = new TextBlock { Text = ShortcutGlyph(shortcut) };
+            glyph.SetResourceReference(StyleProperty, "FluentIconStyle");
+            glyph.SetResourceReference(TextBlock.ForegroundProperty, "PrimaryBrush");
+            tile.Child = glyph;
+            grid.Children.Add(tile);
+            var title = new TextBlock { Text = ShortcutTitle(shortcut), FontSize = 16, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(title, 1);
+            grid.Children.Add(title);
+            var box = new TextBox
+            {
+                Text = InterviewAssistant.Windows.PrompterHotkeys.Display(InterviewAssistant.Windows.PrompterHotkeys.CurrentKey(shortcut, preferences)),
+                Tag = shortcut,
+                IsReadOnly = true,
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsUndoEnabled = false
+            };
+            box.SetResourceReference(StyleProperty, "InputStyle");
+            box.GotKeyboardFocus += ShortcutBox_GotKeyboardFocus;
+            box.LostKeyboardFocus += ShortcutBox_LostKeyboardFocus;
+            box.PreviewKeyDown += ShortcutBox_PreviewKeyDown;
+            Grid.SetColumn(box, 2);
+            grid.Children.Add(box);
+            ShortcutList.Children.Add(grid);
+            if (index < all.Length - 1)
+            {
+                var divider = new Border { Height = 1, Margin = new Thickness(76, 0, 12, 0) };
+                divider.SetResourceReference(Border.BackgroundProperty, "BorderBrush");
+                ShortcutList.Children.Add(divider);
+            }
+        }
+    }
+
+    private void ShortcutBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        ShortcutStatusText.Text = "";
+        box.Text = LocalizationManager.Text("Press the new shortcut…");
+        box.SetResourceReference(TextBox.ForegroundProperty, "PrimaryBrush");
+    }
+
+    /// <summary>Clicking anywhere else (or switching apps) cancels: the shortcut keeps its saved value.</summary>
+    private void ShortcutBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not TextBox box || box.Tag is not InterviewAssistant.Windows.PrompterShortcut shortcut) return;
+        box.ClearValue(TextBox.ForegroundProperty);
+        box.Text = InterviewAssistant.Windows.PrompterHotkeys.Display(
+            InterviewAssistant.Windows.PrompterHotkeys.CurrentKey(shortcut, AppServices.Current.DataStore.Data.Preferences));
+    }
+
+    private void ShortcutBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         e.Handled = true;
-        if (DataContext is not ViewModels.SettingsViewModel viewModel) return;
+        if (sender is not TextBox box || box.Tag is not InterviewAssistant.Windows.PrompterShortcut shortcut) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key == Key.Escape)
-        {
-            ScreenshotHotkeyBox.Text = _hotkeyBeforeRecording ?? viewModel.ScreenshotHotkey;
-            Keyboard.ClearFocus();
-            return;
-        }
-        if (key is Key.Back or Key.Delete)
-        {
-            viewModel.ScreenshotHotkey = "Ctrl+Shift+S";
-            ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
-            Keyboard.ClearFocus();
-            return;
-        }
+        if (key == Key.Escape) { Keyboard.ClearFocus(); return; }
         if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return;
-
         var modifiers = Keyboard.Modifiers;
         if (modifiers == ModifierKeys.None)
         {
-            ScreenshotHotkeyBox.Text = LocalizationManager.Text("Include Ctrl, Alt, Shift, or Win");
+            ShortcutStatusText.Text = LocalizationManager.Text("Include Ctrl, Alt, Shift, or Win");
             return;
         }
         var parts = new List<string>();
@@ -63,19 +146,45 @@ public partial class SettingsView : UserControl
         if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
         if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
         if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-        parts.Add(key.ToString().ToUpperInvariant());
+        var name = key == Key.Return ? "Enter" : key.ToString();
+        parts.Add(name.Length == 1 ? name.ToUpperInvariant() : name);
         var recorded = string.Join("+", parts);
-        if (!InterviewAssistant.Windows.ScreenshotHotkey.IsAvailable(recorded))
+
+        var preferences = AppServices.Current.DataStore.Data.Preferences;
+        var clash = InterviewAssistant.Windows.PrompterHotkeys.All.FirstOrDefault(other => other != shortcut
+            && string.Equals(InterviewAssistant.Windows.PrompterHotkeys.CurrentKey(other, preferences), recorded, StringComparison.OrdinalIgnoreCase));
+        if (clash != shortcut && string.Equals(InterviewAssistant.Windows.PrompterHotkeys.CurrentKey(clash, preferences), recorded, StringComparison.OrdinalIgnoreCase))
         {
-            // Keep recording so the user can try another combination right away.
-            ScreenshotHotkeyBox.Text = LocalizationManager.Instance.IsChinese
-                ? $"{recorded} 已被占用，请换一个"
-                : $"{recorded} is in use, try another";
+            ShortcutStatusText.Text = string.Format(LocalizationManager.Text("Already used by “{0}”."), ShortcutTitle(clash));
             return;
         }
-        viewModel.ScreenshotHotkey = recorded;
-        ScreenshotHotkeyBox.Text = viewModel.ScreenshotHotkey;
+        var available = shortcut == InterviewAssistant.Windows.PrompterShortcut.Screenshot
+            ? InterviewAssistant.Windows.ScreenshotHotkey.IsAvailable(recorded)
+            : InterviewAssistant.Windows.PrompterHotkeys.IsAvailable(recorded);
+        if (!available)
+        {
+            // Keep recording so another combination can be tried right away.
+            ShortcutStatusText.Text = string.Format(LocalizationManager.Text("{0} is taken by another app."), InterviewAssistant.Windows.PrompterHotkeys.Display(recorded));
+            return;
+        }
+        InterviewAssistant.Windows.PrompterHotkeys.SetKey(shortcut, preferences, recorded);
+        if (shortcut == InterviewAssistant.Windows.PrompterShortcut.Screenshot && DataContext is ViewModels.SettingsViewModel viewModel)
+            viewModel.ScreenshotHotkey = recorded;
+        AppServices.Current.DataStore.ScheduleSave();
         Keyboard.ClearFocus();
+    }
+
+    private void RestoreDefaultShortcuts_Click(object sender, RoutedEventArgs e)
+    {
+        Keyboard.ClearFocus();
+        var preferences = AppServices.Current.DataStore.Data.Preferences;
+        foreach (var shortcut in InterviewAssistant.Windows.PrompterHotkeys.All)
+            InterviewAssistant.Windows.PrompterHotkeys.SetKey(shortcut, preferences, InterviewAssistant.Windows.PrompterHotkeys.DefaultKey(shortcut));
+        if (DataContext is ViewModels.SettingsViewModel viewModel)
+            viewModel.ScreenshotHotkey = InterviewAssistant.Windows.PrompterHotkeys.DefaultKey(InterviewAssistant.Windows.PrompterShortcut.Screenshot);
+        AppServices.Current.DataStore.ScheduleSave();
+        ShortcutStatusText.Text = "";
+        BuildShortcutRows();
     }
 
     private void SettingsView_Loaded(object sender, System.Windows.RoutedEventArgs e)

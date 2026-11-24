@@ -14,13 +14,23 @@ enum KnowledgeContextBuilder {
         let normalized = rawText
             .replacingOccurrences(of: "（", with: "(")
             .replacingOccurrences(of: "）", with: ")")
-        let pattern = #"(?im)(?:^|\s)[A-F][\.、\)]?\s+\S+"#
-        let optionCount = (try? NSRegularExpression(pattern: pattern))?
-            .numberOfMatches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) ?? 0
+            .replacingOccurrences(of: "．", with: ".")
+        // “A. …”, “A、…”, “(A) …”, “A) …” after a space or line start, or “A …” at a line start.
+        // Case-sensitive on purpose: a case-insensitive match counts the English article “a”.
+        func count(_ pattern: String) -> Int {
+            (try? NSRegularExpression(pattern: pattern))?
+                .numberOfMatches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) ?? 0
+        }
+        let optionCount = count(#"(?m)(?:^|\s)\(?[A-F][\.、\):：]\s*\S+"#)
+            + count(#"(?m)^\s*[A-F]\s+\S+"#)
+        let circledCount = normalized.filter { "①②③④⑤⑥".contains($0) }.count
+        let keywords = [
+            "下列", "以下哪", "下面哪", "哪一项", "哪个选项", "哪些选项", "选择题", "单选", "多选", "不定项",
+            "选出", "正确的是", "错误的是", "不正确的是", "which of the following", "select all", "choose the"
+        ]
         return optionCount >= 2
-            || normalized.localizedCaseInsensitiveContains("下列")
-            || normalized.localizedCaseInsensitiveContains("选择题")
-            || normalized.localizedCaseInsensitiveContains("which of the following")
+            || circledCount >= 2
+            || keywords.contains { normalized.localizedCaseInsensitiveContains($0) }
     }
 
     static func buildAlgorithmApproachPrompt(rawText: String, answerLanguage: String = "zh-CN") -> String {
@@ -96,6 +106,31 @@ enum KnowledgeContextBuilder {
         """
     }
 
+    /// Answer rules for screenshot multiple-choice questions. The option labels must match
+    /// the screenshot exactly (no invented letters), and the model works the question out in
+    /// a hidden <analysis> block first, which raises accuracy noticeably on exam questions.
+    static func choiceQuestionRules(answerLanguage: String) -> String {
+        let chinese = answerLanguage == "zh-CN"
+        let answerLabel = chinese ? "答案：" : "Answer: "
+        let explanationLabel = chinese ? "解析：" : "Explanation: "
+        let labelledExample = chinese ? "答案：B. 进程是资源分配的基本单位" : "Answer: B. A process is the unit of resource allocation"
+        let unlabelledExample = chinese ? "答案：进程是资源分配的基本单位" : "Answer: A process is the unit of resource allocation"
+        let pictureExample = chinese ? "答案：第 3 个图形（从左往右数）" : "Answer: the 3rd figure (counting from the left)"
+        return """
+        MULTIPLE-CHOICE RULES (apply whenever the question offers options to choose from):
+        1. Look at how the options are actually marked in the screenshot and copy that exactly.
+           - Options with visible labels (A/B/C/D, a/b/c, ①②③, 1/2/3, (A)…): give that exact label followed by the option text, e.g. “\(labelledExample)”.
+           - Options WITHOUT visible labels: never invent letters or numbers. Give the full text of the correct option, e.g. “\(unlabelledExample)”.
+           - Options that are pictures without labels: identify the correct one by its position, e.g. “\(pictureExample)” (count from the top for a vertical list), and describe it in a few words.
+           - Several correct options (multi-select): list every correct one the same way.
+        2. Work it out first inside <analysis>…</analysis>: restate the stem, list every option exactly as marked (or note that it has no label), test each option against the question, and recompute any numbers or code output. This block is hidden from the user, so be thorough.
+        3. After </analysis>, output exactly two parts and nothing else:
+        \(answerLabel)…
+        \(explanationLabel)… (2-4 sentences: why the answer is right and why the most tempting wrong option is wrong)
+        The OCR text may merge lines or drop option markers; when a screenshot image is attached, trust the image.
+        """
+    }
+
     static func buildQuestionPrompt(
         rawText: String,
         answerLanguage: String = "zh-CN",
@@ -112,7 +147,19 @@ enum KnowledgeContextBuilder {
             "thread", "process", "database", "cache", "spring", "kafka"
         ].contains { lower.contains($0) }
 
-        if isAlgorithm {
+        if isMultipleChoiceQuestion(rawText) {
+            return """
+            The following screenshot contains a multiple-choice question.
+            \(languageInstruction)
+            Read the complete question stem and every option before answering.
+            Do not describe the screenshot, do not call it a list of technologies, do not ask for clarification, and do not answer as though this were an interview skills checklist.
+
+            \(choiceQuestionRules(answerLanguage: answerLanguage))
+
+            OCR / visual text:
+            \(rawText)
+            """
+        } else if isAlgorithm {
             return """
             You are a candidate in a live technical interview answering an algorithm question.
             \(languageInstruction)
@@ -121,20 +168,10 @@ enum KnowledgeContextBuilder {
             The code section must contain complete, runnable interview-quality \(codeLanguage) code
             inside a fenced markdown block that starts with ```\(codeLanguage).
             Keep the explanation concise, but do not omit important edge cases.
+            If the screenshot is actually a multiple-choice question (options to choose from, even without letters), do not write code; follow these rules instead:
+            \(choiceQuestionRules(answerLanguage: answerLanguage))
 
             Question:
-            \(rawText)
-            """
-        } else if isMultipleChoiceQuestion(rawText) {
-            return """
-            The following screenshot contains a multiple-choice question.
-            \(languageInstruction)
-            Read the complete question stem and every visible option before answering.
-            Start with the selected option and its text, for example “答案：A. Linux” or “Answer: A. Linux”.
-            Then add a short “解析” or “Explanation” paragraph explaining why it is correct and, when useful, why the closest alternatives are wrong.
-            Do not describe the screenshot, do not call it a list of technologies, do not ask for clarification, and do not answer as though this were an interview skills checklist.
-
-            OCR / visual text:
             \(rawText)
             """
         } else if isBaguwen {
@@ -147,6 +184,8 @@ enum KnowledgeContextBuilder {
             Then explain the key mechanism or principle in 2-3 sentences.
             If relevant, briefly mention a real use case or example.
             Keep the total response under 100 words and sound confident.
+            If the screenshot is actually a multiple-choice question (options to choose from, even without letters), ignore the spoken format above and follow these rules instead:
+            \(choiceQuestionRules(answerLanguage: answerLanguage))
 
             Question:
             \(rawText)
@@ -161,7 +200,10 @@ enum KnowledgeContextBuilder {
             complete runnable \(codeLanguage) code in a fenced markdown block beginning with ```\(codeLanguage).
             If it is an exam-style short-answer question, give the direct answer first and then a concise explanation.
             For a non-coding interview question, give a concise spoken answer without inventing code.
-            Give only the final answer, with no planning text.
+            Apart from the hidden <analysis> block described below, give only the final answer, with no planning text.
+
+            If it turns out to be a multiple-choice question (options to choose from, with or without letters, or picture options), follow these rules:
+            \(choiceQuestionRules(answerLanguage: answerLanguage))
 
             Captured text:
             \(rawText)
@@ -180,7 +222,7 @@ enum KnowledgeContextBuilder {
             - For multiple-choice and short-answer questions, put the direct answer first, followed by a concise explanation
             - 如果是算法题，必须包含四个小标题：思路、步骤、代码、复杂度
             - 代码必须放在 fenced code block 里，例如 ```python
-            - 不要输出推理过程、角色分析或“我需要回答”这类话
+            - 只有用户提示要求时，才可以在 <analysis>…</analysis> 里推理（该部分会被隐藏）；除此之外不要输出推理过程、角色分析或“我需要回答”这类话
             - 不要只给口语概括；算法题必须给可运行代码
             - 解释要简洁，代码要清晰，适合面试时快速讲解
             """

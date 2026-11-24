@@ -229,7 +229,7 @@ public static class KnowledgeChunker
         foreach (var unit in FlushBuffer()) yield return unit;
     }
 
-    internal static bool IsQuestionStart(string line)
+    public static bool IsQuestionStart(string line)
     {
         var lower = line.Trim().ToLowerInvariant();
         if (lower.Length == 0) return false;

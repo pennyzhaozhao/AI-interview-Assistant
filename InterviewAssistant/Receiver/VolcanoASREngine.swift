@@ -85,15 +85,48 @@ final class VolcanoASREngine {
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var connectionDelegate: VolcanoWebSocketConnectionDelegate?
-    nonisolated(unsafe) private let audioEngine = AVAudioEngine()
+    /// Created only while the microphone is actually in use and released on stop. Merely
+    /// touching `AVAudioEngine.inputNode` opens the input device on macOS; with AirPods that
+    /// switches the headset into its low-quality call profile (mono, one ear silent) even in
+    /// system-audio mode, so no other code path may create or access an input node.
+    @ObservationIgnored
+    nonisolated(unsafe) private var microphoneEngine: AVAudioEngine?
     private let processingQueue = DispatchQueue(label: "InterviewAssistant.VolcanoASR.processing", qos: .userInitiated)
+    /// Resamples captured audio to 16 kHz Int16 and re-chunks it into 200 ms packets.
+    /// Only touched on `processingQueue`.
+    private let pcmStream = VolcanoPCMStream(chunkSeconds: 0.2)
     private var sessionID = ""
     private var sequenceNumber = 0
     private var isSpeaking = false
     private var hasSentAudio = false
     private var silenceChunks = 0
     private var silenceLimitChunks = 10
-    private var lastDefiniteIndex = 0
+    /// End time (ms, session timeline) of the last utterance already emitted. Utterances are
+    /// de-duplicated by time rather than by array index: depending on the mode the server may
+    /// return either every utterance since the start or only the recent ones, and an index
+    /// silently skipped every sentence after the first in the latter case.
+    private var lastEmittedUtteranceEndMs: Double = -1
+    /// Fallback for responses without timestamps.
+    private var recentlyEmittedTexts: [String] = []
+    /// Periodic “[DoubaoASR]” log line, so a support log shows whether audio reaches the
+    /// server and whether the server answers.
+    private struct Diagnostics {
+        var packets = 0
+        var voicedPackets = 0
+        var peakRMS: Float = 0
+        var responses = 0
+        var utterances = 0
+        var lastLog = Date.distantPast
+    }
+    @ObservationIgnored private var diagnostics = Diagnostics()
+    /// True between `start()` and `stop()`: an unexpected disconnect is then reconnected.
+    @ObservationIgnored private var wantsListening = false
+    @ObservationIgnored private var reconnectAttempts = 0
+    /// System audio delivers nothing while the Mac is silent, and Doubao closes a stream that
+    /// receives no audio for a while (the interviewer is quiet while the candidate answers).
+    /// This task fills such gaps with silence packets so the stream stays open.
+    @ObservationIgnored private var silenceKeepAliveTask: Task<Void, Never>?
+    @ObservationIgnored private var lastPacketAt = Date.distantPast
     private struct TimedPCMChunk {
         let start: Double
         let end: Double
@@ -238,7 +271,9 @@ final class VolcanoASREngine {
     @discardableResult
     func start() async -> Bool {
         guard !isListening else { return true }
+        wantsListening = true
         guard await connect() else { return false }
+        NSLog("[DoubaoASR] connected source=%@", audioSource == .system ? "system" : "microphone")
 
         switch audioSource {
         case .microphone:
@@ -269,8 +304,10 @@ final class VolcanoASREngine {
         // here traps in `_dispatch_assert_queue_fail` as soon as the board opens.
         let tap = SendableAudioTap(block: Self.makeMicrophoneTap(engine: self))
         let unavailableInputMessage = L.t("The current microphone has no available audio input. Check the input device in Zoom/Teams and System Settings.")
+        let engine = AVAudioEngine()
+        microphoneEngine = engine
         let startResult = await Self.startAudioEngine(
-            audioEngine,
+            engine,
             tap: tap,
             unavailableInputMessage: unavailableInputMessage
         )
@@ -278,10 +315,11 @@ final class VolcanoASREngine {
         switch startResult {
         case .success:
             isListening = true
-            installAudioConfigurationObserver()
+            installAudioConfigurationObserver(for: engine)
             statusText = L.t("🎙 Listening with Doubao Voice...")
             return true
         case .failure(let error):
+            if microphoneEngine === engine { stopMicrophoneEngineOnly() }
             statusText = "❌ \(error.localizedDescription)"
             return false
         }
@@ -342,11 +380,14 @@ final class VolcanoASREngine {
         do {
             try await capture.start()
             isListening = true
+            startSilenceKeepAlive()
+            NSLog("[DoubaoASR] system audio capture started")
             statusText = L.t("🔊 Listening to system audio with Doubao Voice...")
             return true
         } catch {
             systemAudioCapture = nil
             statusText = String(format: L.t("❌ Unable to capture system audio: %@"), error.localizedDescription)
+            NSLog("[DoubaoASR] system audio capture failed: %@", error.localizedDescription)
             return false
         }
         #else
@@ -389,6 +430,8 @@ final class VolcanoASREngine {
     #endif
 
     func stop() {
+        wantsListening = false
+        reconnectAttempts = 0
         guard isListening || isConnected else { return }
         if hasSentAudio {
             sendAudioChunk(Data(), isLast: true)
@@ -396,16 +439,17 @@ final class VolcanoASREngine {
         disconnect()
     }
 
-    private func installAudioConfigurationObserver() {
-        guard audioConfigurationObserver == nil else { return }
+    private func installAudioConfigurationObserver(for engine: AVAudioEngine) {
+        removeAudioConfigurationObserver()
         audioConfigurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
-            object: audioEngine,
+            object: engine,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isListening, self.audioSource == .microphone else { return }
                 self.statusText = L.t("⚠️ The microphone changed. Reconnecting…")
+                self.removeAudioConfigurationObserver()
                 self.stopMicrophoneEngineOnly()
                 try? await Task.sleep(for: .milliseconds(300))
                 _ = await self.startMicrophoneCapture()
@@ -421,7 +465,9 @@ final class VolcanoASREngine {
     }
 
     private func stopMicrophoneEngineOnly() {
-        Self.stopAudioEngineInBackground(audioEngine)
+        guard let engine = microphoneEngine else { return }
+        microphoneEngine = nil
+        Self.stopAudioEngineInBackground(engine)
     }
 
     private nonisolated static func stopAudioEngineInBackground(_ audioEngine: AVAudioEngine) {
@@ -511,16 +557,20 @@ final class VolcanoASREngine {
             payload: compressedPayload
         )
         guard let task = webSocketTask else { return }
-        Task { @MainActor [weak self] in
-            do {
-                try await task.send(.data(frame))
-            } catch {
-                guard let self, self.webSocketTask === task, self.isConnected else { return }
-                self.lastErrorText = error.localizedDescription
-                self.isConnected = false
-                self.isListening = false
-                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
-                self.stopAudioEngine()
+        // Hand the frame to the socket synchronously, like 1.2.1 did. One Task per packet (as
+        // in 1.3.0) does not guarantee the order in which the sends reach the socket; Doubao
+        // requires strictly increasing sequence numbers and closes the stream on a reordered
+        // packet, which with ~100 system-audio packets per second happened within seconds.
+        // A failed send is only logged: the receive loop detects a dead connection.
+        Self.enqueue(frame, on: task)
+    }
+
+    /// Built outside @MainActor so URLSession's completion handler, called on its delegate
+    /// queue, does not carry main-actor isolation (the `_dispatch_assert_queue_fail` crash).
+    private nonisolated static func enqueue(_ frame: Data, on task: URLSessionWebSocketTask) {
+        task.send(.data(frame)) { error in
+            if let error {
+                NSLog("[DoubaoASR] audio send failed: %@", error.localizedDescription)
             }
         }
     }
@@ -578,16 +628,73 @@ final class VolcanoASREngine {
                 }
             } catch {
                 guard self.webSocketTask === task, self.isConnected else { return }
-                self.lastErrorText = error.localizedDescription
-                self.isConnected = false
-                self.isListening = false
-                self.statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
-                self.stopAudioEngine()
+                self.handleConnectionLost(error)
             }
         }
     }
 
+    /// An unexpected disconnect while the board is listening: reconnect and keep listening
+    /// instead of silently going deaf for the rest of the interview.
+    private func handleConnectionLost(_ error: Error) {
+        NSLog("[DoubaoASR] connection lost: %@ (attempt %ld)", error.localizedDescription, reconnectAttempts)
+        let shouldReconnect = wantsListening && reconnectAttempts < 5
+        disconnect(clearStatus: false)
+        guard shouldReconnect else {
+            lastErrorText = error.localizedDescription
+            statusText = String(format: L.t("⚠️ Doubao Voice disconnected: %@"), error.localizedDescription)
+            return
+        }
+        reconnectAttempts += 1
+        let delay = Double(min(reconnectAttempts, 3))
+        statusText = L.t("⚠️ Doubao Voice disconnected. Reconnecting…")
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, self.wantsListening, !self.isListening else { return }
+            if await self.start() {
+                NSLog("[DoubaoASR] reconnected")
+            } else if self.wantsListening {
+                self.handleConnectionLost(NSError(
+                    domain: "InterviewAssistant.Doubao",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: self.lastErrorText.isEmpty ? L.t("Reconnect failed") : self.lastErrorText]
+                ))
+            }
+        }
+    }
+
+    private func startSilenceKeepAlive() {
+        silenceKeepAliveTask?.cancel()
+        let silence = Data(repeating: 0, count: 6_400) // 200 ms, 16 kHz, Int16 mono
+        silenceKeepAliveTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard let self else { return }
+                guard self.isListening, self.isConnected else { continue }
+                if Date().timeIntervalSince(self.lastPacketAt) >= 0.4 {
+                    self.handleVAD(pcmData: silence, rms: 0)
+                }
+            }
+        }
+    }
+
+    private func logDiagnosticsIfDue(rms: Float) {
+        diagnostics.packets += 1
+        diagnostics.peakRMS = max(diagnostics.peakRMS, rms)
+        if rms > max(minimumVoiceThreshold, noiseFloorRMS * 1.6) { diagnostics.voicedPackets += 1 }
+        let now = Date()
+        guard now.timeIntervalSince(diagnostics.lastLog) >= 5 else { return }
+        NSLog(
+            "[DoubaoASR] source=%@ packets=%ld voiced=%ld peakRMS=%.0f responses=%ld utterances=%ld connected=%@",
+            audioSource == .system ? "system" : "microphone",
+            diagnostics.packets, diagnostics.voicedPackets, Double(diagnostics.peakRMS),
+            diagnostics.responses, diagnostics.utterances, isConnected ? "true" : "false"
+        )
+        diagnostics = Diagnostics(lastLog: now)
+    }
+
     private func handleResponse(_ data: Data) {
+        diagnostics.responses += 1
+        reconnectAttempts = 0
         let messageType = data.count > 1 ? data[1] >> 4 : 0
         if messageType == 0x0F {
             handleErrorResponse(data)
@@ -639,6 +746,7 @@ final class VolcanoASREngine {
                 ?? L.t("The server returned an unknown error")
             lastErrorText = String(format: L.t("Doubao Voice %d: %@"), code, message)
             statusText = lastErrorText
+            NSLog("[DoubaoASR] server error code=%ld message=%@", code, message)
             return
         }
 
@@ -655,43 +763,38 @@ final class VolcanoASREngine {
             ?? ((json["result"] as? [String: Any])?["is_final"] as? Bool)
             ?? false)
 
-        // Server-side VAD: emit utterances the server has finalized (definite: true)
+        // Server-side VAD: emit utterances the server has finalized (definite: true).
         let utterances = responseUtterances(from: json)
-        if !utterances.isEmpty {
-            for i in lastDefiniteIndex..<utterances.count {
-                let utterance = utterances[i]
-                guard utterance["definite"] as? Bool == true else { break }
-                let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                lastDefiniteIndex = i + 1
-                if !utteranceText.isEmpty {
-                    partialText = ""
-                    isSpeaking = false
-                    hasSentAudio = false
-                    silenceChunks = 0
-                    emitRecognizedUtterance(utteranceText, metadata: utterance)
-                    statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
-                }
-            }
+        var emittedAny = false
+        for utterance in utterances where utterance["definite"] as? Bool == true {
+            let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard markEmitted(utterance, text: utteranceText) else { continue }
+            emittedAny = true
+            partialText = ""
+            isSpeaking = false
+            hasSentAudio = false
+            silenceChunks = 0
+            diagnostics.utterances += 1
+            emitRecognizedUtterance(utteranceText, metadata: utterance)
+            statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
         }
 
         if isFinal {
-            // Emit any text not yet covered by definite utterances
-            let remainingText: String
-            if lastDefiniteIndex < utterances.count {
-                remainingText = utterances
-                    .dropFirst(lastDefiniteIndex)
-                    .compactMap { $0["text"] as? String }
-                    .joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            } else if lastDefiniteIndex == 0 {
-                remainingText = text
-            } else {
-                remainingText = ""
+            // Emit any text the definite utterances did not cover.
+            var remaining: [String] = []
+            for utterance in utterances {
+                let utteranceText = (utterance["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if markEmitted(utterance, text: utteranceText) { remaining.append(utteranceText) }
             }
-            lastDefiniteIndex = 0
+            if utterances.isEmpty, !emittedAny {
+                let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if markEmitted(nil, text: clean) { remaining.append(clean) }
+            }
             partialText = ""
             hasSentAudio = false
+            let remainingText = remaining.joined().trimmingCharacters(in: .whitespacesAndNewlines)
             if !remainingText.isEmpty {
+                diagnostics.utterances += 1
                 emitRecognizedUtterance(remainingText, metadata: utterances.last)
             }
             statusText = isListening ? L.t("🎙 Listening with Doubao Voice...") : ""
@@ -699,6 +802,20 @@ final class VolcanoASREngine {
             partialText = text
             statusText = "💬 \(String(text.prefix(30)))..."
         }
+    }
+
+    /// Returns true (and records it) when `utterance` has not been emitted yet.
+    private func markEmitted(_ utterance: [String: Any]?, text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        if let end = Self.doubleValue(utterance?["end_time"]), end > 0 {
+            guard end > lastEmittedUtteranceEndMs else { return false }
+            lastEmittedUtteranceEndMs = end
+            return true
+        }
+        guard !recentlyEmittedTexts.contains(text) else { return false }
+        recentlyEmittedTexts.append(text)
+        if recentlyEmittedTexts.count > 20 { recentlyEmittedTexts.removeFirst() }
+        return true
     }
 
     private func handleErrorResponse(_ data: Data) {
@@ -755,6 +872,8 @@ final class VolcanoASREngine {
     private func handleVAD(pcmData: Data, rms: Float) {
         sendAudioChunk(pcmData)
         hasSentAudio = true
+        lastPacketAt = Date()
+        logDiagnosticsIfDue(rms: rms)
         if audioSource == .microphone {
             appendToAudioRing(pcmData)
         }
@@ -810,7 +929,8 @@ final class VolcanoASREngine {
         isSpeaking = false
         hasSentAudio = false
         silenceChunks = 0
-        lastDefiniteIndex = 0
+        lastEmittedUtteranceEndMs = -1
+        recentlyEmittedTexts = []
         noiseFloorRMS = 0
         audioRing = []
         audioTimelineSeconds = 0
@@ -915,6 +1035,9 @@ final class VolcanoASREngine {
     }
 
     private func stopAudioEngine() {
+        silenceKeepAliveTask?.cancel()
+        silenceKeepAliveTask = nil
+        resetPCMStream()
         removeAudioConfigurationObserver()
         #if os(macOS)
         if let capture = systemAudioCapture {
@@ -929,15 +1052,27 @@ final class VolcanoASREngine {
         #endif
     }
 
+    /// Microphone taps deliver ~200 ms buffers, but ScreenCaptureKit delivers ~10 ms ones.
+    /// Both go through one long-lived converter (a fresh converter per buffer drops the
+    /// resampler's look-ahead samples every time, which garbles short system-audio buffers
+    /// beyond recognition) and are re-chunked to 200 ms, the packet size the VAD counters
+    /// and the Doubao streaming API expect.
     private nonisolated func processCapturedBuffer(_ buffer: AVAudioPCMBuffer) {
+        let stream = pcmStream
         processingQueue.async { [weak self] in
-            guard let pcmData = Self.convertToPCM16Mono(buffer, sampleRate: 16_000) else { return }
-            let rms = Self.rmsInt16(pcmData)
-            Task { @MainActor in
-                guard let self, self.isListening else { return }
-                self.handleVAD(pcmData: pcmData, rms: rms)
+            for pcmData in stream.append(buffer) {
+                let rms = Self.rmsInt16(pcmData)
+                Task { @MainActor in
+                    guard let self, self.isListening else { return }
+                    self.handleVAD(pcmData: pcmData, rms: rms)
+                }
             }
         }
+    }
+
+    private func resetPCMStream() {
+        let stream = pcmStream
+        processingQueue.async { stream.reset() }
     }
 
     static func makeAuthenticatedRequest(config: Config, sessionID: String) async throws -> URLRequest {
@@ -987,34 +1122,6 @@ final class VolcanoASREngine {
     private static func handshakeFailureMessage(detail: String, resourceID: String) -> String {
         let plan = resourceID.hasSuffix(".concurrent") ? L.t("concurrent plan") : L.t("hourly plan")
         return String(format: L.t("Doubao Voice handshake failed (%@). The selected plan is %@. Confirm that the same plan is enabled for this App ID and that the Access Token belongs to the same app."), detail, plan)
-    }
-
-    private nonisolated static func convertToPCM16Mono(_ buffer: AVAudioPCMBuffer, sampleRate: Double) -> Data? {
-        guard let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true) else {
-            return nil
-        }
-        let inputFormat = buffer.format
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            return nil
-        }
-
-        let ratio = sampleRate / inputFormat.sampleRate
-        let outputCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
-            return nil
-        }
-
-        let inputProvider = VolcanoConverterInputProvider(buffer: buffer)
-        var conversionError: NSError?
-        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outStatus in
-            inputProvider.next(outStatus: outStatus)
-        }
-        guard status != .error, conversionError == nil, let data = outputBuffer.int16ChannelData else {
-            return nil
-        }
-
-        let frameLength = Int(outputBuffer.frameLength)
-        return Data(bytes: data[0], count: frameLength * MemoryLayout<Int16>.size)
     }
 
     private nonisolated static func rmsInt16(_ data: Data) -> Float {
@@ -1171,6 +1278,7 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
         reason: Data?
     ) {
         let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) }
+        NSLog("[DoubaoASR] server closed websocket code=%ld reason=%@", closeCode.rawValue, reasonText ?? "")
         let message = reasonText?.isEmpty == false
             ? String(format: L.t("The server closed the connection: %@"), reasonText!)
             : String(format: L.t("The server closed the connection (%d)"), closeCode.rawValue)
@@ -1190,21 +1298,130 @@ private final class VolcanoWebSocketConnectionDelegate: NSObject, URLSessionWebS
     }
 }
 
-private final class VolcanoConverterInputProvider: @unchecked Sendable {
-    private let buffer: AVAudioPCMBuffer
-    private var didProvideInput = false
+/// Streaming resampler + re-chunker for Doubao: any PCM buffer in, 16 kHz mono Int16
+/// packets of a fixed duration out. Downsampling averages the source samples each output
+/// sample covers (a box low-pass, exact 3:1 for 48 kHz); upsampling interpolates linearly.
+/// The fractional read position and unconsumed samples carry over between buffers, so
+/// ~10 ms ScreenCaptureKit buffers convert as one continuous stream.
+/// Not thread-safe; use from one serial queue.
+private final class VolcanoPCMStream: @unchecked Sendable {
+    private let targetRate = 16_000.0
+    private let chunkBytes: Int
+    private var sourceRate = 0.0
+    private var position = 0.0
+    private var history: [Float] = []
+    private var pending = Data()
+    private var buffersSinceLog = 0
+    private var packetsSinceLog = 0
+    private var lastLog = Date.distantPast
 
-    init(buffer: AVAudioPCMBuffer) {
-        self.buffer = buffer
+    init(chunkSeconds: Double) {
+        chunkBytes = Int(16_000 * chunkSeconds) * MemoryLayout<Int16>.size
     }
 
-    func next(outStatus: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
-        if didProvideInput {
-            outStatus.pointee = .noDataNow
-            return nil
+    func reset() {
+        sourceRate = 0
+        position = 0
+        history = []
+        pending = Data()
+    }
+
+    /// Converts `buffer` and returns every complete packet now available.
+    func append(_ buffer: AVAudioPCMBuffer) -> [Data] {
+        let rate = buffer.format.sampleRate
+        guard buffer.frameLength > 0, rate > 0 else { return [] }
+        if rate != sourceRate {
+            reset()
+            sourceRate = rate
         }
-        didProvideInput = true
-        outStatus.pointee = .haveData
-        return buffer
+        buffersSinceLog += 1
+        history.append(contentsOf: Self.monoSamples(buffer))
+
+        let step = sourceRate / targetRate
+        var output: [Int16] = []
+        output.reserveCapacity(Int(Double(history.count) / step) + 1)
+        if step >= 1 {
+            while position + step <= Double(history.count) {
+                let start = Int(position)
+                let end = min(history.count, max(start + 1, Int(position + step)))
+                var sum: Float = 0
+                for index in start..<end { sum += history[index] }
+                output.append(Self.int16(sum / Float(end - start)))
+                position += step
+            }
+        } else {
+            while position + 1 < Double(history.count) {
+                let index = Int(position)
+                let fraction = Float(position - Double(index))
+                output.append(Self.int16(history[index] * (1 - fraction) + history[index + 1] * fraction))
+                position += step
+            }
+        }
+        let consumed = min(Int(position), history.count)
+        if consumed > 0 {
+            history.removeFirst(consumed)
+            position -= Double(consumed)
+        }
+        output.withUnsafeBufferPointer { pending.append(Data(buffer: $0)) }
+
+        var packets: [Data] = []
+        while pending.count >= chunkBytes {
+            packets.append(Data(pending.prefix(chunkBytes)))
+            pending = Data(pending.dropFirst(chunkBytes))
+        }
+        packetsSinceLog += packets.count
+        logIfDue(buffer)
+        return packets
+    }
+
+    private func logIfDue(_ buffer: AVAudioPCMBuffer) {
+        let now = Date()
+        guard now.timeIntervalSince(lastLog) >= 5 else { return }
+        NSLog(
+            "[DoubaoASR] capture buffers=%ld packets=%ld rate=%.0f channels=%ld interleaved=%@ common=%ld",
+            buffersSinceLog, packetsSinceLog, sourceRate, Int(buffer.format.channelCount),
+            buffer.format.isInterleaved ? "true" : "false", Int(buffer.format.commonFormat.rawValue)
+        )
+        buffersSinceLog = 0
+        packetsSinceLog = 0
+        lastLog = now
+    }
+
+    private static func int16(_ value: Float) -> Int16 {
+        guard value.isFinite else { return 0 }
+        return Int16(max(-1, min(1, value)) * Float(Int16.max))
+    }
+
+    /// Mono float samples from float32, int16 or int32 buffers, interleaved or not.
+    private static func monoSamples(_ buffer: AVAudioPCMBuffer) -> [Float] {
+        let frames = Int(buffer.frameLength)
+        let channels = max(1, Int(buffer.format.channelCount))
+        let interleaved = buffer.format.isInterleaved
+        var mono = [Float](repeating: 0, count: frames)
+
+        func mix(scale: Float, read: (_ channel: Int, _ frame: Int) -> Float) {
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<channels { sum += read(channel, frame) }
+                mono[frame] = sum / Float(channels) * scale
+            }
+        }
+
+        if let data = buffer.floatChannelData {
+            mix(scale: 1) { channel, frame in
+                interleaved ? data[0][frame * channels + channel] : data[channel][frame]
+            }
+        } else if let data = buffer.int16ChannelData {
+            mix(scale: 1 / 32_768) { channel, frame in
+                Float(interleaved ? data[0][frame * channels + channel] : data[channel][frame])
+            }
+        } else if let data = buffer.int32ChannelData {
+            mix(scale: 1 / 2_147_483_648) { channel, frame in
+                Float(interleaved ? data[0][frame * channels + channel] : data[channel][frame])
+            }
+        } else {
+            return []
+        }
+        return mono
     }
 }

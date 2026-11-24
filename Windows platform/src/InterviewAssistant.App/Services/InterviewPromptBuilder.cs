@@ -131,7 +131,7 @@ public static class InterviewPromptBuilder
             - For multiple-choice and short-answer questions, put the direct answer first, followed by a concise explanation
             - 如果是算法题，必须包含四个小标题：思路、步骤、代码、复杂度
             - 代码必须放在 fenced code block 里，例如 ```python
-            - 不要输出推理过程、角色分析或“我需要回答”这类话
+            - 只有用户提示要求时，才可以在 <analysis>…</analysis> 里推理（该部分会被隐藏）；除此之外不要输出推理过程、角色分析或“我需要回答”这类话
             - 不要只给口语概括；算法题必须给可运行代码
             - 解释要简洁，代码要清晰，适合面试时快速讲解
             """
@@ -184,14 +184,48 @@ public static class InterviewPromptBuilder
 
     public static bool IsMultipleChoiceQuestion(string rawText)
     {
-        var normalized = rawText.Replace('（', '(').Replace('）', ')');
-        var optionCount = System.Text.RegularExpressions.Regex.Matches(
-            normalized,
-            @"(?im)(?:^|\s)[A-F][\.、\)]?\s+\S+").Count;
+        var normalized = rawText.Replace('（', '(').Replace('）', ')').Replace('．', '.');
+        // “A. …”, “A、…”, “(A) …”, “A) …” after a space or line start, or “A …” at a line start.
+        // Case-sensitive on purpose: a case-insensitive match counts the English article “a”.
+        var optionCount = System.Text.RegularExpressions.Regex.Matches(normalized, @"(?m)(?:^|\s)\(?[A-F][\.、\):：]\s*\S+").Count
+            + System.Text.RegularExpressions.Regex.Matches(normalized, @"(?m)^\s*[A-F]\s+\S+").Count;
+        var circledCount = normalized.Count(character => "①②③④⑤⑥".Contains(character));
+        string[] keywords =
+        [
+            "下列", "以下哪", "下面哪", "哪一项", "哪个选项", "哪些选项", "选择题", "单选", "多选", "不定项",
+            "选出", "正确的是", "错误的是", "不正确的是", "which of the following", "select all", "choose the"
+        ];
         return optionCount >= 2
-            || normalized.Contains("下列", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("选择题", StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains("which of the following", StringComparison.OrdinalIgnoreCase);
+            || circledCount >= 2
+            || keywords.Any(keyword => normalized.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Answer rules for screenshot multiple-choice questions (macOS choiceQuestionRules). Option labels must match the
+    /// screenshot exactly (no invented letters), and the model works the question out in a hidden &lt;analysis&gt;
+    /// block first, which raises accuracy noticeably on exam questions.
+    /// </summary>
+    public static string ChoiceQuestionRules(string answerLanguageCode)
+    {
+        var chinese = IsChinese(answerLanguageCode);
+        var answerLabel = chinese ? "答案：" : "Answer: ";
+        var explanationLabel = chinese ? "解析：" : "Explanation: ";
+        var labelledExample = chinese ? "答案：B. 进程是资源分配的基本单位" : "Answer: B. A process is the unit of resource allocation";
+        var unlabelledExample = chinese ? "答案：进程是资源分配的基本单位" : "Answer: A process is the unit of resource allocation";
+        var pictureExample = chinese ? "答案：第 3 个图形（从左往右数）" : "Answer: the 3rd figure (counting from the left)";
+        return $"""
+            MULTIPLE-CHOICE RULES (apply whenever the question offers options to choose from):
+            1. Look at how the options are actually marked in the screenshot and copy that exactly.
+               - Options with visible labels (A/B/C/D, a/b/c, ①②③, 1/2/3, (A)…): give that exact label followed by the option text, e.g. “{labelledExample}”.
+               - Options WITHOUT visible labels: never invent letters or numbers. Give the full text of the correct option, e.g. “{unlabelledExample}”.
+               - Options that are pictures without labels: identify the correct one by its position, e.g. “{pictureExample}” (count from the top for a vertical list), and describe it in a few words.
+               - Several correct options (multi-select): list every correct one the same way.
+            2. Work it out first inside <analysis>…</analysis>: restate the stem, list every option exactly as marked (or note that it has no label), test each option against the question, and recompute any numbers or code output. This block is hidden from the user, so be thorough.
+            3. After </analysis>, output exactly two parts and nothing else:
+            {answerLabel}…
+            {explanationLabel}… (2-4 sentences: why the answer is right and why the most tempting wrong option is wrong)
+            The question text may have been transcribed from a screenshot; transcriptions mark options without labels and describe picture options by position.
+            """;
     }
 
     /// <summary>User prompt for a screenshot / OCR question (buildQuestionPrompt).</summary>
@@ -207,6 +241,22 @@ public static class InterviewPromptBuilder
             "thread", "process", "database", "cache", "spring", "kafka"
         ];
 
+        var choiceRules = ChoiceQuestionRules(answerLanguageCode);
+        // Multiple choice first: an exam question that mentions sorting or complexity must not become a coding answer.
+        if (IsMultipleChoiceQuestion(rawText))
+        {
+            return $"""
+                The following screenshot contains a multiple-choice question.
+                {languageInstruction}
+                Read the complete question stem and every option before answering.
+                Do not describe the screenshot, do not call it a list of technologies, do not ask for clarification, and do not answer as though this were an interview skills checklist.
+
+                {choiceRules}
+
+                OCR / visual text:
+                {rawText}
+                """;
+        }
         if (IsAlgorithmQuestion(rawText))
         {
             return $"""
@@ -217,22 +267,10 @@ public static class InterviewPromptBuilder
                 The code section must contain complete, runnable interview-quality {codeLanguage} code
                 inside a fenced markdown block that starts with ```{codeLanguage}.
                 Keep the explanation concise, but do not omit important edge cases.
+                If the screenshot is actually a multiple-choice question (options to choose from, even without letters), do not write code; follow these rules instead:
+                {choiceRules}
 
                 Question:
-                {rawText}
-                """;
-        }
-        if (IsMultipleChoiceQuestion(rawText))
-        {
-            return $"""
-                The following screenshot contains a multiple-choice question.
-                {languageInstruction}
-                Read the complete question stem and every visible option before answering.
-                Start with the selected option and its text, for example “答案：A. Linux” or “Answer: A. Linux”.
-                Then add a short “解析” or “Explanation” paragraph explaining why it is correct and, when useful, why the closest alternatives are wrong.
-                Do not describe the screenshot, do not call it a list of technologies, do not ask for clarification, and do not answer as though this were an interview skills checklist.
-
-                OCR / visual text:
                 {rawText}
                 """;
         }
@@ -247,6 +285,8 @@ public static class InterviewPromptBuilder
                 Then explain the key mechanism or principle in 2-3 sentences.
                 If relevant, briefly mention a real use case or example.
                 Keep the total response under 100 words and sound confident.
+                If the screenshot is actually a multiple-choice question (options to choose from, even without letters), ignore the spoken format above and follow these rules instead:
+                {choiceRules}
 
                 Question:
                 {rawText}
@@ -261,7 +301,10 @@ public static class InterviewPromptBuilder
             complete runnable {codeLanguage} code in a fenced markdown block beginning with ```{codeLanguage}.
             If it is an exam-style short-answer question, give the direct answer first and then a concise explanation.
             For a non-coding interview question, give a concise spoken answer without inventing code.
-            Give only the final answer, with no planning text.
+            Apart from the hidden <analysis> block described below, give only the final answer, with no planning text.
+
+            If it turns out to be a multiple-choice question (options to choose from, with or without letters, or picture options), follow these rules:
+            {choiceRules}
 
             Captured text:
             {rawText}
@@ -328,9 +371,30 @@ public static class InterviewPromptBuilder
     ];
 
     /// <summary>Strips leaked planning sentences (ReceiverCoordinator.displayableAnswer).</summary>
+    /// <summary>
+    /// Removes the hidden working the screenshot prompts ask for (&lt;analysis&gt;…&lt;/analysis&gt;) and the
+    /// &lt;think&gt;…&lt;/think&gt; blocks some local models emit. While a block is still streaming, everything from its
+    /// opening tag on is hidden, so only the final answer is ever shown.
+    /// </summary>
+    public static string StripHiddenReasoning(string text)
+    {
+        foreach (var tag in new[] { "analysis", "think" })
+        {
+            while (true)
+            {
+                var start = text.IndexOf($"<{tag}>", StringComparison.OrdinalIgnoreCase);
+                if (start < 0) break;
+                var close = $"</{tag}>";
+                var end = text.IndexOf(close, start, StringComparison.OrdinalIgnoreCase);
+                text = end < 0 ? text[..start] : text[..start] + text[(end + close.Length)..];
+            }
+        }
+        return text;
+    }
+
     public static string DisplayableAnswer(string rawText, string codeLanguage)
     {
-        var text = (rawText ?? "").Replace("💡", "").Trim();
+        var text = StripHiddenReasoning(rawText ?? "").Replace("💡", "").Trim();
         if (text.Contains("<<<CODE_START>>>"))
         {
             var language = string.IsNullOrWhiteSpace(codeLanguage) ? "python" : codeLanguage;

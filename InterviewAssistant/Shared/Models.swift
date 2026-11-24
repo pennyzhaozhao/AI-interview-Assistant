@@ -278,15 +278,20 @@ struct QuestionBankDocument: Codable, Sendable {
         return (try? String(data: encoder.encode(self), encoding: .utf8)) ?? "{\"version\":1,\"questions\":[]}"
     }
 
+    /// Indexed text. “Q:” / “A:” lines make the RAG chunker keep each question with its own
+    /// answer (one chunk per pair, labelled as prepared Q&A in the prompt).
     var searchableText: String {
-        questions.enumerated().map { index, item in
-            var lines = ["Primary question \(index + 1): \(item.question)", "Answer: \(item.answer)"]
-            for (followIndex, followUp) in item.followUps.enumerated() {
-                lines.append("Follow-up \(index + 1).\(followIndex + 1): \(followUp.question)")
-                lines.append("Follow-up answer: \(followUp.answer)")
+        questions.map { item in
+            var blocks = ["Q: \(Self.oneLine(item.question))\nA: \(item.answer)"]
+            for followUp in item.followUps {
+                blocks.append("Q: \(Self.oneLine(followUp.question))（追问 · Follow-up to: \(Self.oneLine(item.question))）\nA: \(followUp.answer)")
             }
-            return lines.joined(separator: "\n")
+            return blocks.joined(separator: "\n\n")
         }.joined(separator: "\n\n")
+    }
+
+    private static func oneLine(_ text: String) -> String {
+        text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var previewText: String {

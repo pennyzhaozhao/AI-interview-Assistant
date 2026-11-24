@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         }
         Services.AppServices.Current.DataStore.Changed += DataStore_Changed;
         ScreenshotHotkey.Pressed += ScreenshotHotkey_Pressed;
+        PrompterHotkeys.Pressed += PrompterHotkeys_Pressed;
     }
 
     private void OpenMockInterviewOptions()
@@ -142,6 +143,8 @@ public partial class MainWindow : Window
         if (ActivePrompter is { } prompter) _ = prompter.CaptureAndAnalyzeScreenshotAsync();
     }
 
+    private void PrompterHotkeys_Pressed(PrompterShortcut shortcut) => ActivePrompter?.HandleShortcut(shortcut);
+
     /// <summary>Held only while a prompt board is open; reports a conflict on the board instead of a blocking dialog.</summary>
     private void UpdateScreenshotHotkey()
     {
@@ -164,6 +167,7 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(new Action(() =>
         {
             UpdateScreenshotHotkey();
+            PrompterHotkeys.Refresh();
             if (_activeInterviewWindows > 0) MoveToBackground();
         }));
     }
@@ -181,6 +185,7 @@ public partial class MainWindow : Window
         }
         MoveToBackground();
         UpdateScreenshotHotkey();
+        PrompterHotkeys.SetBoardOpen(true);
     }
 
     /// <summary>The last prompt board closed: bring the main window back.</summary>
@@ -189,6 +194,7 @@ public partial class MainWindow : Window
         _activeInterviewWindows = Math.Max(0, _activeInterviewWindows - 1);
         if (_activeInterviewWindows > 0) return;
         UpdateScreenshotHotkey();
+        PrompterHotkeys.SetBoardOpen(false);
         ClearInterviewTaskbarStyle();
         ShowInTaskbar = true;
         if (!IsVisible) Show();
@@ -276,6 +282,8 @@ public partial class MainWindow : Window
         Services.AppServices.Current.DataStore.Changed -= DataStore_Changed;
         ScreenshotHotkey.Pressed -= ScreenshotHotkey_Pressed;
         ScreenshotHotkey.Unregister();
+        PrompterHotkeys.Pressed -= PrompterHotkeys_Pressed;
+        PrompterHotkeys.SetBoardOpen(false);
         _prompterWindow?.Close();
         CloseEmbeddedMockInterview();
         base.OnClosed(e);

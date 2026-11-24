@@ -45,6 +45,17 @@ public sealed class AppPreferences
     public string ResumeAIProcessing { get; set; } = ResumeAIModes.Ask;
     /// <summary>Microphone mode: drop transcripts that read like the candidate's own answer. off / relaxed / standard / strict.</summary>
     public string SpeechContentFilterLevel { get; set; } = "strict";
+    /// <summary>Seconds of silence that end an interviewer turn before the AI answers (macOS default 3.5).</summary>
+    public double SpeechTurnEndPauseSeconds { get; set; } = 3.5;
+    /// <summary>Model lists last fetched from each provider (key: AIProvider name), newest first.</summary>
+    public Dictionary<string, List<string>> FetchedModels { get; set; } = [];
+    public Dictionary<string, DateTimeOffset> FetchedModelsAt { get; set; } = [];
+    // Prompter shortcuts (Settings › Keyboard Shortcuts). The screenshot shortcut is ScreenshotHotkey above.
+    public string HotkeyScrollUp { get; set; } = "Ctrl+Up";
+    public string HotkeyScrollDown { get; set; } = "Ctrl+Down";
+    public string HotkeyAnswerNewQuestion { get; set; } = "Ctrl+N";
+    public string HotkeyDeleteScreenshot { get; set; } = "Ctrl+Back";
+    public string HotkeySubmitScreenshots { get; set; } = "Ctrl+Enter";
 }
 
 public static class ResumeAIModes

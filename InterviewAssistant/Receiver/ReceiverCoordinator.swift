@@ -44,6 +44,14 @@ final class ReceiverCoordinator {
     private var pendingSpeechHasStrongQuestionSignal = false
     private var pendingSpeechSpeaker: SpeakerLabel = .unknown
     private var pendingSpeechQuestionTask: Task<Void, Never>?
+    /// When the current (not yet submitted) interviewer turn started and last showed activity
+    /// (a recognized fragment or detected voice). The turn is submitted once it has been quiet
+    /// for `SpeechTurnPolicy.endOfTurnPause`.
+    private var pendingSpeechTurnStartedAt: Date?
+    private var pendingSpeechLastActivityAt: Date?
+    private var pendingSpeechLastFragmentAt: Date?
+    /// Set by the manual trigger: submit as soon as the recognizer delivers the last fragment.
+    private var pendingSpeechTurnForcedAt: Date?
     private var cachedMockMemory: String?
     private var activeSpeechAnswerTask: Task<Void, Never>?
     private var activeSpeechQuestion = ""
@@ -54,9 +62,6 @@ final class ReceiverCoordinator {
     private var lastSpeechUtteranceEndedAt: Date?
     var pendingInterruptQuestion: String?
     private var pendingInterruptSpeaker: SpeakerLabel = .unknown
-    // VAD已等1.2s，完整句子只需短debounce；片段需更长等待保证合并
-    private let quickSpeechQuestionDebounceSeconds: TimeInterval = 0.35
-    private let unfinishedSpeechQuestionDebounceSeconds: TimeInterval = 1.5
     private let speechContinuationMergeWindow: TimeInterval = 10.0
     private let suspiciousQuestionProtectionWindow: TimeInterval = 10.0
     var canGeneratePendingCode: Bool { !pendingCodeRawQuestion.isEmpty && !isGeneratingCode }
@@ -169,8 +174,7 @@ final class ReceiverCoordinator {
         pendingSpeechSpeaker = .unknown
         pendingInterruptQuestion = nil
         pendingInterruptSpeaker = .unknown
-        pendingSpeechQuestionTask?.cancel()
-        pendingSpeechQuestionTask = nil
+        cancelPendingSpeechTurn()
         activeSpeechAnswerTask?.cancel()
         activeSpeechAnswerTask = nil
         activeSpeechQuestion = ""
@@ -190,8 +194,7 @@ final class ReceiverCoordinator {
     }
 
     func stop() {
-        pendingSpeechQuestionTask?.cancel()
-        pendingSpeechQuestionTask = nil
+        cancelPendingSpeechTurn()
         pendingSpeechQuestion = ""
         pendingSpeechHasStrongQuestionSignal = false
         pendingSpeechSpeaker = .unknown
@@ -277,8 +280,7 @@ final class ReceiverCoordinator {
     /// mode can always enforce silence.
     func disableAI() {
         aiEnabled = false
-        pendingSpeechQuestionTask?.cancel()
-        pendingSpeechQuestionTask = nil
+        cancelPendingSpeechTurn()
         pendingSpeechQuestion = ""
         pendingSpeechHasStrongQuestionSignal = false
         pendingSpeechSpeaker = .unknown
@@ -369,27 +371,72 @@ final class ReceiverCoordinator {
             lastUpdatedAt = .now
         }
 
-        pendingSpeechQuestionTask?.cancel()
+        // One interviewer turn = every fragment until a real pause. Do not submit on the
+        // recognizer's sentence boundary (~1 s); wait until the speaker has been quiet for the
+        // configured end-of-turn pause, like a phone call with a person.
+        let now = Date()
+        if pendingSpeechTurnStartedAt == nil { pendingSpeechTurnStartedAt = now }
+        pendingSpeechLastActivityAt = now
+        pendingSpeechLastFragmentAt = now
+        schedulePendingSpeechTurnCheck()
+    }
+
+    /// Polls the pending turn on the main actor. Voice activity (still talking, not yet
+    /// transcribed) keeps the turn open, so long questions with short breaths stay together.
+    private func schedulePendingSpeechTurnCheck() {
+        guard pendingSpeechQuestionTask == nil else { return }
         pendingSpeechQuestionTask = Task { [weak self] in
-            let delaySeconds = await MainActor.run {
-                self?.speechQuestionDebounceSeconds(for: self?.pendingSpeechQuestion ?? "") ?? 0.55
-            }
-            let delay = UInt64(delaySeconds * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: delay)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                let question = self.pendingSpeechQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
-                let hasStrongSignal = self.pendingSpeechHasStrongQuestionSignal
-                let speaker = self.pendingSpeechSpeaker
-                self.pendingSpeechQuestion = ""
-                self.pendingSpeechHasStrongQuestionSignal = false
-                self.pendingSpeechSpeaker = .unknown
-                self.pendingSpeechQuestionTask = nil
-                guard !question.isEmpty else { return }
-                self.submitSpeechQuestion(question, strongQuestionSignal: hasStrongSignal, speaker: speaker)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled, let self else { return }
+                if self.isPendingSpeechTurnComplete(at: Date()) {
+                    self.pendingSpeechQuestionTask = nil
+                    self.submitPendingSpeechTurn()
+                    return
+                }
             }
         }
+    }
+
+    private func isPendingSpeechTurnComplete(at now: Date) -> Bool {
+        if let forcedAt = pendingSpeechTurnForcedAt {
+            // Wait for the fragment the recognizer flushes after the manual trigger, then submit.
+            if let fragmentAt = pendingSpeechLastFragmentAt, fragmentAt >= forcedAt,
+               now.timeIntervalSince(fragmentAt) >= SpeechTurnPolicy.forcedTurnPause {
+                return true
+            }
+            return now.timeIntervalSince(forcedAt) >= SpeechTurnPolicy.forcedTurnTimeout
+        }
+        guard let startedAt = pendingSpeechTurnStartedAt else { return true }
+        if isVoiceDetected { pendingSpeechLastActivityAt = now }
+        let quiet = now.timeIntervalSince(pendingSpeechLastActivityAt ?? startedAt)
+        if now.timeIntervalSince(startedAt) >= SpeechTurnPolicy.maximumTurnDuration { return true }
+        return quiet >= SpeechTurnPolicy.endOfTurnPause
+    }
+
+    private func submitPendingSpeechTurn() {
+        let question = pendingSpeechQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasStrongSignal = pendingSpeechHasStrongQuestionSignal
+        let speaker = pendingSpeechSpeaker
+        pendingSpeechQuestion = ""
+        pendingSpeechHasStrongQuestionSignal = false
+        pendingSpeechSpeaker = .unknown
+        resetPendingSpeechTurnTiming()
+        guard !question.isEmpty else { return }
+        submitSpeechQuestion(question, strongQuestionSignal: hasStrongSignal, speaker: speaker)
+    }
+
+    private func cancelPendingSpeechTurn() {
+        pendingSpeechQuestionTask?.cancel()
+        pendingSpeechQuestionTask = nil
+        resetPendingSpeechTurnTiming()
+    }
+
+    private func resetPendingSpeechTurnTiming() {
+        pendingSpeechTurnStartedAt = nil
+        pendingSpeechLastActivityAt = nil
+        pendingSpeechLastFragmentAt = nil
+        pendingSpeechTurnForcedAt = nil
     }
 
     private func submitSpeechQuestion(_ question: String, strongQuestionSignal: Bool = false, speaker: SpeakerLabel = .unknown) {
@@ -398,7 +445,11 @@ final class ReceiverCoordinator {
             return
         }
         let answerAge = activeSpeechAnswerStartedAt.map { Date().timeIntervalSince($0) } ?? .infinity
-        let shouldProtectVisibleAnswer = activeSpeechAnswerHasStarted
+        // The hold-for-confirmation banner protects a visible answer from the candidate's own
+        // voice, which only the microphone can pick up. System audio is the other side of the
+        // call, so a new turn there is always a new interviewer question.
+        let shouldProtectVisibleAnswer = audioSource == .microphone
+            && activeSpeechAnswerHasStarted
             && speaker != .interviewer
             && (!strongQuestionSignal || answerAge < suspiciousQuestionProtectionWindow)
         if shouldProtectVisibleAnswer {
@@ -486,36 +537,6 @@ final class ReceiverCoordinator {
         return hitCount >= 2 && newQuestion.count < 24
     }
 
-    private func speechQuestionDebounceSeconds(for text: String) -> TimeInterval {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return quickSpeechQuestionDebounceSeconds }
-
-        // Very short fragment — almost certainly mid-sentence
-        if clean.count < 15 { return unfinishedSpeechQuestionDebounceSeconds }
-
-        // Sentence ends with punctuation — treat as complete
-        let sentenceEnders: Set<Character> = ["。", "？", "！", "?", "!"]
-        if let last = clean.last, sentenceEnders.contains(last) {
-            return quickSpeechQuestionDebounceSeconds
-        }
-
-        // Ends with connector words — definitely incomplete
-        let unfinishedSuffixes = [
-            "或", "或者", "和", "以及", "跟", "与", "比如", "例如", "关于", "就是",
-            "or", "and", "with", "about", "such as", "for example"
-        ]
-        let lower = clean.lowercased()
-        if unfinishedSuffixes.contains(where: { lower.hasSuffix($0) }) {
-            return unfinishedSpeechQuestionDebounceSeconds
-        }
-        if clean.hasSuffix("，") || clean.hasSuffix(",") || clean.hasSuffix("、") {
-            return unfinishedSpeechQuestionDebounceSeconds
-        }
-
-        // Ambiguous — use a middle delay
-        return (quickSpeechQuestionDebounceSeconds + unfinishedSpeechQuestionDebounceSeconds) / 2
-    }
-
     func toggleLanguage() {
         switch languageCode {
         case "en-US":
@@ -542,6 +563,13 @@ final class ReceiverCoordinator {
     }
 
     func forceTriggerSpeech() {
+        // The user wants an answer now: submit as soon as the recognizer flushes the last
+        // fragment instead of waiting for the end-of-turn pause.
+        // If nothing arrives, the timeout submits what is pending (or simply clears the flag).
+        let now = Date()
+        pendingSpeechTurnForcedAt = now
+        if pendingSpeechTurnStartedAt == nil { pendingSpeechTurnStartedAt = now }
+        schedulePendingSpeechTurnCheck()
         switch activeOrPreferredASRProvider {
         case .apple:
             speech.forceTrigger()
@@ -555,8 +583,7 @@ final class ReceiverCoordinator {
         screenshotImage = nil
         #endif
         if !Task.isCancelled {
-            pendingSpeechQuestionTask?.cancel()
-            pendingSpeechQuestionTask = nil
+            cancelPendingSpeechTurn()
             pendingSpeechQuestion = ""
         }
         await askAI(question: question, displayQuestion: nil, historyQuestion: nil, requiresListeningAI: true)
@@ -639,8 +666,21 @@ final class ReceiverCoordinator {
     }
     #endif
 
-    func askScreenshotQuestion(rawText: String) async {
-        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// True when the configured AI provider can read screenshots directly.
+    var canSendImagesToAI: Bool {
+        guard let modelContext else { return false }
+        return AIService.config(from: modelContext).supportsImageInput
+    }
+
+    /// - Parameter imagesJPEG: the captured screenshots, sent with the question to providers that
+    ///   accept images, so figure options and the real option layout are visible to the model.
+    func askScreenshotQuestion(rawText: String, imagesJPEG: [Data] = []) async {
+        let images = canSendImagesToAI ? imagesJPEG : []
+        var trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A pure figure question can have no OCR text at all; the attached image carries it.
+        if trimmed.isEmpty, !images.isEmpty {
+            trimmed = L.t("(The question is in the attached screenshot.)")
+        }
         guard !trimmed.isEmpty else { return }
         if mode == .director {
             publishDirectorQuestion(trimmed)
@@ -690,6 +730,7 @@ final class ReceiverCoordinator {
             systemPromptOverride: systemPrompt,
             isApproachForPendingCode: false,
             maxTokens: 1800,
+            imagesJPEG: images,
             turnConfigurator: { turn in
                 turn.screenshotData = screenshotData
                 turn.category = "Screenshot OCR"
@@ -764,6 +805,7 @@ final class ReceiverCoordinator {
         maxTokens: Int = 500,
         onProgress: ((String) -> Void)? = nil,
         onComplete: (() -> Void)? = nil,
+        imagesJPEG: [Data] = [],
         turnConfigurator: ((ConversationTurn) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { return }
@@ -779,12 +821,15 @@ final class ReceiverCoordinator {
         lastUpdatedAt = .now
         do {
             var prompt: String
+            var preparedAnswers: [PreparedQA] = []
             if let systemPromptOverride {
                 prompt = systemPromptOverride
             } else {
                 // Local retrieval (core profile + passages for this question) completes before the cloud request.
-                prompt = await enrichedSystemPrompt(for: session, question: cleanQuestion)
+                let enriched = await enrichedSystemPrompt(for: session, question: cleanQuestion)
                 guard !Task.isCancelled else { return }
+                prompt = enriched.prompt
+                preparedAnswers = enriched.preparedAnswers
             }
             // Per-knowledge-base custom instructions (the user's own answer preferences).
             prompt += KnowledgeFormatter.instructionsBlock(knowledgeBases, activeIDs: session.activeKBIds)
@@ -793,7 +838,8 @@ final class ReceiverCoordinator {
                 ? "\n\nOUTPUT LANGUAGE (MANDATORY): Use Simplified Chinese for the entire answer. The captured question may be in English, but the answer must still be Chinese."
                 : "\n\nOUTPUT LANGUAGE (MANDATORY): Use English for the entire answer."
             if systemPromptOverride == nil {
-                let reference = commonQuestionReference(for: cleanQuestion)
+                // The candidate's own prepared answers outrank the generic templates below.
+                let reference = preparedAnswers.isEmpty ? commonQuestionReference(for: cleanQuestion) : ""
                 if !reference.isEmpty {
                     prompt += """
 
@@ -804,6 +850,9 @@ final class ReceiverCoordinator {
                     """
                 }
             }
+            // Last in the prompt so it takes precedence over the generic answer-length guidance.
+            prompt += PreparedAnswerLibrary.promptBlock(preparedAnswers)
+            let effectiveMaxTokens = PreparedAnswerLibrary.recommendedMaxTokens(for: preparedAnswers, base: maxTokens)
             var streamingAnswer = ""
             var lastUIUpdate = Date.distantPast
             let uiUpdateInterval: TimeInterval = 0.025
@@ -811,7 +860,8 @@ final class ReceiverCoordinator {
                 config: AIService.config(from: modelContext),
                 systemPrompt: prompt,
                 question: cleanQuestion,
-                maxTokens: maxTokens,
+                maxTokens: effectiveMaxTokens,
+                imagesJPEG: imagesJPEG,
                 onToken: { token in
                     if isApproachForPendingCode && self.isGeneratingCode { return }
                     streamingAnswer += token
@@ -869,7 +919,9 @@ final class ReceiverCoordinator {
         return configuredLanguage.speechCode(appLanguage: appLanguage)
     }
 
-    private func enrichedSystemPrompt(for session: InterviewSession, question: String) async -> String {
+    private func enrichedSystemPrompt(for session: InterviewSession, question: String) async -> (prompt: String, preparedAnswers: [PreparedQA]) {
+        let preparedItems = PreparedAnswerLibrary.collect(knowledgeBases, activeIDs: session.activeKBIds)
+        let previousQuestion = session.turns.max(by: { $0.createdAt < $1.createdAt })?.question
         let knowledge = await LocalRAGService.shared.knowledgeContext(
             question: question,
             knowledgeBases: knowledgeBases,
@@ -882,9 +934,15 @@ final class ReceiverCoordinator {
             knowledge: knowledge,
             recentTurns: session.turns
         )
+        let preparedAnswers = PreparedAnswerLibrary.candidates(
+            for: question,
+            previousQuestion: previousQuestion,
+            items: preparedItems,
+            retrievedChunks: knowledge.retrieval.chunks
+        )
         let mockMemory = PromptTokenBudget.fit(buildMockTrainingMemory(), maxTokens: PromptBudget.default.mockMemory)
-        guard !mockMemory.isEmpty else { return basePrompt }
-        return """
+        guard !mockMemory.isEmpty else { return (basePrompt, preparedAnswers) }
+        let prompt = """
         \(basePrompt)
 
         Candidate mock interview memory:
@@ -892,6 +950,7 @@ final class ReceiverCoordinator {
 
         When answering in a formal interview, prefer the candidate's practiced examples, wording style, and revised answers from mock interviews. Avoid inventing experience that is not supported by the memory or knowledge base.
         """
+        return (prompt, preparedAnswers)
     }
 
     private func commonQuestionReference(for question: String) -> String {
@@ -969,6 +1028,25 @@ final class ReceiverCoordinator {
     }
 
     #if os(macOS)
+    /// A screenshot prepared for a vision model: at most `maxDimension` px on the long side,
+    /// JPEG-compressed, so a full Retina capture does not turn into a multi-megabyte request.
+    static func jpegForModel(_ image: NSImage, maxDimension: CGFloat = 1_600) -> Data? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        let scale = min(1, maxDimension / max(width, height, 1))
+        let targetWidth = max(1, Int(width * scale))
+        let targetHeight = max(1, Int(height * scale))
+        guard let context = CGContext(
+            data: nil, width: targetWidth, height: targetHeight, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        guard let scaled = context.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: scaled).representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+    }
+
     private func currentScreenshotPNGData() -> Data? {
         guard let image = screenshotImage,
               let tiff = image.tiffRepresentation,
@@ -995,8 +1073,27 @@ final class ReceiverCoordinator {
         return 0.42
     }
 
+    /// Removes the hidden working the screenshot prompts ask for (<analysis>…</analysis>) and
+    /// the <think>…</think> blocks some local models emit. While a block is still streaming,
+    /// everything from its opening tag on is hidden, so only the final answer is ever shown.
+    static func strippingHiddenReasoning(_ text: String) -> String {
+        var value = text
+        for tag in ["analysis", "think"] {
+            let open = "<\(tag)>"
+            let close = "</\(tag)>"
+            while let start = value.range(of: open, options: .caseInsensitive) {
+                if let end = value.range(of: close, options: .caseInsensitive, range: start.upperBound..<value.endIndex) {
+                    value.removeSubrange(start.lowerBound..<end.upperBound)
+                } else {
+                    value.removeSubrange(start.lowerBound..<value.endIndex)
+                }
+            }
+        }
+        return value
+    }
+
     private func displayableAnswer(from rawText: String) -> String {
-        var text = rawText
+        var text = Self.strippingHiddenReasoning(rawText)
             .replacingOccurrences(of: "💡", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 

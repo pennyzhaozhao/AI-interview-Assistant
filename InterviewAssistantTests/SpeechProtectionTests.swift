@@ -69,6 +69,86 @@ final class SpeechProtectionTests: XCTestCase {
         ))
     }
 
+    func testPreparedAnswerSimilarityIgnoresPoliteFillers() {
+        XCTAssertGreaterThan(PreparedAnswerLibrary.similarity("请做一下自我介绍", "自我介绍一下"), 0.8)
+        XCTAssertEqual(PreparedAnswerLibrary.similarity("Tell me about yourself", "Tell me about yourself."), 1, accuracy: 0.0001)
+        XCTAssertLessThan(PreparedAnswerLibrary.similarity("Redis 和 MySQL 的区别", "你的期望薪资是多少"), 0.1)
+    }
+
+    func testPreparedAnswersParsedFromMaterial() {
+        let material = """
+        # 常见问题
+        Q: 为什么从上家公司离职？
+        A: 我希望做更贴近用户的产品。
+        补充一句。
+        问：你的缺点是什么？
+        答：我有时过于追求细节。
+        """
+        let items = PreparedAnswerLibrary.parseMaterial(material, title: "Notes")
+        XCTAssertEqual(items.map(\.question), ["为什么从上家公司离职？", "你的缺点是什么？"])
+        XCTAssertEqual(items.first?.answer, "我希望做更贴近用户的产品。\n补充一句。")
+        XCTAssertEqual(items.last?.answer, "我有时过于追求细节。")
+    }
+
+    func testPreparedAnswerCandidatesGateFollowUps() {
+        let items = [
+            PreparedQA(question: "请做一下自我介绍", answer: "我是……", sourceTitle: "Bank"),
+            PreparedQA(question: "具体说说难点", answer: "难点是……", sourceTitle: "Bank", parentQuestion: "介绍一下你最有挑战的项目")
+        ]
+        let selfIntro = PreparedAnswerLibrary.candidates(for: "自我介绍一下", previousQuestion: nil, items: items, retrievedChunks: [])
+        XCTAssertEqual(selfIntro.map(\.question), ["请做一下自我介绍"])
+        // A generic follow-up only applies right after its primary question.
+        XCTAssertFalse(PreparedAnswerLibrary.candidates(for: "具体说说难点", previousQuestion: "你的期望薪资是多少", items: items, retrievedChunks: []).isEmpty)
+        XCTAssertTrue(PreparedAnswerLibrary.candidates(for: "能展开讲讲吗", previousQuestion: "你的期望薪资是多少", items: items, retrievedChunks: []).isEmpty)
+        XCTAssertEqual(
+            PreparedAnswerLibrary.candidates(for: "能展开讲讲吗", previousQuestion: "介绍一下你最有挑战的项目", items: items, retrievedChunks: []).first?.question,
+            "具体说说难点"
+        )
+    }
+
+    func testQuestionBankIsChunkedAsQuestionAnswerPairs() {
+        // Long enough to be split (short content intentionally stays one passage).
+        var document = QuestionBankDocument()
+        document.questions = (1...8).map { index in
+            .init(
+                question: "第\(index)题：请讲讲你在项目\(index)中遇到的问题？",
+                answer: String(repeating: "在项目\(index)里我负责后端架构设计，并推动团队完成了性能优化和稳定性治理。", count: 6)
+            )
+        }
+        let parts = KnowledgeChunker.splitContent(document.searchableText, options: .default)
+        XCTAssertGreaterThanOrEqual(parts.count, 8)
+        for part in parts {
+            XCTAssertTrue(part.isQA)
+            XCTAssertEqual(part.text.components(separatedBy: "\n").filter { $0.hasPrefix("Q: ") }.count, 1)
+        }
+    }
+
+    func testScreenshotMultipleChoiceDetection() {
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("A. Linux\nB. Windows\nC. macOS"))
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("(A) 1 (B) 2 (C) 3"))
+        XCTAssertTrue(KnowledgeContextBuilder.isMultipleChoiceQuestion("以下关于进程的说法正确的是\n进程是资源分配的基本单位\n线程是资源分配的基本单位"))
+        XCTAssertFalse(KnowledgeContextBuilder.isMultipleChoiceQuestion("Implement a function that returns a sorted array of the input"))
+        XCTAssertFalse(KnowledgeContextBuilder.isMultipleChoiceQuestion("给定一个数组，返回其中位数，要求时间复杂度 O(log n)"))
+    }
+
+    func testScreenshotPromptUsesRealOptionLabels() {
+        let prompt = KnowledgeContextBuilder.buildQuestionPrompt(
+            rawText: "下列排序算法中，平均时间复杂度为 O(nlogn) 的是\nA. 冒泡排序\nB. 快速排序",
+            answerLanguage: "zh-CN"
+        )
+        XCTAssertTrue(prompt.contains("multiple-choice question"))
+        XCTAssertFalse(prompt.contains("思路、步骤、代码、复杂度"))
+        XCTAssertTrue(prompt.contains("never invent letters"))
+        XCTAssertTrue(prompt.contains("第 3 个图形"))
+    }
+
+    @MainActor
+    func testHiddenReasoningIsStripped() {
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<analysis>check B</analysis>答案：B. Linux"), "答案：B. Linux")
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<analysis>still thinking"), "")
+        XCTAssertEqual(ReceiverCoordinator.strippingHiddenReasoning("<think>x</think>答案：进程"), "答案：进程")
+    }
+
     func testFusionWeights() {
         let value = SpeakerVerifier.fusedScore(similarity: 0.8, rmsCloseness: 0.6, answerOverlap: 0.4)
         XCTAssertEqual(value, 0.69, accuracy: 0.0001)

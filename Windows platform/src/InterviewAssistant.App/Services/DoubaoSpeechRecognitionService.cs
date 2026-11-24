@@ -15,6 +15,10 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     private CancellationTokenSource? _cancellation;
     private int _sequence;
     private double _resamplePosition;
+    /// Loopback audio arrives in ~10 ms buffers; it is re-chunked into 200 ms packets
+    /// (the size microphone capture already uses and Doubao's streaming API expects).
+    private readonly List<byte> _loopbackPending = [];
+    private const int PacketBytes = 16000 * 2 / 5;
     private readonly object _lifecycleGate = new();
     private int _lifecycleGeneration;
     private readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -22,6 +26,14 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     private readonly List<float> _utteranceAudio = [];
     private readonly object _utteranceGate = new();
     private const int MaxUtteranceSamples = 16_000 * 20;
+    /// WASAPI loopback delivers no data while Windows is silent, and Doubao closes a stream that receives no audio
+    /// for a while (the interviewer is quiet while the candidate answers). Gaps are filled with silence packets.
+    private Timer? _silenceKeepAlive;
+    private long _lastPacketTicks;
+    // Unexpected disconnects while listening are reconnected with the same settings.
+    private string _languageCode = "zh-CN";
+    private bool _systemAudio;
+    private int _reconnectAttempts;
 
     public event Action<string>? Recognized;
     public event Action<string>? PartialRecognized;
@@ -30,6 +42,8 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
     public async Task<bool> StartAsync(string languageCode, bool systemAudio)
     {
         Stop();
+        _languageCode = languageCode;
+        _systemAudio = systemAudio;
         var generation = Volatile.Read(ref _lifecycleGeneration);
         var store = AppServices.Current.DataStore;
         var appId = AppServices.Current.Credentials.Read("speech-app-id").Trim();
@@ -46,11 +60,13 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             _cancellation = new CancellationTokenSource();
             _socket = await ConnectAsync(appId, token, resource, TimeSpan.FromSeconds(25), _cancellation.Token);
             await SendInitializationAsync(languageCode.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-CN" : "en-US", _cancellation.Token);
-            _ = ReceiveLoopAsync(_cancellation.Token);
+            _ = ReceiveLoopAsync(generation, _cancellation.Token);
             lock (_lifecycleGate)
             {
                 if (generation != _lifecycleGeneration) return false;
                 StartCapture(systemAudio);
+                Interlocked.Exchange(ref _lastPacketTicks, Environment.TickCount64);
+                if (systemAudio) _silenceKeepAlive = new Timer(_ => SendSilenceIfIdle(), null, 200, 200);
             }
             StatusChanged?.Invoke(systemAudio ? "Listening to system audio with Doubao Voice…" : "Listening with Doubao Voice…");
             return true;
@@ -135,12 +151,26 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         if (capture is null || socket?.State != WebSocketState.Open || cancellation is null) return;
         try
         {
-            var pcm = capture is WasapiLoopbackCapture loopback
-                ? ConvertLoopbackToPcm16(e.Buffer.AsSpan(0, e.BytesRecorded), loopback.WaveFormat)
-                : e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
+            byte[] pcm;
+            if (capture is WasapiLoopbackCapture loopback)
+            {
+                var converted = ConvertLoopbackToPcm16(e.Buffer.AsSpan(0, e.BytesRecorded), loopback.WaveFormat);
+                lock (_loopbackPending)
+                {
+                    _loopbackPending.AddRange(converted);
+                    if (_loopbackPending.Count < PacketBytes) return;
+                    pcm = _loopbackPending.GetRange(0, PacketBytes).ToArray();
+                    _loopbackPending.RemoveRange(0, PacketBytes);
+                }
+            }
+            else
+            {
+                pcm = e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
+            }
             if (pcm.Length == 0) return;
             AppendUtteranceAudio(pcm);
-            await SendFrameAsync(0x02, 0x01, 0x00, 0x01, Interlocked.Increment(ref _sequence), Gzip(pcm), cancellation.Token);
+            Interlocked.Exchange(ref _lastPacketTicks, Environment.TickCount64);
+            await SendFrameAsync(0x02, 0x01, 0x00, 0x01, null, Gzip(pcm), cancellation.Token);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -223,11 +253,12 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         return 0;
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(int generation, CancellationToken cancellationToken)
     {
         var socket = _socket;
         if (socket is null) return;
         var buffer = new byte[128 * 1024];
+        var reason = "the server closed the connection";
         try
         {
             while (!cancellationToken.IsCancellationRequested && socket.State == WebSocketState.Open)
@@ -237,14 +268,60 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
                 do
                 {
                     result = await socket.ReceiveAsync(buffer, cancellationToken);
-                    if (result.MessageType == WebSocketMessageType.Close) return;
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        reason = $"the server closed the connection ({socket.CloseStatus} {socket.CloseStatusDescription})";
+                        goto Closed;
+                    }
                     message.Write(buffer, 0, result.Count);
                 } while (!result.EndOfMessage);
                 HandleResponse(message.ToArray());
             }
         }
+        catch (OperationCanceledException) { return; }
+        catch (Exception exception) { reason = exception.Message; }
+        Closed:
+        if (cancellationToken.IsCancellationRequested) return;
+        await ReconnectAsync(generation, reason);
+    }
+
+    /// <summary>Reconnects after an unexpected disconnect instead of silently going deaf for the rest of the interview.</summary>
+    private async Task ReconnectAsync(int generation, string reason)
+    {
+        if (generation != Volatile.Read(ref _lifecycleGeneration)) return;
+        var attempt = Interlocked.Increment(ref _reconnectAttempts);
+        if (attempt > 5)
+        {
+            StatusChanged?.Invoke($"Doubao Voice disconnected: {reason}");
+            return;
+        }
+        StatusChanged?.Invoke($"Doubao Voice disconnected ({reason}). Reconnecting…");
+        await Task.Delay(TimeSpan.FromSeconds(Math.Min(attempt, 3)));
+        if (generation != Volatile.Read(ref _lifecycleGeneration)) return;
+        await StartAsync(_languageCode, _systemAudio);
+    }
+
+    private void SendSilenceIfIdle()
+    {
+        var socket = _socket;
+        var cancellation = _cancellation;
+        if (socket?.State != WebSocketState.Open || cancellation is null) return;
+        if (Environment.TickCount64 - Interlocked.Read(ref _lastPacketTicks) < 400) return;
+        Interlocked.Exchange(ref _lastPacketTicks, Environment.TickCount64);
+        _ = SendSilenceAsync(cancellation.Token);
+    }
+
+    private async Task SendSilenceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendFrameAsync(0x02, 0x01, 0x00, 0x01, null, Gzip(new byte[PacketBytes]), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // The receive loop notices a dead connection and reconnects.
+        }
         catch (OperationCanceledException) { }
-        catch (Exception exception) { StatusChanged?.Invoke($"Doubao Voice disconnected: {exception.Message}"); }
     }
 
     private void HandleResponse(byte[] frame)
@@ -259,6 +336,7 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         }
         var flags = frame[1] & 0x0F;
         _lastFrameFlags = flags;
+        Interlocked.Exchange(ref _reconnectAttempts, 0);
         var offset = (frame[0] & 0x0F) * 4;
         if ((flags & 0x01) != 0) offset += 4;
         if ((flags & 0x04) != 0) offset += 4;
@@ -282,9 +360,12 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         catch { }
     }
 
-    // Index of the first utterance not yet emitted as final (macOS VolcanoASREngine.lastDefiniteIndex).
+    // End time (ms) of the last utterance emitted as final (macOS VolcanoASREngine.lastEmittedUtteranceEndMs).
+    // Utterances are de-duplicated by time, not by array index: depending on the mode the server returns either
+    // every utterance since the start or only recent ones, and an index skipped every later sentence in that case.
     // result.text is cumulative for the whole session, so it must never be used as "the question".
-    private int _lastDefiniteIndex;
+    private double _lastEmittedUtteranceEndMs = -1;
+    private readonly List<string> _recentlyEmittedTexts = [];
     private int _lastFrameFlags;
 
     private void EmitResult(JsonElement root)
@@ -296,20 +377,18 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
 
         if (utterances.Count > 0)
         {
-            if (_lastDefiniteIndex > utterances.Count) _lastDefiniteIndex = 0;
-            for (var index = _lastDefiniteIndex; index < utterances.Count; index++)
+            foreach (var utterance in utterances)
             {
-                var utterance = utterances[index];
-                if (!utterance.TryGetProperty("definite", out var definite) || definite.ValueKind != JsonValueKind.True) break;
-                _lastDefiniteIndex = index + 1;
+                if (!utterance.TryGetProperty("definite", out var definite) || definite.ValueKind != JsonValueKind.True) continue;
                 var text = UtteranceText(utterance);
-                if (text.Length > 0) Recognized?.Invoke(text);
+                if (MarkEmitted(utterance, text)) Recognized?.Invoke(text);
             }
-            // Live partial: only the utterances that are still being spoken.
-            var pending = string.Concat(utterances.Skip(_lastDefiniteIndex).Select(UtteranceText)).Trim();
+            // Live partial: only the utterances not emitted yet.
+            var unfinished = utterances.Where(utterance => !IsEmitted(utterance, UtteranceText(utterance))).ToList();
+            var pending = string.Concat(unfinished.Select(UtteranceText)).Trim();
             if (isFinal)
             {
-                _lastDefiniteIndex = 0;
+                foreach (var utterance in unfinished) MarkEmitted(utterance, UtteranceText(utterance));
                 if (pending.Length > 0) Recognized?.Invoke(pending);
             }
             else if (pending.Length > 0) PartialRecognized?.Invoke(pending);
@@ -321,6 +400,27 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         if (fallback.Length == 0) return;
         if (isFinal) Recognized?.Invoke(fallback);
         else PartialRecognized?.Invoke(fallback);
+    }
+
+    private static double? UtteranceEndMs(JsonElement utterance) =>
+        utterance.TryGetProperty("end_time", out var end) && end.ValueKind == JsonValueKind.Number && end.TryGetDouble(out var value) && value > 0
+            ? value
+            : null;
+
+    private bool IsEmitted(JsonElement utterance, string text) =>
+        UtteranceEndMs(utterance) is { } end ? end <= _lastEmittedUtteranceEndMs : text.Length == 0 || _recentlyEmittedTexts.Contains(text);
+
+    /// <summary>Returns true (and records it) when the utterance has not been emitted yet.</summary>
+    private bool MarkEmitted(JsonElement utterance, string text)
+    {
+        if (text.Length == 0 || IsEmitted(utterance, text)) return false;
+        if (UtteranceEndMs(utterance) is { } end) _lastEmittedUtteranceEndMs = end;
+        else
+        {
+            _recentlyEmittedTexts.Add(text);
+            if (_recentlyEmittedTexts.Count > 20) _recentlyEmittedTexts.RemoveAt(0);
+        }
+        return true;
     }
 
     private static List<JsonElement> ResponseUtterances(JsonElement root)
@@ -356,18 +456,21 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         return "";
     }
 
-    private async Task SendFrameAsync(byte messageType, byte flags, byte serialization, byte compression, int sequence, byte[] payload, CancellationToken cancellationToken)
+    /// <param name="sequence">Null assigns the next sequence number inside the send gate, so packets from the capture
+    /// thread and the silence keep-alive can never reach the socket out of order (Doubao closes the stream then).</param>
+    private async Task SendFrameAsync(byte messageType, byte flags, byte serialization, byte compression, int? sequence, byte[] payload, CancellationToken cancellationToken)
     {
         var socket = _socket ?? throw new InvalidOperationException("Doubao socket is not connected.");
         await _sendGate.WaitAsync(cancellationToken);
         try
         {
+        var number = sequence ?? Interlocked.Increment(ref _sequence);
         using var stream = new MemoryStream();
         stream.WriteByte(0x11);
         stream.WriteByte((byte)((messageType << 4) | flags));
         stream.WriteByte((byte)((serialization << 4) | compression));
         stream.WriteByte(0);
-        WriteInt32(stream, sequence);
+        WriteInt32(stream, number);
         WriteInt32(stream, payload.Length);
         stream.Write(payload);
         await socket.SendAsync(stream.ToArray(), WebSocketMessageType.Binary, true, cancellationToken);
@@ -388,6 +491,8 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
         lock (_lifecycleGate)
         {
             _lifecycleGeneration++;
+            _silenceKeepAlive?.Dispose();
+            _silenceKeepAlive = null;
             try { _capture?.StopRecording(); } catch { }
             _capture?.Dispose();
             _capture = null;
@@ -399,8 +504,10 @@ internal sealed class DoubaoSpeechRecognitionService : IDisposable
             _socket = null;
             _sequence = 0;
             _resamplePosition = 0;
+            lock (_loopbackPending) _loopbackPending.Clear();
             lock (_utteranceGate) _utteranceAudio.Clear();
-            _lastDefiniteIndex = 0;
+            _lastEmittedUtteranceEndMs = -1;
+            _recentlyEmittedTexts.Clear();
         }
     }
 

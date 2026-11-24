@@ -576,11 +576,10 @@ struct SetupView: View {
         selectedModel = validModel(scopedModel.isEmpty ? legacyModel : scopedModel, for: selectedProvider)
     }
 
+    /// Any stored model is kept: built-in, fetched from the provider, or typed in by the user.
     private func validModel(_ storedValue: String, for provider: AIProvider) -> String {
-        if provider.models.contains(storedValue) {
-            return storedValue
-        }
-        return provider.models.first ?? provider.defaultModel
+        let value = storedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? provider.defaultModel : value
     }
 
     private func storedModel(for provider: AIProvider) -> String {
