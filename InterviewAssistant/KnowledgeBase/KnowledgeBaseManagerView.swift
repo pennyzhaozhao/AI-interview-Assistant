@@ -2175,6 +2175,8 @@ private struct QuestionBankEditorSheet: View {
     @State private var importError = ""
     /// Primary questions whose follow-ups are folded away in the outline on the left.
     @State private var outlineCollapsed = Set<UUID>()
+    /// Question or follow-up to scroll to, set by the outline and consumed after the next layout pass.
+    @State private var scrollTarget: UUID?
 
     init(entry: KnowledgeEntry, isCompact: Bool, onCancel: @escaping () -> Void, onSave: @escaping (String, QuestionBankDocument) -> Void) {
         self.entry = entry
@@ -2214,13 +2216,15 @@ private struct QuestionBankEditorSheet: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollViewReader { proxy in
-                        HStack(alignment: .top, spacing: 16) {
-                            if !isCompact {
-                                outline(proxy)
-                            }
+                    HStack(alignment: .top, spacing: 16) {
+                        if !isCompact {
+                            outline
+                        }
+                        ScrollViewReader { proxy in
                             ScrollView {
-                                LazyVStack(spacing: 14) {
+                                // A plain VStack: every card (and nested follow-up) exists, so the outline
+                                // can scroll to any of them; a LazyVStack had not built the off-screen ones.
+                                VStack(spacing: 14) {
                                     // Element bindings keyed by id: index-based rows kept stale indices in
                                     // their actions and bindings and crashed when the list shrank.
                                     ForEach($document.questions) { $item in
@@ -2229,6 +2233,15 @@ private struct QuestionBankEditorSheet: View {
                                     }
                                 }
                                 .padding(.vertical, 2)
+                            }
+                            .onChange(of: scrollTarget) { _, target in
+                                guard let target else { return }
+                                // Run after the expanded card has been laid out.
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .milliseconds(40))
+                                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .top) }
+                                    scrollTarget = nil
+                                }
                             }
                         }
                     }
@@ -2447,7 +2460,7 @@ private struct QuestionBankEditorSheet: View {
     }
 
     /// Table of contents: questions, each with its follow-ups (foldable). Clicking scrolls to the card.
-    private func outline(_ proxy: ScrollViewProxy) -> some View {
+    private var outline: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L.t("Outline"))
@@ -2472,7 +2485,7 @@ private struct QuestionBankEditorSheet: View {
 
                         Button {
                             expanded.insert(item.id)
-                            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(item.id, anchor: .top) }
+                            scrollTarget = item.id
                         } label: {
                             questionTitle(item.question, placeholder: L.t("New question"))
                                 .font(.system(size: 13, weight: .semibold))
@@ -2488,7 +2501,7 @@ private struct QuestionBankEditorSheet: View {
                         ForEach(item.followUps) { follow in
                             Button {
                                 expanded.insert(item.id)
-                                withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(follow.id, anchor: .top) }
+                                scrollTarget = follow.id
                             } label: {
                                 questionTitle(follow.question, placeholder: L.t("New follow-up"))
                                     .font(.system(size: 12))
