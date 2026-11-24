@@ -82,7 +82,7 @@ public sealed class LocalizationManager : INotifyPropertyChanged
     private static readonly IReadOnlyDictionary<string, string> Chinese = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["Interview"] = "面试", ["Director Mode"] = "导演模式", ["Knowledge Base"] = "知识库", ["History"] = "历史", ["Settings"] = "设置",
-        ["Interview AI"] = "Interview AI", ["Practice smarter. Ace your next interview."] = "更聪明地练习，拿下下一场面试。",
+        ["Interview AI"] = "Interview AI",
         ["Start Interview"] = "开始面试", ["Mock Interview"] = "模拟面试", ["Choose Knowledge"] = "选择知识库",
         ["Microphone"] = "麦克风", ["System Audio"] = "扬声器", ["Muted"] = "静音", ["Choose code language"] = "选择代码语言",
         ["Role"] = "角色", ["Target role"] = "目标岗位", ["Job description"] = "职位描述", ["Company Introduction"] = "公司介绍",

@@ -30,7 +30,7 @@
     <SolidColorBrush x:Key="WarningSoftBrush" Color="#28F59E0B" />
     <SolidColorBrush x:Key="PrompterBrush" Color="#F2111827" />
     <SolidColorBrush x:Key="TitleBarBrush" Color="#E6111827" />
-    <SolidColorBrush x:Key="SidebarBrush" Color="#CC0B1020" />
+    <SolidColorBrush x:Key="SidebarBrush" Color="#990B1020" />
     <RadialGradientBrush x:Key="AccentGlowBrush">
         <GradientStop Color="#146366F1" Offset="0" />
         <GradientStop Color="#006366F1" Offset="1" />

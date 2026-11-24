@@ -18,7 +18,7 @@ public sealed class HomeViewModel : PageViewModel
     private string _statusMessage = "Ready when you are.";
     private readonly AppDataStore _store;
 
-    public HomeViewModel() : base("Interview AI", "Practice smarter. Ace your next interview.")
+    public HomeViewModel() : base("Interview AI", "")
     {
         _store = AppServices.Current.DataStore;
         var draft = _store.Data.Workspace;

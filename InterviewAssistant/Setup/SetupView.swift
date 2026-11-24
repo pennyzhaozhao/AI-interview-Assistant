@@ -91,10 +91,6 @@ struct SetupView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Interview AI")
                         .font(isCompact ? .appTitleCompact : .appTitle)
-                    Text(L.t("Practice smarter. Ace your next interview."))
-                        .font(.appBody)
-                        .foregroundStyle(Color.appMuted)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
                 if !isCompact {
