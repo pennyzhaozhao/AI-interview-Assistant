@@ -461,6 +461,7 @@ enum InterviewWindowPresence {
         )
         if boards.count == 1 {
             registerScreenshotHotkey()
+            PrompterHotkeyRegistry.setPrompterOpen(true)
         }
         moveMainWindowsAside()
     }
@@ -497,6 +498,7 @@ enum InterviewWindowPresence {
                     // The screenshot hotkey is only held while a board is open, so the shortcut
                     // (Cmd+Shift+S by default, "Save As" in many apps) goes back to other apps.
                     HotkeyManager.shared.unregister(id: HotkeyManager.screenshotID)
+                    PrompterHotkeyRegistry.setPrompterOpen(false)
                 }
             }
         }

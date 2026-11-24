@@ -130,22 +130,23 @@ struct SettingsView: View {
                         )
                     }
 
-                    NavigationLink {
+                    SettingsCardLink(
+                        title: L.t("API Configure"),
+                        subtitle: L.t("AI provider, model, API key and connection test"),
+                        icon: "key.horizontal",
+                        tint: Color.appPrimary
+                    ) {
                         APIConfigView()
-                    } label: {
-                        Label(L.t("API Configure"), systemImage: "key.horizontal")
                     }
-                    .buttonStyle(AppButtonStyle())
 
                     #if os(macOS)
-                    preferenceCardRow(title: L.t("Screenshot OCR"), icon: "camera.viewfinder", tint: Color.appPrimary) {
-                        HotkeyRecorderView(
-                            hotkey: $screenshotHotkey,
-                            preferenceKey: AppPreferenceKey.screenshotHotkey,
-                            notificationName: .screenshotHotkey,
-                            hotkeyID: HotkeyManager.screenshotID,
-                            defaultHotkey: HotkeyManager.screenshotDefaultHotkey
-                        )
+                    SettingsCardLink(
+                        title: L.t("Keyboard Shortcuts"),
+                        subtitle: L.t("Screenshot, scrolling, new question and screenshot submission shortcuts"),
+                        icon: "keyboard",
+                        tint: Color.appPrimary
+                    ) {
+                        HotkeySettingsView()
                     }
                     screenshotModeCard
                     preferenceCardRow(title: L.t("Hide Prompter During Screen Sharing"), icon: "eye.slash.fill", tint: Color.appYellow) {

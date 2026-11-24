@@ -130,8 +130,135 @@ enum AIService {
             provider: provider,
             apiURL: apiURL.isEmpty ? provider.defaultURL : apiURL,
             apiKey: apiKey(for: provider),
-            model: provider.models.contains(storedModel) ? storedModel : provider.defaultModel
+            // Any model the user picked (built-in, fetched from the provider, or typed in) is used as is.
+            model: storedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? provider.defaultModel
+                : storedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+    }
+
+    // MARK: Model catalog
+
+    /// Models to offer for `provider`: the list last fetched from the provider (newest names first),
+    /// then the built-in suggestions, plus `current` so a custom choice never disappears.
+    static func availableModels(for provider: AIProvider, including current: String = "") -> [String] {
+        var result: [String] = []
+        for name in cachedModels(for: provider) + provider.models + [current] {
+            let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty, !result.contains(value) { result.append(value) }
+        }
+        return result
+    }
+
+    static func cachedModels(for provider: AIProvider) -> [String] {
+        UserDefaults.standard.stringArray(forKey: "ai_models_\(provider.rawValue)") ?? []
+    }
+
+    static func modelsRefreshedAt(for provider: AIProvider) -> Date? {
+        UserDefaults.standard.object(forKey: "ai_models_refreshed_\(provider.rawValue)") as? Date
+    }
+
+    /// Fetches the provider's current model list (its `/models` endpoint) and caches it, so newly
+    /// released models appear without an app update. Throws when the provider offers no list.
+    @discardableResult
+    static func refreshModels(config: APIConfig) async throws -> [String] {
+        var request: URLRequest
+        switch config.provider {
+        case .claude:
+            var base = config.apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            while base.hasSuffix("/") { base.removeLast() }
+            if base.hasSuffix("/messages") { base.removeLast("/messages".count) }
+            guard let url = URL(string: "\(base)/models?limit=100") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+            request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        case .gemini:
+            let base = config.apiURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+            let key = config.apiKey.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            guard let url = URL(string: "\(base)/models?pageSize=200&key=\(key)") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+        case .ollama, .openai, .deepseek, .volcano:
+            let base = normalizeAPIBase(config.apiURL)
+            guard !base.isEmpty, let url = URL(string: "\(base)/models") else { throw catalogError(L.t("The API URL is invalid.")) }
+            request = URLRequest(url: url)
+            request.setValue("Bearer \(config.apiKey.isEmpty ? "ollama" : config.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        request.timeoutInterval = 20
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw catalogError(String(format: L.t("This provider did not return a model list (HTTP %d)."), status))
+        }
+        var names: [String]
+        if config.provider == .gemini {
+            names = (json["models"] as? [[String: Any]] ?? []).compactMap { model in
+                let methods = model["supportedGenerationMethods"] as? [String] ?? []
+                guard methods.contains("generateContent"), let name = model["name"] as? String else { return nil }
+                return name.hasPrefix("models/") ? String(name.dropFirst("models/".count)) : name
+            }
+        } else {
+            names = (json["data"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+        }
+        names = names.filter { isChatModel($0, provider: config.provider) }.sorted(by: >)
+        guard !names.isEmpty else { throw catalogError(L.t("This provider did not return a model list.")) }
+        UserDefaults.standard.set(names, forKey: "ai_models_\(config.provider.rawValue)")
+        UserDefaults.standard.set(Date(), forKey: "ai_models_refreshed_\(config.provider.rawValue)")
+        return names
+    }
+
+    /// Drops embedding, image, audio and other non-chat models from a provider's list.
+    static func isChatModel(_ id: String, provider: AIProvider) -> Bool {
+        let name = id.lowercased()
+        let excluded = ["embed", "embedding", "tts", "whisper", "transcribe", "audio", "realtime", "moderation",
+                        "dall-e", "image", "imagen", "davinci", "babbage", "search", "computer-use", "rerank", "aqa"]
+        if excluded.contains(where: { name.contains($0) }) { return false }
+        switch provider {
+        case .openai:
+            return ["gpt-", "chatgpt-", "o1", "o3", "o4"].contains { name.hasPrefix($0) }
+        case .claude:
+            return name.hasPrefix("claude")
+        case .gemini:
+            return name.hasPrefix("gemini")
+        case .deepseek, .volcano, .ollama:
+            return true
+        }
+    }
+
+    private static func catalogError(_ message: String) -> NSError {
+        NSError(domain: "InterviewAssistant.Models", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    // MARK: Account balance
+
+    /// A short balance line for the connection test, or nil when the provider has no balance API
+    /// that works with an API key (OpenAI, Anthropic, Gemini and Volcano Ark only show it in their consoles).
+    static func accountBalanceSummary(config: APIConfig) async -> String? {
+        guard config.provider == .deepseek else { return nil }
+        let base = normalizeAPIBase(config.apiURL)
+        guard let url = URL(string: "\(base)/user/balance") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        guard let result = try? await session.data(for: request),
+              ((result.1 as? HTTPURLResponse)?.statusCode ?? 0) == 200,
+              let json = try? JSONSerialization.jsonObject(with: result.0) as? [String: Any],
+              let infos = json["balance_infos"] as? [[String: Any]], !infos.isEmpty else { return nil }
+        let parts = infos.map { info -> String in
+            let currency = info["currency"] as? String ?? ""
+            let symbol = currency == "CNY" ? "¥" : (currency == "USD" ? "$" : currency + " ")
+            let total = info["total_balance"] as? String ?? "\(info["total_balance"] ?? "")"
+            let toppedUp = info["topped_up_balance"] as? String
+            let granted = info["granted_balance"] as? String
+            var line = "\(symbol)\(total)"
+            if let toppedUp, let granted {
+                line += String(format: L.t(" (top-up %@%@ + granted %@%@)"), symbol, toppedUp, symbol, granted)
+            }
+            return line
+        }
+        var summary = String(format: L.t("Account balance: %@"), parts.joined(separator: "; "))
+        if json["is_available"] as? Bool == false { summary += L.t(" — insufficient balance") }
+        return summary
     }
 
     private static func apiKey(for provider: AIProvider) -> String {

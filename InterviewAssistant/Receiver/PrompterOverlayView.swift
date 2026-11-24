@@ -138,6 +138,22 @@ struct PrompterOverlayView: View {
         .foregroundStyle(overlayTextPrimary)
         .onReceive(updateTimer) { now = $0 }
         .hotkeyReceivers(coordinator, screenshotHandler: handleScreenshot)
+        #if os(macOS)
+        .prompterShortcutReceivers(
+            onAnswerNewQuestion: { if coordinator.pendingInterruptQuestion != nil { coordinator.answerPendingInterrupt() } },
+            onDeleteScreenshot: { if !screenshotCapture.capturedImages.isEmpty { removeLastScreenshot() } },
+            onSubmitScreenshots: {
+                guard !screenshotCapture.capturedImages.isEmpty, screenshotSubmissionState != .loading else { return }
+                Task { @MainActor in await finishScreenshotAnalysis() }
+            }
+        )
+        .onChange(of: coordinator.pendingInterruptQuestion) { _, question in
+            PrompterHotkeyRegistry.setPendingQuestion(question != nil)
+        }
+        .onChange(of: screenshotCapture.capturedImages.count) { _, count in
+            PrompterHotkeyRegistry.setScreenshotSession(count > 0)
+        }
+        #endif
         .onAppear {
             applyDensity(.balanced)
             syncPinnedState()
@@ -776,6 +792,22 @@ struct PrompterOverlayView: View {
         }
         .onReceive(updateTimer) { now = $0 }
         .hotkeyReceivers(coordinator, screenshotHandler: handleScreenshot)
+        #if os(macOS)
+        .prompterShortcutReceivers(
+            onAnswerNewQuestion: { if coordinator.pendingInterruptQuestion != nil { coordinator.answerPendingInterrupt() } },
+            onDeleteScreenshot: { if !screenshotCapture.capturedImages.isEmpty { removeLastScreenshot() } },
+            onSubmitScreenshots: {
+                guard !screenshotCapture.capturedImages.isEmpty, screenshotSubmissionState != .loading else { return }
+                Task { @MainActor in await finishScreenshotAnalysis() }
+            }
+        )
+        .onChange(of: coordinator.pendingInterruptQuestion) { _, question in
+            PrompterHotkeyRegistry.setPendingQuestion(question != nil)
+        }
+        .onChange(of: screenshotCapture.capturedImages.count) { _, count in
+            PrompterHotkeyRegistry.setScreenshotSession(count > 0)
+        }
+        #endif
         .onAppear {
             applyDensity(.compact)
             #if os(macOS)
@@ -2010,6 +2042,70 @@ struct PrompterOverlayView: View {
     private func handleScreenshot() async {}
     #endif
 }
+
+#if os(macOS)
+/// Scrolls the prompter's answer text (the tallest scroll view in the panel) by most of a page.
+@MainActor
+enum PrompterTextScroller {
+    static func scroll(up: Bool) {
+        guard let root = PrompterPanel.latestPanel?.contentView,
+              let scrollView = tallestScrollView(in: root),
+              let document = scrollView.documentView else { return }
+        let clip = scrollView.contentView
+        let step = max(60, clip.bounds.height * 0.6)
+        let maxY = max(0, document.frame.height - clip.bounds.height)
+        // SwiftUI scroll views use a flipped document: larger y is further down.
+        let current = clip.bounds.origin.y
+        let target = min(max(0, current + (up ? -step : step)), maxY)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            clip.animator().setBoundsOrigin(NSPoint(x: clip.bounds.origin.x, y: target))
+        }
+        scrollView.reflectScrolledClipView(clip)
+    }
+
+    private static func tallestScrollView(in view: NSView) -> NSScrollView? {
+        var best: NSScrollView?
+        var bestHeight: CGFloat = 0
+        func visit(_ node: NSView) {
+            if let scrollView = node as? NSScrollView, let height = scrollView.documentView?.frame.height,
+               height > scrollView.contentView.bounds.height + 1, height > bestHeight {
+                best = scrollView
+                bestHeight = height
+            }
+            node.subviews.forEach(visit)
+        }
+        visit(view)
+        return best
+    }
+}
+
+private extension View {
+    /// Prompter shortcuts from Settings › Keyboard Shortcuts (see PrompterHotkeyRegistry).
+    func prompterShortcutReceivers(
+        onAnswerNewQuestion: @escaping @MainActor () -> Void,
+        onDeleteScreenshot: @escaping @MainActor () -> Void,
+        onSubmitScreenshots: @escaping @MainActor () -> Void
+    ) -> some View {
+        self
+            .onReceive(NotificationCenter.default.publisher(for: PrompterHotkey.scrollUp.notification)) { _ in
+                PrompterTextScroller.scroll(up: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: PrompterHotkey.scrollDown.notification)) { _ in
+                PrompterTextScroller.scroll(up: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: PrompterHotkey.answerNewQuestion.notification)) { _ in
+                onAnswerNewQuestion()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: PrompterHotkey.deleteLastScreenshot.notification)) { _ in
+                onDeleteScreenshot()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: PrompterHotkey.submitScreenshots.notification)) { _ in
+                onSubmitScreenshots()
+            }
+    }
+}
+#endif
 
 private extension View {
     @ViewBuilder

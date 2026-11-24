@@ -269,6 +269,22 @@ final class HotkeyManager {
         return status == noErr && eventHandlerRef != nil
     }
 
+    /// “Cmd+Shift+S” → “⌘ + ⇧ + S”, “Cmd+Up” → “⌘ + ↑”, “Cmd+Return” → “⌘ + Enter”.
+    static func displayString(_ key: String) -> String {
+        let symbols: [String: String] = [
+            "cmd": "⌘", "command": "⌘", "option": "⌥", "opt": "⌥", "alt": "⌥",
+            "control": "⌃", "ctrl": "⌃", "shift": "⇧",
+            "up": "↑", "down": "↓", "left": "←", "right": "→",
+            "delete": "⌫", "return": "Enter", "escape": "Esc", "space": "Space", "tab": "Tab"
+        ]
+        return key.split(separator: "+")
+            .map { part -> String in
+                let value = part.trimmingCharacters(in: .whitespaces)
+                return symbols[value.lowercased()] ?? value
+            }
+            .joined(separator: " + ")
+    }
+
     static func hotkeyString(from event: NSEvent) -> String? {
         guard let key = keyName(from: event) else { return nil }
         var parts = [String]()
@@ -283,6 +299,7 @@ final class HotkeyManager {
     private static func keyName(from event: NSEvent) -> String? {
         let specialMap: [UInt16: String] = [
             36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Escape",
+            123: "Left", 124: "Right", 125: "Down", 126: "Up",
             96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9",
             103: "F11", 109: "F10", 111: "F12", 118: "F4", 120: "F2", 122: "F1"
         ]
@@ -324,7 +341,8 @@ final class HotkeyManager {
             "0": 29, "]": 30, "O": 31, "U": 32, "[": 33, "I": 34, "P": 35, "RETURN": 36, "TAB": 48, "DELETE": 51,
             "L": 37, "J": 38, "'": 39, "K": 40, ";": 41, "\\": 42, ",": 43, "/": 44, "N": 45,
             "M": 46, ".": 47, "`": 50, "SPACE": 49, "F1": 122, "F2": 120, "F3": 99, "F4": 118,
-            "F5": 96, "F6": 97, "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111
+            "F5": 96, "F6": 97, "F7": 98, "F8": 100, "F9": 101, "F10": 109, "F11": 103, "F12": 111,
+            "LEFT": 123, "RIGHT": 124, "DOWN": 125, "UP": 126
         ]
         return map[normalizedKeyName(key).uppercased()] ?? 49
     }
@@ -337,5 +355,288 @@ final class HotkeyManager {
 extension Notification.Name {
     static let manualTriggerHotkey = Notification.Name("manualTriggerHotkey")
     static let screenshotHotkey = Notification.Name("screenshotHotkey")
+}
+
+// MARK: - Prompter shortcuts
+
+/// The prompter's keyboard shortcuts (Settings › Keyboard Shortcuts). They are system-wide Carbon
+/// hotkeys, because the prompter panel never takes keyboard focus during an interview, and so they
+/// are only held while they can do something: scrolling while a prompter is open, “answer the new
+/// question” while that bar is shown, and delete / submit while screenshots are being collected.
+/// The rest of the time the key combinations stay with the other apps.
+enum PrompterHotkey: String, CaseIterable, Identifiable {
+    case scrollUp
+    case scrollDown
+    case answerNewQuestion
+    case screenshot
+    case deleteLastScreenshot
+    case submitScreenshots
+
+    enum Scope { case prompterOpen, pendingQuestion, screenshotSession }
+
+    var id: String { rawValue }
+
+    var hotkeyID: UInt32 {
+        switch self {
+        case .screenshot: HotkeyManager.screenshotID
+        case .scrollUp: 3
+        case .scrollDown: 4
+        case .answerNewQuestion: 5
+        case .deleteLastScreenshot: 6
+        case .submitScreenshots: 7
+        }
+    }
+
+    var preferenceKey: String {
+        self == .screenshot ? AppPreferenceKey.screenshotHotkey : "prompter_hotkey_\(rawValue)"
+    }
+
+    var defaultKey: String {
+        switch self {
+        case .scrollUp: "Cmd+Up"
+        case .scrollDown: "Cmd+Down"
+        case .answerNewQuestion: "Cmd+N"
+        case .screenshot: HotkeyManager.screenshotDefaultHotkey
+        case .deleteLastScreenshot: "Cmd+Delete"
+        case .submitScreenshots: "Cmd+Return"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .scrollUp: L.t("Scroll Text Up")
+        case .scrollDown: L.t("Scroll Text Down")
+        case .answerNewQuestion: L.t("Answer New Question")
+        case .screenshot: L.t("Screenshot Shortcut")
+        case .deleteLastScreenshot: L.t("Delete Previous Screenshot")
+        case .submitScreenshots: L.t("Submit Screenshots")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .scrollUp, .scrollDown: "textformat"
+        case .answerNewQuestion: "arrow.left.arrow.right"
+        case .screenshot: "camera.viewfinder"
+        case .deleteLastScreenshot: "trash"
+        case .submitScreenshots: "paperplane"
+        }
+    }
+
+    var scope: Scope {
+        switch self {
+        case .scrollUp, .scrollDown, .screenshot: .prompterOpen
+        case .answerNewQuestion: .pendingQuestion
+        case .deleteLastScreenshot, .submitScreenshots: .screenshotSession
+        }
+    }
+
+    var notification: Notification.Name {
+        self == .screenshot ? .screenshotHotkey : Notification.Name("prompterHotkey.\(rawValue)")
+    }
+
+    var currentKey: String {
+        let stored = UserDefaults.standard.string(forKey: preferenceKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return stored.flatMap { $0.isEmpty ? nil : $0 } ?? defaultKey
+    }
+}
+
+/// Registers each prompter shortcut only while its scope applies. The screenshot shortcut keeps its
+/// own lifecycle in InterviewWindowPresence / PrompterOverlayView.
+@MainActor
+enum PrompterHotkeyRegistry {
+    private static var isPrompterOpen = false
+    private static var hasPendingQuestion = false
+    private static var isScreenshotSession = false
+
+    static func setPrompterOpen(_ value: Bool) {
+        isPrompterOpen = value
+        if !value {
+            hasPendingQuestion = false
+            isScreenshotSession = false
+        }
+        refresh()
+    }
+
+    static func setPendingQuestion(_ value: Bool) {
+        guard value != hasPendingQuestion else { return }
+        hasPendingQuestion = value
+        refresh()
+    }
+
+    static func setScreenshotSession(_ value: Bool) {
+        guard value != isScreenshotSession else { return }
+        isScreenshotSession = value
+        refresh()
+    }
+
+    /// Re-applies registrations, e.g. after a shortcut was changed in Settings.
+    static func refresh() {
+        for hotkey in PrompterHotkey.allCases where hotkey != .screenshot {
+            let active: Bool
+            switch hotkey.scope {
+            case .prompterOpen: active = isPrompterOpen
+            case .pendingQuestion: active = isPrompterOpen && hasPendingQuestion
+            case .screenshotSession: active = isPrompterOpen && isScreenshotSession
+            }
+            if active {
+                let name = hotkey.notification
+                HotkeyManager.shared.register(key: hotkey.currentKey, id: hotkey.hotkeyID) {
+                    NotificationCenter.default.post(name: name, object: nil)
+                }
+            } else {
+                HotkeyManager.shared.unregister(id: hotkey.hotkeyID)
+            }
+        }
+    }
+}
+
+/// Settings › Keyboard Shortcuts.
+struct HotkeySettingsView: View {
+    @State private var keys: [PrompterHotkey: String] = [:]
+    @State private var recording: PrompterHotkey?
+    @State private var keyMonitor: Any?
+    @State private var message: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(spacing: 16) {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 28, weight: .medium))
+                        .foregroundStyle(Color.appText.opacity(0.75))
+                        .frame(width: 64, height: 64)
+                        .background(Color.appField)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L.t("Keyboard Shortcuts"))
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(Color.appText)
+                        Text(L.t("Set shortcuts for common actions. Select one, then press the new key combination."))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.appMuted)
+                    }
+                }
+
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(L.t("Action"))
+                        Spacer()
+                        Text(L.t("Shortcut")).frame(width: 240, alignment: .leading)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.appMuted)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    Divider().padding(.horizontal, 12)
+                    ForEach(Array(PrompterHotkey.allCases.enumerated()), id: \.element) { index, hotkey in
+                        row(hotkey)
+                        if index < PrompterHotkey.allCases.count - 1 {
+                            Divider().padding(.leading, 76).padding(.trailing, 12)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                .background(cardBackground(radius: 20))
+
+                Text(L.t("Shortcuts work while the prompter is open. Answer New Question only works while the new-question bar is shown, and Delete / Submit only while you are taking screenshots; otherwise the key combinations stay with other apps. Press Esc to cancel recording."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.appMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let message {
+                    Text(message)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.appDanger)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 760, alignment: .leading)
+        }
+        .navigationTitle(L.t("Keyboard Shortcuts"))
+        .onAppear {
+            keys = Dictionary(uniqueKeysWithValues: PrompterHotkey.allCases.map { ($0, $0.currentKey) })
+        }
+        .onDisappear { stopRecording() }
+    }
+
+    private func row(_ hotkey: PrompterHotkey) -> some View {
+        let isRecording = recording == hotkey
+        return HStack(spacing: 14) {
+            Image(systemName: hotkey.icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Color.appText.opacity(0.7))
+                .frame(width: 42, height: 42)
+                .background(Color.appField)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Text(hotkey.title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.appText)
+            Spacer()
+            Button {
+                isRecording ? stopRecording() : startRecording(hotkey)
+            } label: {
+                Text(isRecording ? L.t("Press the new shortcut…") : HotkeyManager.displayString(keys[hotkey] ?? hotkey.currentKey))
+                    .font(.system(size: isRecording ? 14 : 17, weight: isRecording ? .medium : .regular))
+                    .foregroundStyle(isRecording ? Color.appPrimary : Color.appText)
+                    .padding(.horizontal, 14)
+                    .frame(width: 240, height: 38, alignment: .leading)
+                    .background(isRecording ? Color.appPrimary.opacity(0.12) : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(isRecording ? Color.appPrimary.opacity(0.06) : Color.clear)
+    }
+
+    private func startRecording(_ hotkey: PrompterHotkey) {
+        stopRecording()
+        message = nil
+        recording = hotkey
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {
+                stopRecording()
+                return nil
+            }
+            guard let recorded = HotkeyManager.hotkeyString(from: event) else { return nil }
+            guard HotkeyManager.isValidHotkey(recorded) else {
+                NSSound.beep()
+                message = L.t("Use a combination with ⌘, ⌥, ⌃ or ⇧ (or a function key).")
+                return nil
+            }
+            if let clash = PrompterHotkey.allCases.first(where: { $0 != hotkey && (keys[$0] ?? $0.currentKey) == recorded }) {
+                NSSound.beep()
+                message = String(format: L.t("Already used by “%@”."), clash.title)
+                return nil
+            }
+            guard HotkeyManager.shared.isAvailable(recorded, ignoring: hotkey.hotkeyID) else {
+                NSSound.beep()
+                message = L.t("This shortcut is taken by another app.")
+                return nil
+            }
+            keys[hotkey] = recorded
+            UserDefaults.standard.set(recorded, forKey: hotkey.preferenceKey)
+            if hotkey == .screenshot {
+                if InterviewWindowPresence.hasOpenBoards {
+                    HotkeyManager.shared.register(key: recorded, id: hotkey.hotkeyID) {
+                        NotificationCenter.default.post(name: .screenshotHotkey, object: nil)
+                    }
+                }
+            } else {
+                PrompterHotkeyRegistry.refresh()
+            }
+            stopRecording()
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        recording = nil
+    }
 }
 #endif
